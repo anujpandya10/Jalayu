@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Breath</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 12px; background: #F8F7FF; color: #26215C; text-align: center; }
+    .dot { width: 72px; height: 72px; border-radius: 50%; background: #534AB7; margin: 16px auto; animation: pulse 4s ease-in-out infinite; }
+    @keyframes pulse { 0%,100%{ transform: scale(1); opacity: 0.85;} 50%{ transform: scale(1.08); opacity: 1;} }
+    p { font-size: 13px; line-height: 1.5; margin: 0; }
+  </style>
+</head>
+<body>
+  <p><strong>60 seconds</strong></p>
+  <p>Inhale 4 · hold 4 · exhale 6</p>
+  <div class="dot" aria-hidden="true"></div>
+  <p style="font-size:11px;color:#6b7280;">Sandboxed widget preview — Jalayu</p>
+</body>
+</html>

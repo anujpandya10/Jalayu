@@ -1,0 +1,20 @@
+[
+  {
+    "id": "focus_foundation",
+    "title": "Focus foundation",
+    "description": "Two small wins to protect deep work and clarity.",
+    "days": 3
+  },
+  {
+    "id": "sleep_winddown",
+    "title": "Sleep wind-down",
+    "description": "Gentle evening rhythm and gratitude.",
+    "days": 3
+  },
+  {
+    "id": "energy_rhythm",
+    "title": "Energy rhythm",
+    "description": "Notice mood and breaks before burnout.",
+    "days": 3
+  }
+]

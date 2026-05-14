@@ -1,0 +1,10 @@
+{
+  "widgets": [
+    {
+      "id": "breath",
+      "title": "60s breath",
+      "src": "/widgets/breath.html",
+      "height": 200
+    }
+  ]
+}

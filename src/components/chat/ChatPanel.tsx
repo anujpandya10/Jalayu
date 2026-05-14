@@ -2,17 +2,78 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Loader2, Sparkles } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, Mic, BookmarkPlus, Lightbulb } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import { generateId } from '@/lib/utils'
 import ChatMessage from './ChatMessage'
 
+declare global {
+  interface Window {
+    webkitSpeechRecognition?: new () => SpeechRec
+  }
+}
+
+interface SpeechRec extends EventTarget {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  start(): void
+  stop(): void
+  onresult: ((ev: { results: { 0: { 0: { transcript: string } } } }) => void) | null
+  onerror: ((ev: { error: string }) => void) | null
+  onend: (() => void) | null
+}
+
+const EXPLAIN_KEY = 'jalayu_chat_explain'
+
 export default function ChatPanel() {
-  const { showChatPanel, setShowChatPanel, chatMessages, addChatMessage, updateLastChatMessage, profile } = useStore()
+  const {
+    showChatPanel,
+    setShowChatPanel,
+    chatMessages,
+    addChatMessage,
+    updateLastChatMessage,
+    setChatMessages,
+    profile,
+  } = useStore()
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
+  const [explainWhy, setExplainWhy] = useState(false)
+  const [listening, setListening] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const recognitionRef = useRef<SpeechRec | null>(null)
+
+  useEffect(() => {
+    try {
+      setExplainWhy(localStorage.getItem(EXPLAIN_KEY) === '1')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!showChatPanel) return
+    ;(async () => {
+      try {
+        const res = await fetch('/api/chat/messages?limit=40')
+        if (!res.ok) return
+        const j = await res.json()
+        const mapped = (j.messages || []).map(
+          (m: { id: string; role: string; content: string; created_at: string }) => ({
+            id: m.id,
+            role: m.role,
+            content: m.content,
+            timestamp: m.created_at,
+          }),
+        )
+        if (mapped.length) setChatMessages(mapped)
+      } catch {
+        /* ignore */
+      }
+    })()
+  }, [showChatPanel, setChatMessages])
 
   useEffect(() => {
     if (showChatPanel) {
@@ -23,6 +84,77 @@ export default function ChatPanel() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages])
+
+  const toggleExplain = () => {
+    setExplainWhy((v) => {
+      const n = !v
+      try {
+        localStorage.setItem(EXPLAIN_KEY, n ? '1' : '0')
+      } catch {
+        /* ignore */
+      }
+      return n
+    })
+  }
+
+  const persistMessages = async (userContent: string, assistantContent: string) => {
+    try {
+      await fetch('/api/chat/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [
+            { role: 'user', content: userContent },
+            { role: 'assistant', content: assistantContent },
+          ],
+        }),
+      })
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const saveTakeaway = async () => {
+    const last = [...chatMessages].reverse().find((m) => m.role === 'assistant' && m.content.trim())
+    if (!last?.content.trim()) {
+      toast.error('No assistant message to save yet')
+      return
+    }
+    const line = window.prompt('Save as memory (one line):', last.content.slice(0, 200))
+    if (!line?.trim()) return
+    const res = await fetch('/api/chat/memory', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fact: line.trim() }),
+    })
+    if (res.ok) toast.success('Saved to long-term memory')
+    else toast.error('Could not save')
+  }
+
+  const startVoice = () => {
+    const SR = typeof window !== 'undefined' && window.webkitSpeechRecognition
+    if (!SR) {
+      toast.error('Voice not supported in this browser')
+      return
+    }
+    const rec = new SR()
+    rec.continuous = false
+    rec.interimResults = false
+    rec.lang = 'en-US'
+    rec.onresult = (ev) => {
+      const text = ev.results[0][0].transcript
+      setInput((prev) => (prev ? `${prev} ${text}` : text))
+      setListening(false)
+    }
+    rec.onerror = () => {
+      setListening(false)
+      toast.error('Voice capture failed')
+    }
+    rec.onend = () => setListening(false)
+    recognitionRef.current = rec
+    setListening(true)
+    rec.start()
+  }
 
   const send = async () => {
     const text = input.trim()
@@ -36,12 +168,14 @@ export default function ChatPanel() {
     const assistantId = generateId()
     addChatMessage({ id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() })
 
+    let accumulated = ''
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...chatMessages, userMsg].map((m) => ({ role: m.role, content: m.content })),
+          explainWhy,
         }),
       })
 
@@ -49,13 +183,16 @@ export default function ChatPanel() {
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let accumulated = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         accumulated += decoder.decode(value, { stream: true })
         updateLastChatMessage(accumulated)
+      }
+
+      if (accumulated.trim()) {
+        await persistMessages(text, accumulated.trim())
       }
     } catch {
       updateLastChatMessage('Sorry, something went wrong. Please try again.')
@@ -77,7 +214,6 @@ export default function ChatPanel() {
     <AnimatePresence>
       {showChatPanel && (
         <>
-          {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -91,7 +227,6 @@ export default function ChatPanel() {
             }}
           />
 
-          {/* Panel */}
           <motion.div
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
@@ -110,7 +245,6 @@ export default function ChatPanel() {
               flexDirection: 'column',
             }}
           >
-            {/* Header */}
             <div
               style={{
                 padding: '14px 16px',
@@ -119,6 +253,8 @@ export default function ChatPanel() {
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 flexShrink: 0,
+                flexWrap: 'wrap',
+                gap: 8,
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -136,40 +272,66 @@ export default function ChatPanel() {
                   <Sparkles size={13} color="#fff" />
                 </div>
                 <div>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: '#111827', margin: 0 }}>
-                    Ask Jalayu
-                  </p>
-                  <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>
-                    Your personal AI companion
-                  </p>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: '#111827', margin: 0 }}>Ask Jalayu</p>
+                  <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>Your personal AI companion</p>
                 </div>
               </div>
-              <button
-                onClick={() => setShowChatPanel(false)}
-                style={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  background: '#F8F7FF',
-                  border: '0.5px solid #E5E3FF',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                }}
-              >
-                <X size={14} color="#6b7280" />
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  type="button"
+                  onClick={toggleExplain}
+                  title="Explain recommendations with one Because line"
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 8,
+                    border: explainWhy ? '1px solid #534AB7' : '0.5px solid #E5E3FF',
+                    background: explainWhy ? '#EEEDFE' : '#F8F7FF',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 10,
+                    color: '#534AB7',
+                  }}
+                >
+                  <Lightbulb size={12} />
+                  Why
+                </button>
+                <button
+                  type="button"
+                  onClick={saveTakeaway}
+                  title="Save takeaway"
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 8,
+                    border: '0.5px solid #E5E3FF',
+                    background: '#F8F7FF',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <BookmarkPlus size={14} color="#534AB7" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowChatPanel(false)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 8,
+                    background: '#F8F7FF',
+                    border: '0.5px solid #E5E3FF',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <X size={14} color="#6b7280" />
+                </button>
+              </div>
             </div>
 
-            {/* Messages */}
-            <div
-              style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '16px',
-              }}
-            >
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
               {chatMessages.length === 0 && (
                 <div style={{ textAlign: 'center', paddingTop: 40 }}>
                   <div
@@ -186,20 +348,18 @@ export default function ChatPanel() {
                   >
                     <Sparkles size={20} color="#534AB7" />
                   </div>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: '#111827', marginBottom: 6 }}>
-                    Hey, {name}
-                  </p>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: '#111827', marginBottom: 6 }}>Hey, {name}</p>
                   <p style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.6, maxWidth: 260, margin: '0 auto 20px' }}>
                     I know your goals, struggles, and daily patterns. Ask me anything — I&apos;m built for you specifically.
                   </p>
-                  {[
-                    'How am I doing this week?',
-                    'What should I focus on right now?',
-                    'Help me with my energy levels',
-                  ].map((suggestion) => (
+                  {['How am I doing this week?', 'What should I focus on right now?', 'Help me with my energy levels'].map((suggestion) => (
                     <button
                       key={suggestion}
-                      onClick={() => { setInput(suggestion); inputRef.current?.focus() }}
+                      type="button"
+                      onClick={() => {
+                        setInput(suggestion)
+                        inputRef.current?.focus()
+                      }}
                       style={{
                         display: 'block',
                         width: '100%',
@@ -257,7 +417,6 @@ export default function ChatPanel() {
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Input */}
             <div
               style={{
                 padding: '12px 14px',
@@ -268,6 +427,26 @@ export default function ChatPanel() {
                 flexShrink: 0,
               }}
             >
+              <button
+                type="button"
+                onClick={startVoice}
+                disabled={listening || streaming}
+                title="Speak"
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 10,
+                  border: '0.5px solid #E5E3FF',
+                  background: listening ? '#EEEDFE' : '#F8F7FF',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: listening ? 'wait' : 'pointer',
+                  flexShrink: 0,
+                }}
+              >
+                <Mic size={16} color="#534AB7" />
+              </button>
               <textarea
                 ref={inputRef}
                 value={input}
@@ -293,6 +472,7 @@ export default function ChatPanel() {
                 onBlur={(e) => (e.target.style.borderColor = '#E5E3FF')}
               />
               <button
+                type="button"
                 onClick={send}
                 disabled={!input.trim() || streaming}
                 style={{

@@ -53,6 +53,7 @@ export interface Note {
   tags: string[] | null
   is_voice: boolean
   transcript: string | null
+  meta?: Record<string, unknown> | null
 }
 
 export interface Reflection {
@@ -122,6 +123,7 @@ export type SidebarView =
   | 'wellness'
   | 'learning'
   | 'memory'
+  | 'meetings'
   | 'people'
   | 'widgets'
 

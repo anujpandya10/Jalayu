@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    body { font-family: system-ui, sans-serif; width: 300px; padding: 12px; margin: 0; font-size: 13px; color: #111; }
+    label { display: block; margin-top: 8px; font-size: 11px; color: #555; }
+    input { width: 100%; box-sizing: border-box; margin-top: 4px; padding: 6px 8px; border-radius: 6px; border: 1px solid #ddd; }
+    button { margin-top: 10px; width: 100%; padding: 8px; border: none; border-radius: 8px; background: #534AB7; color: #fff; font-weight: 600; cursor: pointer; }
+    .muted { font-size: 11px; color: #666; margin-top: 8px; line-height: 1.4; }
+    .err { color: #b91c1c; font-size: 11px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <strong>Jalayu Companion</strong>
+  <p class="muted">Paste your Supabase access token (from the app session cookie <code>sb-*-auth-token</code> JSON access_token field) and your Jalayu base URL. Only send if you consent to logging this tab&apos;s hostname.</p>
+  <label>Base URL</label>
+  <input id="base" type="text" placeholder="https://your-app.vercel.app" />
+  <label>Access token</label>
+  <input id="token" type="password" placeholder="eyJ..." />
+  <label><input id="consent" type="checkbox" /> I consent to sending the current tab hostname to Jalayu.</label>
+  <button id="send">Log this tab</button>
+  <div id="out" class="err"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

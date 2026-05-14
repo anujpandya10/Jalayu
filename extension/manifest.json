@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Jalayu Companion",
+  "version": "0.1.0",
+  "description": "Optional: log active site hostname to your Jalayu activity log with explicit consent.",
+  "action": {
+    "default_title": "Jalayu Companion",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["https://*/*", "http://localhost:3000/*"]
+}

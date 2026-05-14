@@ -12,6 +12,7 @@ import {
   History,
   Users,
   Puzzle,
+  Mic2,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -29,6 +30,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
       { key: 'calendar', icon: Calendar, label: 'My day' },
       { key: 'reminders', icon: Bell, label: 'Reminders', badge: 'dot-red' },
       { key: 'mind', icon: Brain, label: 'My mind' },
+      { key: 'meetings', icon: Mic2, label: 'Meetings' },
       { key: 'reflect', icon: Sparkles, label: 'Reflect' },
     ],
   },

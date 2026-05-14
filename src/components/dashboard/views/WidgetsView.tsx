@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import type { ComponentType } from 'react'
 import { Puzzle, Heart, Target, Sparkles, Brain } from 'lucide-react'
 import { useStore } from '@/store/useStore'
@@ -36,8 +37,18 @@ const TILES: { id: string; title: string; description: string; icon: ComponentTy
   },
 ]
 
+type Registry = { widgets: { id: string; title: string; src: string; height: number }[] }
+
 export default function WidgetsView() {
   const { setSidebarView } = useStore()
+  const [registry, setRegistry] = useState<Registry['widgets']>([])
+
+  useEffect(() => {
+    fetch('/widgets/registry.json')
+      .then((r) => r.json())
+      .then((d: Registry) => setRegistry(d.widgets || []))
+      .catch(() => setRegistry([]))
+  }, [])
 
   return (
     <div style={{ padding: '16px 14px' }}>
@@ -46,10 +57,10 @@ export default function WidgetsView() {
         Widgets
       </h2>
       <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 16px' }}>
-        Built-in shortcuts today — an open widget SDK so the community can add trackers, habits, and tools is on the roadmap.
+        Built-in shortcuts and sandboxed embeds from this origin only — third-party manifests will follow the same contract.
       </p>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10, marginBottom: 20 }}>
         {TILES.map((t) => {
           const Icon = t.icon
           return (
@@ -77,6 +88,27 @@ export default function WidgetsView() {
           )
         })}
       </div>
+
+      {registry.length > 0 && (
+        <>
+          <p style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 10 }}>Sandboxed embeds</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {registry.map((w) => (
+              <div key={w.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: '#111827', padding: '10px 12px', margin: 0, borderBottom: '0.5px solid #E5E3FF' }}>
+                  {w.title}
+                </p>
+                <iframe
+                  title={w.title}
+                  src={w.src}
+                  sandbox="allow-scripts allow-same-origin"
+                  style={{ width: '100%', border: 'none', height: w.height || 200, display: 'block' }}
+                />
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   )
 }

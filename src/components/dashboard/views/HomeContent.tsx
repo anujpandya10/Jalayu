@@ -17,6 +17,7 @@ export default function HomeContent({
   tasks,
   todayMood,
   notes,
+  moodsRecent,
   daysSinceSignup,
   onMoodLog,
   onAddTask,
@@ -27,6 +28,7 @@ export default function HomeContent({
   tasks: Task[]
   todayMood: Mood | null
   notes: Note[]
+  moodsRecent: Mood[]
   daysSinceSignup: number
   onMoodLog: (score: number) => void
   onAddTask: (title: string) => Promise<void>
@@ -74,12 +76,12 @@ export default function HomeContent({
         <div style={{ gridColumn: 'span 2' }}>
           <TasksCard tasks={tasks} profile={profile} onAdd={onAddTask} onToggle={onToggleTask} />
         </div>
-        <WeekChart tasks={tasks} moods={[]} daysSinceSignup={daysSinceSignup} />
+        <WeekChart tasks={tasks} moods={moodsRecent} daysSinceSignup={daysSinceSignup} />
         <KnowledgeCard
           daysSinceSignup={daysSinceSignup}
           hasWorkType={!!profile?.work_type}
           hasPeakHours={!!profile?.peak_hours}
-          moodsCount={todayMood ? 7 : 0}
+          moodsCount={moodsRecent.length || (todayMood ? 1 : 0)}
           tasksCount={tasks.length}
         />
         <div style={{ gridColumn: 'span 2' }}>
@@ -96,9 +98,9 @@ export default function HomeContent({
       <div style={{ gridColumn: 'span 2' }}>
         <TasksCard tasks={tasks} profile={profile} onAdd={onAddTask} onToggle={onToggleTask} />
       </div>
-      <WeekChart tasks={tasks} moods={[]} daysSinceSignup={daysSinceSignup} />
+      <WeekChart tasks={tasks} moods={moodsRecent} daysSinceSignup={daysSinceSignup} />
       <InsightCard profile={profile} daysSinceSignup={daysSinceSignup} />
-      <PatternCard tasks={tasks} moods={[]} daysSinceSignup={daysSinceSignup} />
+      <PatternCard tasks={tasks} moods={moodsRecent} daysSinceSignup={daysSinceSignup} />
     </div>
   )
 }

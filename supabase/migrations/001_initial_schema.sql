@@ -1,5 +1,5 @@
 -- Jalayu Database Schema
--- Run this in your Supabase SQL editor
+-- Idempotent: safe to re-run in Supabase SQL editor (policies + indexes).
 
 -- ─── PROFILES ───────────────────────────────────────────────────────────────
 create table if not exists public.profiles (
@@ -23,14 +23,17 @@ create table if not exists public.profiles (
 
 alter table public.profiles enable row level security;
 
+drop policy if exists "Users can view own profile" on public.profiles;
 create policy "Users can view own profile"
   on public.profiles for select
   using (auth.uid() = id);
 
+drop policy if exists "Users can insert own profile" on public.profiles;
 create policy "Users can insert own profile"
   on public.profiles for insert
   with check (auth.uid() = id);
 
+drop policy if exists "Users can update own profile" on public.profiles;
 create policy "Users can update own profile"
   on public.profiles for update
   using (auth.uid() = id);
@@ -64,12 +67,13 @@ create table if not exists public.moods (
 
 alter table public.moods enable row level security;
 
+drop policy if exists "Users manage own moods" on public.moods;
 create policy "Users manage own moods"
   on public.moods for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create index on public.moods(user_id, created_at desc);
+create index if not exists idx_moods_user_created on public.moods(user_id, created_at desc);
 
 -- ─── TASKS ──────────────────────────────────────────────────────────────────
 create table if not exists public.tasks (
@@ -90,12 +94,13 @@ create table if not exists public.tasks (
 
 alter table public.tasks enable row level security;
 
+drop policy if exists "Users manage own tasks" on public.tasks;
 create policy "Users manage own tasks"
   on public.tasks for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create index on public.tasks(user_id, due_date, completed);
+create index if not exists idx_tasks_user_due_completed on public.tasks(user_id, due_date, completed);
 
 -- ─── NOTES ──────────────────────────────────────────────────────────────────
 create table if not exists public.notes (
@@ -112,12 +117,13 @@ create table if not exists public.notes (
 
 alter table public.notes enable row level security;
 
+drop policy if exists "Users manage own notes" on public.notes;
 create policy "Users manage own notes"
   on public.notes for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create index on public.notes(user_id, created_at desc);
+create index if not exists idx_notes_user_created on public.notes(user_id, created_at desc);
 
 -- ─── REFLECTIONS ────────────────────────────────────────────────────────────
 create table if not exists public.reflections (
@@ -136,12 +142,13 @@ create table if not exists public.reflections (
 
 alter table public.reflections enable row level security;
 
+drop policy if exists "Users manage own reflections" on public.reflections;
 create policy "Users manage own reflections"
   on public.reflections for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create index on public.reflections(user_id, date desc);
+create index if not exists idx_reflections_user_date on public.reflections(user_id, date desc);
 
 -- ─── INSIGHTS ───────────────────────────────────────────────────────────────
 create table if not exists public.insights (
@@ -158,12 +165,13 @@ create table if not exists public.insights (
 
 alter table public.insights enable row level security;
 
+drop policy if exists "Users manage own insights" on public.insights;
 create policy "Users manage own insights"
   on public.insights for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create index on public.insights(user_id, is_read, created_at desc);
+create index if not exists idx_insights_user_read_created on public.insights(user_id, is_read, created_at desc);
 
 -- ─── REMINDERS ──────────────────────────────────────────────────────────────
 create table if not exists public.reminders (
@@ -181,6 +189,7 @@ create table if not exists public.reminders (
 
 alter table public.reminders enable row level security;
 
+drop policy if exists "Users manage own reminders" on public.reminders;
 create policy "Users manage own reminders"
   on public.reminders for all
   using (auth.uid() = user_id)
@@ -201,9 +210,10 @@ create table if not exists public.activity_logs (
 
 alter table public.activity_logs enable row level security;
 
+drop policy if exists "Users manage own activity logs" on public.activity_logs;
 create policy "Users manage own activity logs"
   on public.activity_logs for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
-create index on public.activity_logs(user_id, date desc);
+create index if not exists idx_activity_logs_user_date on public.activity_logs(user_id, date desc);

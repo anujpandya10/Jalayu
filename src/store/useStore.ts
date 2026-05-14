@@ -56,6 +56,7 @@ interface JalayuStore {
   setShowChatPanel: (open: boolean) => void
   addChatMessage: (msg: ChatMsg) => void
   updateLastChatMessage: (content: string) => void
+  setChatMessages: (msgs: ChatMsg[]) => void
   setJourneyView: (v: JourneyView) => void
   setLoading: (l: boolean) => void
 }
@@ -114,6 +115,7 @@ export const useStore = create<JalayuStore>((set) => ({
       if (msgs.length > 0) msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content }
       return { chatMessages: msgs }
     }),
+  setChatMessages: (chatMessages) => set({ chatMessages }),
   setJourneyView: (journeyView) => set({ journeyView }),
   setLoading: (isLoading) => set({ isLoading }),
 }))

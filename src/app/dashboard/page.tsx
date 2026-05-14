@@ -17,6 +17,7 @@ import ProgressView from '@/components/dashboard/views/ProgressView'
 import WellnessView from '@/components/dashboard/views/WellnessView'
 import PeopleView from '@/components/dashboard/views/PeopleView'
 import WidgetsView from '@/components/dashboard/views/WidgetsView'
+import MeetingsView from '@/components/dashboard/views/MeetingsView'
 import type { Task, Mood, Note, Reflection } from '@/lib/types'
 
 async function getSupabase() {
@@ -45,7 +46,6 @@ export default function DashboardPage() {
     setTodayReflection,
     addReminder,
     updateReminder,
-    setProfile,
   } = useStore()
 
   const daysSinceSignup = profile ? getDayNumber(profile.created_at) - 1 : 0
@@ -247,6 +247,7 @@ export default function DashboardPage() {
               tasks={tasks}
               todayMood={todayMood}
               notes={notes}
+              moodsRecent={moodsRecent}
               daysSinceSignup={daysSinceSignup}
               onMoodLog={handleMoodLog}
               onAddTask={handleAddTask}
@@ -273,6 +274,8 @@ export default function DashboardPage() {
         )
       case 'mind':
         return <MindView notes={notes} name={name} onSaveMind={(c) => handleSaveTypedNote(c, 'mind')} />
+      case 'meetings':
+        return <MeetingsView />
       case 'learning':
         return (
           <LearningView notes={notes} name={name} onSaveLearning={(c) => handleSaveTypedNote(c, 'learning')} />

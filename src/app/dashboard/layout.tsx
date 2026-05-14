@@ -9,6 +9,7 @@ import Sidebar from '@/components/dashboard/Sidebar'
 import TopBar from '@/components/dashboard/TopBar'
 import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
+import PwaRegister from '@/components/PwaRegister'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder } from '@/lib/types'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -177,6 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             paddingBottom: 72,
           }}
         >
+          <PwaRegister />
           {children}
         </main>
 
