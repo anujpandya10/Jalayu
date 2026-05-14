@@ -15,8 +15,8 @@ export default function Sidebar() {
       style={{
         width: 200,
         minWidth: 200,
-        background: '#F8F7FF',
-        borderRight: '0.5px solid #E5E3FF',
+        background: 'var(--surface-2)',
+        borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
@@ -26,20 +26,19 @@ export default function Sidebar() {
       <div
         style={{
           padding: '14px 12px',
-          borderBottom: '0.5px solid #E5E3FF',
+          borderBottom: '1px solid var(--border)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 10 }}>
-          <span style={{ fontSize: 15, fontWeight: 500, color: '#111827' }}>Jala</span>
-          <span style={{ fontSize: 15, fontWeight: 500, color: '#534AB7' }}>yu</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', letterSpacing: '-0.01em' }}>Jalayu</span>
         </div>
         <button
           type="button"
           onClick={() => setShowChatPanel(true)}
           style={{
             width: '100%',
-            background: '#fff',
-            border: '0.5px solid #E5E3FF',
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
             borderRadius: 8,
             padding: '6px 8px',
             display: 'flex',
@@ -48,8 +47,8 @@ export default function Sidebar() {
             cursor: 'pointer',
           }}
         >
-          <Search size={12} color="#9CA3AF" />
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>Ask anything…</span>
+          <Search size={12} color="var(--text-3)" />
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Ask anything…</span>
         </button>
       </div>
 
@@ -65,10 +64,10 @@ export default function Sidebar() {
             <div
               style={{
                 fontSize: 10,
-                fontWeight: 500,
-                color: '#9CA3AF',
+                fontWeight: 600,
+                color: 'var(--text-3)',
                 textTransform: 'uppercase',
-                letterSpacing: '0.05em',
+                letterSpacing: '0.07em',
                 padding: '8px 6px 3px',
               }}
             >
@@ -90,43 +89,27 @@ export default function Sidebar() {
                     borderRadius: 8,
                     fontSize: 12,
                     width: '100%',
-                    background: isActive ? '#fff' : 'transparent',
-                    color: isActive ? '#111827' : '#6b7280',
+                    background: isActive ? 'var(--surface)' : 'transparent',
+                    color: isActive ? 'var(--text)' : 'var(--text-2)',
                     fontWeight: isActive ? 500 : 400,
                     border: 'none',
                     cursor: 'pointer',
-                    boxShadow: isActive ? '0 1px 3px rgba(83, 74, 183, 0.12)' : undefined,
+                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : undefined,
                   }}
                 >
-                  <Icon size={15} color={isActive ? '#111827' : '#6b7280'} />
+                  <Icon size={15} color={isActive ? 'var(--text)' : 'var(--text-3)'} />
                   <span style={{ flex: 1, textAlign: 'left' }}>{label}</span>
                   {badge === 'dot-red' && (
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        background: '#EF4444',
-                        flexShrink: 0,
-                      }}
-                    />
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
                   )}
                   {badge === 'dot-green' && (
-                    <span
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: '50%',
-                        background: '#22C55E',
-                        flexShrink: 0,
-                      }}
-                    />
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22C55E', flexShrink: 0 }} />
                   )}
                   {badge === 'new-pill' && (
                     <span
                       style={{
-                        background: '#EEEDFE',
-                        color: '#534AB7',
+                        background: 'var(--morning)',
+                        color: 'var(--text-2)',
                         fontSize: 9,
                         padding: '1px 6px',
                         borderRadius: 99,
@@ -147,7 +130,7 @@ export default function Sidebar() {
       <div
         style={{
           padding: '10px 8px',
-          borderTop: '0.5px solid #E5E3FF',
+          borderTop: '1px solid var(--border)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -156,8 +139,8 @@ export default function Sidebar() {
               width: 28,
               height: 28,
               borderRadius: '50%',
-              background: '#EEEDFE',
-              color: '#534AB7',
+              background: 'var(--morning)',
+              color: 'var(--text-2)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -173,7 +156,7 @@ export default function Sidebar() {
               style={{
                 fontSize: 12,
                 fontWeight: 500,
-                color: '#111827',
+                color: 'var(--text)',
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -181,8 +164,8 @@ export default function Sidebar() {
             >
               {name}
             </div>
-            <div style={{ fontSize: 10, color: '#9CA3AF' }}>
-              Day {dayNumber} of your journey
+            <div style={{ fontSize: 10, color: 'var(--text-3)' }}>
+              Day {dayNumber}
             </div>
           </div>
         </div>

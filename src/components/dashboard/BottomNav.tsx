@@ -22,8 +22,8 @@ export default function BottomNav() {
         bottom: 0,
         left: 0,
         right: 0,
-        background: '#fff',
-        borderTop: '0.5px solid #E5E3FF',
+        background: 'var(--surface)',
+        borderTop: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-around',
@@ -44,16 +44,16 @@ export default function BottomNav() {
               flexDirection: 'column',
               alignItems: 'center',
               gap: 3,
-              padding: '4px 12px',
+              padding: '4px 14px',
               borderRadius: 10,
               border: 'none',
               background: 'transparent',
-              color: isActive ? '#534AB7' : '#9CA3AF',
+              color: isActive ? 'var(--text)' : 'var(--text-3)',
               cursor: 'pointer',
             }}
           >
             <Icon size={20} />
-            <span style={{ fontSize: 10, fontWeight: isActive ? 500 : 400 }}>{label}</span>
+            <span style={{ fontSize: 10, fontWeight: isActive ? 600 : 400 }}>{label}</span>
           </button>
         )
       })}

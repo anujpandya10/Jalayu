@@ -20,12 +20,13 @@ export default function SignupPage() {
     width: '100%',
     padding: '11px 14px',
     borderRadius: 10,
-    border: `1px solid ${focusedField === id ? '#534AB7' : '#E5E3FF'}`,
-    background: '#FAFAFA',
+    border: `1px solid ${focusedField === id ? 'var(--accent)' : 'var(--border)'}`,
+    background: 'var(--surface-2)',
     fontSize: 13,
-    color: '#111827',
+    color: 'var(--text)',
     outline: 'none',
     transition: 'border-color 0.15s',
+    fontFamily: 'inherit',
   })
 
   const handleSignup = async (e: React.FormEvent) => {
@@ -62,38 +63,49 @@ export default function SignupPage() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px 16px',
-        background: 'linear-gradient(135deg, #F5F4FF 0%, #EEF2FF 100%)',
+        background: 'var(--bg)',
       }}
     >
       <Toaster position="top-center" toastOptions={{ style: { borderRadius: 10, fontSize: 13 } }} />
 
-      <div style={{ width: '100%', maxWidth: 400 }}>
-        {/* Logo */}
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        {/* Wordmark */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div
+          <h1
             style={{
-              width: 56, height: 56, borderRadius: 16, background: '#534AB7',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              margin: '0 auto 12px', fontSize: 22, color: '#fff',
+              fontSize: 26,
+              fontWeight: 600,
+              color: 'var(--text)',
+              margin: '0 0 4px',
+              letterSpacing: '-0.02em',
             }}
           >
-            ✦
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 600, color: '#26215C', margin: 0 }}>Jalayu</h1>
+            Jalayu
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+            Your morning companion
+          </p>
         </div>
 
         {/* Card */}
-        <div style={{ background: '#fff', borderRadius: 20, padding: 28, border: '0.5px solid #E5E3FF' }}>
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', marginBottom: 4, marginTop: 0 }}>
+        <div
+          style={{
+            background: 'var(--surface)',
+            borderRadius: 16,
+            padding: 28,
+            border: '1px solid var(--border)',
+          }}
+        >
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)', marginBottom: 4, marginTop: 0 }}>
             Begin your journey
           </h2>
-          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 20, marginTop: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 20, marginTop: 0 }}>
             This will be the most personal account you&apos;ve ever made
           </p>
 
           <form onSubmit={handleSignup}>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>
                 What should Jalayu call you?
               </label>
               <input
@@ -110,7 +122,7 @@ export default function SignupPage() {
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>
                 Email
               </label>
               <input
@@ -127,7 +139,7 @@ export default function SignupPage() {
             </div>
 
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>
                 Password
               </label>
               <div style={{ position: 'relative' }}>
@@ -148,7 +160,7 @@ export default function SignupPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   style={{
                     position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF',
+                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)',
                     display: 'flex', alignItems: 'center',
                   }}
                 >
@@ -162,8 +174,8 @@ export default function SignupPage() {
               disabled={loading}
               style={{
                 width: '100%', padding: '12px',
-                background: loading ? '#9b94d4' : '#534AB7',
-                color: '#fff', border: 'none', borderRadius: 10,
+                background: loading ? 'var(--border-2)' : 'var(--accent)',
+                color: 'var(--accent-fg)', border: 'none', borderRadius: 10,
                 fontSize: 13, fontWeight: 500,
                 cursor: loading ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -178,19 +190,21 @@ export default function SignupPage() {
           <div
             style={{
               display: 'flex', alignItems: 'flex-start', gap: 8,
-              background: '#EAF3DE', borderRadius: 8, padding: '9px 11px',
+              background: 'var(--success-bg)', borderRadius: 8, padding: '9px 11px',
               marginTop: 14,
             }}
           >
-            <ShieldCheck size={13} color="#27500A" style={{ marginTop: 1, flexShrink: 0 }} />
-            <p style={{ fontSize: 11, color: '#27500A', margin: 0, lineHeight: 1.5 }}>
+            <ShieldCheck size={13} color="var(--success-text)" style={{ marginTop: 1, flexShrink: 0 }} />
+            <p style={{ fontSize: 11, color: 'var(--success-text)', margin: 0, lineHeight: 1.5 }}>
               Your data belongs to you. Always private. Never sold.
             </p>
           </div>
 
-          <p style={{ textAlign: 'center', fontSize: 13, color: '#6b7280', marginTop: 14, marginBottom: 0 }}>
+          <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-2)', marginTop: 14, marginBottom: 0 }}>
             Already have an account?{' '}
-            <Link href="/login" style={{ color: '#534AB7', fontWeight: 500 }}>Sign in</Link>
+            <Link href="/login" style={{ color: 'var(--text)', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: 3 }}>
+              Sign in
+            </Link>
           </p>
         </div>
       </div>

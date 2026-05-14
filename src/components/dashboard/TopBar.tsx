@@ -1,17 +1,14 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Bell, Settings, Menu, X } from 'lucide-react'
+import { Bell, Menu, X } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import { getGreeting, getDisplayName, formatDate, getDayNumber } from '@/lib/utils'
 import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
 
 export default function TopBar() {
-  const { profile, setShowChatPanel, sidebarView, setSidebarView } = useStore()
+  const { setShowChatPanel, sidebarView, setSidebarView } = useStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
-  const name = getDisplayName(profile)
-  const dayNumber = profile ? getDayNumber(profile.created_at) : 1
 
   useEffect(() => {
     if (!menuOpen) return
@@ -25,10 +22,10 @@ export default function TopBar() {
   return (
     <div
       style={{
-        background: '#fff',
-        borderBottom: '0.5px solid #E5E3FF',
-        padding: '10px 16px',
-        height: 56,
+        background: 'var(--bg)',
+        borderBottom: '1px solid var(--border)',
+        padding: '0 16px',
+        height: 52,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -38,16 +35,48 @@ export default function TopBar() {
         flexShrink: 0,
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
+      {/* Wordmark */}
+      <span
+        style={{
+          fontSize: 15,
+          fontWeight: 600,
+          color: 'var(--text)',
+          letterSpacing: '-0.01em',
+        }}
+      >
+        Jalayu
+      </span>
+
+      {/* Right: chat + hamburger */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <button
+          type="button"
+          onClick={() => setShowChatPanel(true)}
+          style={{
+            width: 32,
+            height: 32,
+            background: 'transparent',
+            border: 'none',
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+          title="Open chat"
+        >
+          <Bell size={16} color="var(--text-3)" />
+        </button>
+
+        <div ref={menuRef} style={{ position: 'relative' }}>
           <button
             type="button"
             onClick={() => setMenuOpen((o) => !o)}
             style={{
               width: 32,
               height: 32,
-              background: '#F8F7FF',
-              border: '0.5px solid #E5E3FF',
+              background: 'transparent',
+              border: 'none',
               borderRadius: 8,
               display: 'flex',
               alignItems: 'center',
@@ -57,22 +86,23 @@ export default function TopBar() {
             aria-expanded={menuOpen}
             aria-label="Open navigation"
           >
-            {menuOpen ? <X size={16} color="#534AB7" /> : <Menu size={16} color="#534AB7" />}
+            {menuOpen ? <X size={18} color="var(--text-2)" /> : <Menu size={18} color="var(--text-2)" />}
           </button>
+
           {menuOpen && (
             <div
               style={{
                 position: 'absolute',
                 top: 40,
-                left: 0,
-                width: 'min(92vw, 260px)',
-                maxHeight: 'min(70vh, 420px)',
+                right: 0,
+                width: 'min(92vw, 240px)',
+                maxHeight: 'min(70vh, 400px)',
                 overflowY: 'auto',
-                background: '#fff',
-                border: '0.5px solid #E5E3FF',
+                background: 'var(--surface)',
+                border: '1px solid var(--border)',
                 borderRadius: 12,
-                boxShadow: '0 8px 24px rgba(83, 74, 183, 0.12)',
-                padding: '8px 6px',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                padding: '6px',
                 zIndex: 50,
               }}
             >
@@ -81,11 +111,11 @@ export default function TopBar() {
                   <div
                     style={{
                       fontSize: 10,
-                      fontWeight: 500,
-                      color: '#9CA3AF',
+                      fontWeight: 600,
+                      color: 'var(--text-3)',
                       textTransform: 'uppercase',
-                      letterSpacing: '0.05em',
-                      padding: '8px 8px 4px',
+                      letterSpacing: '0.07em',
+                      padding: '8px 8px 3px',
                     }}
                   >
                     {section}
@@ -104,19 +134,19 @@ export default function TopBar() {
                           display: 'flex',
                           alignItems: 'center',
                           gap: 8,
-                          padding: '8px 10px',
+                          padding: '7px 10px',
                           borderRadius: 8,
                           fontSize: 13,
                           width: '100%',
-                          background: isActive ? '#EEEDFE' : 'transparent',
-                          color: isActive ? '#26215C' : '#374151',
+                          background: isActive ? 'var(--morning)' : 'transparent',
+                          color: isActive ? 'var(--text)' : 'var(--text-2)',
                           fontWeight: isActive ? 500 : 400,
                           border: 'none',
                           cursor: 'pointer',
                           textAlign: 'left',
                         }}
                       >
-                        <Icon size={16} color={isActive ? '#534AB7' : '#6b7280'} />
+                        <Icon size={15} color={isActive ? 'var(--text)' : 'var(--text-3)'} />
                         <span style={{ flex: 1 }}>{label}</span>
                         {badge === 'dot-red' && (
                           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#EF4444', flexShrink: 0 }} />
@@ -127,8 +157,8 @@ export default function TopBar() {
                         {badge === 'new-pill' && (
                           <span
                             style={{
-                              background: '#EEEDFE',
-                              color: '#534AB7',
+                              background: 'var(--morning)',
+                              color: 'var(--text-2)',
                               fontSize: 9,
                               padding: '1px 6px',
                               borderRadius: 99,
@@ -146,69 +176,6 @@ export default function TopBar() {
             </div>
           )}
         </div>
-        <div style={{ minWidth: 0 }}>
-          <p
-            style={{
-              fontSize: 16,
-              fontWeight: 500,
-              color: '#26215C',
-              lineHeight: 1.3,
-              margin: 0,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {getGreeting()}, {name}
-          </p>
-          <p
-            style={{
-              fontSize: 11,
-              color: '#9CA3AF',
-              margin: 0,
-            }}
-          >
-            {formatDate()} · Day {dayNumber}
-          </p>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <button
-          type="button"
-          onClick={() => setShowChatPanel(true)}
-          style={{
-            width: 28,
-            height: 28,
-            background: '#F8F7FF',
-            border: '0.5px solid #E5E3FF',
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-          title="Notifications"
-        >
-          <Bell size={13} color="#6b7280" />
-        </button>
-        <button
-          type="button"
-          style={{
-            width: 28,
-            height: 28,
-            background: '#F8F7FF',
-            border: '0.5px solid #E5E3FF',
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-          title="Settings"
-        >
-          <Settings size={13} color="#6b7280" />
-        </button>
       </div>
     </div>
   )

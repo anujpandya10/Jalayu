@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [focusedField, setFocusedField] = useState<string | null>(null)
   const router = useRouter()
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -36,19 +37,18 @@ export default function LoginPage() {
     }
   }
 
-  const inputStyle = (focused: boolean): React.CSSProperties => ({
+  const inputStyle = (id: string): React.CSSProperties => ({
     width: '100%',
     padding: '11px 14px',
     borderRadius: 10,
-    border: `1px solid ${focused ? '#534AB7' : '#E5E3FF'}`,
-    background: '#FAFAFA',
+    border: `1px solid ${focusedField === id ? 'var(--accent)' : 'var(--border)'}`,
+    background: 'var(--surface-2)',
     fontSize: 13,
-    color: '#111827',
+    color: 'var(--text)',
     outline: 'none',
     transition: 'border-color 0.15s',
+    fontFamily: 'inherit',
   })
-
-  const [focusedField, setFocusedField] = useState<string | null>(null)
 
   return (
     <div
@@ -58,7 +58,7 @@ export default function LoginPage() {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '24px 16px',
-        background: 'linear-gradient(135deg, #F5F4FF 0%, #EEF2FF 100%)',
+        background: 'var(--bg)',
       }}
     >
       <Toaster
@@ -66,49 +66,44 @@ export default function LoginPage() {
         toastOptions={{ style: { borderRadius: 10, fontSize: 13 } }}
       />
 
-      <div style={{ width: '100%', maxWidth: 400 }}>
-        {/* Logo */}
+      <div style={{ width: '100%', maxWidth: 380 }}>
+        {/* Wordmark */}
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div
+          <h1
             style={{
-              width: 56,
-              height: 56,
-              borderRadius: 16,
-              background: '#534AB7',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 12px',
-              fontSize: 22,
-              color: '#fff',
+              fontSize: 26,
+              fontWeight: 600,
+              color: 'var(--text)',
+              margin: '0 0 4px',
+              letterSpacing: '-0.02em',
             }}
           >
-            ✦
-          </div>
-          <h1 style={{ fontSize: 28, fontWeight: 600, color: '#26215C', margin: 0 }}>
             Jalayu
           </h1>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>
+            Your morning companion
+          </p>
         </div>
 
         {/* Card */}
         <div
           style={{
-            background: '#fff',
-            borderRadius: 20,
+            background: 'var(--surface)',
+            borderRadius: 16,
             padding: 28,
-            border: '0.5px solid #E5E3FF',
+            border: '1px solid var(--border)',
           }}
         >
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', marginBottom: 4, marginTop: 0 }}>
+          <h2 style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)', marginBottom: 4, marginTop: 0 }}>
             Welcome back
           </h2>
-          <p style={{ fontSize: 13, color: '#6b7280', marginBottom: 20, marginTop: 0 }}>
+          <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 20, marginTop: 0 }}>
             Sign in to continue your journey
           </p>
 
           <form onSubmit={handleLogin}>
             <div style={{ marginBottom: 14 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>
                 Email
               </label>
               <input
@@ -118,14 +113,14 @@ export default function LoginPage() {
                 placeholder="you@example.com"
                 required
                 autoComplete="email"
-                style={inputStyle(focusedField === 'email')}
+                style={inputStyle('email')}
                 onFocus={() => setFocusedField('email')}
                 onBlur={() => setFocusedField(null)}
               />
             </div>
 
             <div style={{ marginBottom: 20 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#374151', marginBottom: 6 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: 'var(--text-2)', marginBottom: 6 }}>
                 Password
               </label>
               <div style={{ position: 'relative' }}>
@@ -136,7 +131,7 @@ export default function LoginPage() {
                   placeholder="Your password"
                   required
                   autoComplete="current-password"
-                  style={{ ...inputStyle(focusedField === 'password'), paddingRight: 40 }}
+                  style={{ ...inputStyle('password'), paddingRight: 40 }}
                   onFocus={() => setFocusedField('password')}
                   onBlur={() => setFocusedField(null)}
                 />
@@ -145,7 +140,7 @@ export default function LoginPage() {
                   onClick={() => setShowPassword(!showPassword)}
                   style={{
                     position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF',
+                    background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)',
                     display: 'flex', alignItems: 'center',
                   }}
                 >
@@ -160,8 +155,8 @@ export default function LoginPage() {
               style={{
                 width: '100%',
                 padding: '12px',
-                background: loading ? '#9b94d4' : '#534AB7',
-                color: '#fff',
+                background: loading ? 'var(--border-2)' : 'var(--accent)',
+                color: 'var(--accent-fg)',
                 border: 'none',
                 borderRadius: 10,
                 fontSize: 13,
@@ -175,13 +170,13 @@ export default function LoginPage() {
               }}
             >
               {loading && <Loader2 size={14} className="animate-spin" />}
-              Sign in to Jalayu
+              Sign in
             </button>
           </form>
 
-          <p style={{ textAlign: 'center', fontSize: 13, color: '#6b7280', marginTop: 16, marginBottom: 0 }}>
+          <p style={{ textAlign: 'center', fontSize: 13, color: 'var(--text-2)', marginTop: 16, marginBottom: 0 }}>
             New here?{' '}
-            <Link href="/signup" style={{ color: '#534AB7', fontWeight: 500 }}>
+            <Link href="/signup" style={{ color: 'var(--text)', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: 3 }}>
               Create your account
             </Link>
           </p>

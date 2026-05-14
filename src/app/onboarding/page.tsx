@@ -118,7 +118,7 @@ export default function OnboardingPage() {
   return (
     <div
       className="min-h-screen flex flex-col"
-      style={{ background: 'linear-gradient(180deg, #F5F4FF 0%, #F8F7FF 100%)' }}
+      style={{ background: 'var(--bg)' }}
     >
       <Toaster
         position="top-center"
@@ -127,10 +127,10 @@ export default function OnboardingPage() {
 
       {/* Progress bar */}
       {step > 0 && (
-        <div className="fixed top-0 left-0 right-0 z-10 h-1" style={{ background: '#E5E3FF' }}>
+        <div className="fixed top-0 left-0 right-0 z-10 h-1" style={{ background: 'var(--border)' }}>
           <motion.div
             className="h-full"
-            style={{ background: '#534AB7' }}
+            style={{ background: 'var(--accent)' }}
             initial={{ width: 0 }}
             animate={{ width: `${(step / (TOTAL_STEPS - 1)) * 100}%` }}
             transition={{ type: 'spring', stiffness: 120, damping: 20 }}
@@ -143,7 +143,7 @@ export default function OnboardingPage() {
         <button
           onClick={prevStep}
           className="fixed top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all"
-          style={{ color: '#534AB7', background: '#EEEDFE' }}
+          style={{ color: 'var(--accent)', background: 'var(--morning)' }}
         >
           <ChevronLeft size={14} />
           Back
@@ -166,19 +166,19 @@ export default function OnboardingPage() {
                 <div className="text-center">
                   <div
                     className="inline-flex items-center justify-center w-20 h-20 rounded-3xl mb-6 text-3xl"
-                    style={{ background: '#534AB7', color: '#fff' }}
+                    style={{ background: 'var(--accent)', color: 'var(--surface)' }}
                   >
                     ✦
                   </div>
                   <h1
                     className="text-3xl font-bold mb-3 leading-tight"
-                    style={{ color: '#111827' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Hello. You made it here.
                   </h1>
                   <p
                     className="text-base leading-relaxed mb-8 max-w-sm mx-auto"
-                    style={{ color: '#6b7280' }}
+                    style={{ color: 'var(--text-2)' }}
                   >
                     This is not a signup form. This is the beginning of something
                     that will actually change your life.
@@ -186,7 +186,7 @@ export default function OnboardingPage() {
                   <button
                     onClick={nextStep}
                     className="px-8 py-4 rounded-2xl font-semibold text-base transition-all"
-                    style={{ background: '#534AB7', color: '#fff' }}
+                    style={{ background: 'var(--accent)', color: 'var(--surface)' }}
                   >
                     Let&apos;s begin →
                   </button>
@@ -199,11 +199,11 @@ export default function OnboardingPage() {
                   <AiBubble text="First, help me understand the shape of your days. What kind of work do you mostly do?" />
                   <h2
                     className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: '#111827' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     How do you spend your days?
                   </h2>
-                  <p className="text-sm mb-5" style={{ color: '#6b7280' }}>
+                  <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
                     Choose the one that fits best
                   </p>
                   <div className="grid grid-cols-2 gap-3">
@@ -213,18 +213,18 @@ export default function OnboardingPage() {
                         onClick={() => setWorkType(w.key)}
                         className="p-4 rounded-2xl text-left transition-all"
                         style={{
-                          background: workType === w.key ? '#EEEDFE' : '#fff',
-                          border: `1.5px solid ${workType === w.key ? '#534AB7' : '#E5E3FF'}`,
+                          background: workType === w.key ? 'var(--morning)' : 'var(--surface)',
+                          border: `1.5px solid ${workType === w.key ? 'var(--accent)' : 'var(--border)'}`,
                         }}
                       >
                         <div className="text-xl mb-1">{w.emoji}</div>
                         <div
                           className="text-sm font-semibold leading-tight"
-                          style={{ color: '#111827' }}
+                          style={{ color: 'var(--text)' }}
                         >
                           {w.label}
                         </div>
-                        <div className="text-xs mt-0.5" style={{ color: '#9CA3AF' }}>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
                           {w.sub}
                         </div>
                       </button>
@@ -240,11 +240,11 @@ export default function OnboardingPage() {
                   <AiBubble text="Now be honest with me. What actually gets in your way? Select everything that resonates." />
                   <h2
                     className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: '#111827' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     What holds you back?
                   </h2>
-                  <p className="text-sm mb-5" style={{ color: '#6b7280' }}>
+                  <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
                     Select all that apply — no judgment here
                   </p>
                   <div className="space-y-2.5">
@@ -254,21 +254,21 @@ export default function OnboardingPage() {
                         onClick={() => toggleStruggle(s.key)}
                         className="w-full p-4 rounded-2xl text-left flex items-center gap-3 transition-all"
                         style={{
-                          background: struggles.includes(s.key) ? '#EEEDFE' : '#fff',
-                          border: `1.5px solid ${struggles.includes(s.key) ? '#534AB7' : '#E5E3FF'}`,
+                          background: struggles.includes(s.key) ? 'var(--morning)' : 'var(--surface)',
+                          border: `1.5px solid ${struggles.includes(s.key) ? 'var(--accent)' : 'var(--border)'}`,
                         }}
                       >
                         <span className="text-lg">{s.emoji}</span>
                         <span
                           className="text-sm font-medium"
-                          style={{ color: '#111827' }}
+                          style={{ color: 'var(--text)' }}
                         >
                           {s.label}
                         </span>
                         {struggles.includes(s.key) && (
                           <span
                             className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full"
-                            style={{ background: '#534AB7', color: '#fff' }}
+                            style={{ background: 'var(--accent)', color: 'var(--surface)' }}
                           >
                             ✓
                           </span>
@@ -286,17 +286,17 @@ export default function OnboardingPage() {
                   <AiBubble text="Understanding when you're at your best helps me support you at exactly the right moments." />
                   <h2
                     className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: '#111827' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Shape of your day
                   </h2>
-                  <p className="text-sm mb-5" style={{ color: '#6b7280' }}>
+                  <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
                     All three are needed to understand your rhythm
                   </p>
 
                   <div className="space-y-5">
                     <div>
-                      <p className="text-sm font-semibold mb-2.5" style={{ color: '#374151' }}>
+                      <p className="text-sm font-semibold mb-2.5" style={{ color: 'var(--text)' }}>
                         When do you usually wake up?
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -312,7 +312,7 @@ export default function OnboardingPage() {
                     </div>
 
                     <div>
-                      <p className="text-sm font-semibold mb-2.5" style={{ color: '#374151' }}>
+                      <p className="text-sm font-semibold mb-2.5" style={{ color: 'var(--text)' }}>
                         When are you most productive?
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -328,7 +328,7 @@ export default function OnboardingPage() {
                     </div>
 
                     <div>
-                      <p className="text-sm font-semibold mb-2.5" style={{ color: '#374151' }}>
+                      <p className="text-sm font-semibold mb-2.5" style={{ color: 'var(--text)' }}>
                         How structured is your typical day?
                       </p>
                       <div className="flex flex-wrap gap-2">
@@ -353,11 +353,11 @@ export default function OnboardingPage() {
                   <AiBubble text="Now — what's the one thing you actually want to change? Be specific. This is between you and me." />
                   <h2
                     className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: '#111827' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Your biggest goal right now
                   </h2>
-                  <p className="text-sm mb-4" style={{ color: '#6b7280' }}>
+                  <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
                     What do you most want to achieve or change?
                   </p>
                   <textarea
@@ -368,16 +368,16 @@ export default function OnboardingPage() {
                     className="w-full px-4 py-3 rounded-2xl text-sm resize-none transition-all"
                     style={{
                       border: '1.5px solid #E5E3FF',
-                      background: '#fff',
-                      color: '#111827',
+                      background: 'var(--surface)',
+                      color: 'var(--text)',
                       outline: 'none',
                       lineHeight: '1.6',
                     }}
                     onFocus={(e) => {
-                      e.target.style.borderColor = '#534AB7'
+                      e.target.style.borderColor = 'var(--accent)'
                     }}
                     onBlur={(e) => {
-                      e.target.style.borderColor = '#E5E3FF'
+                      e.target.style.borderColor = 'var(--border)'
                     }}
                   />
                   <div
@@ -399,11 +399,11 @@ export default function OnboardingPage() {
                   <AiBubble text="Last thing. What should I call you? And then we're done — I promise this is worth it." />
                   <h2
                     className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: '#111827' }}
+                    style={{ color: 'var(--text)' }}
                   >
                     Almost there
                   </h2>
-                  <p className="text-sm mb-5" style={{ color: '#6b7280' }}>
+                  <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
                     What name would you like Jalayu to use for you?
                   </p>
                   <input
@@ -414,20 +414,20 @@ export default function OnboardingPage() {
                     className="w-full px-4 py-3 rounded-xl text-sm mb-5 transition-all"
                     style={{
                       border: '1.5px solid #E5E3FF',
-                      background: '#fff',
-                      color: '#111827',
+                      background: 'var(--surface)',
+                      color: 'var(--text)',
                       outline: 'none',
                     }}
-                    onFocus={(e) => (e.target.style.borderColor = '#534AB7')}
-                    onBlur={(e) => (e.target.style.borderColor = '#E5E3FF')}
+                    onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
+                    onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
                   />
 
                   {/* Summary */}
                   <div
                     className="rounded-2xl p-4 mb-6 space-y-2"
-                    style={{ background: '#EEEDFE', border: '1px solid #E5E3FF' }}
+                    style={{ background: 'var(--morning)', border: '1px solid #E5E3FF' }}
                   >
-                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: '#534AB7' }}>
+                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>
                       What Jalayu learned about you
                     </p>
                     <SummaryLine
@@ -462,8 +462,8 @@ export default function OnboardingPage() {
                     disabled={saving || !nickname.trim()}
                     className="w-full py-4 rounded-2xl font-semibold text-base flex items-center justify-center gap-2 transition-all"
                     style={{
-                      background: saving || !nickname.trim() ? '#9b94d4' : '#534AB7',
-                      color: '#fff',
+                      background: saving || !nickname.trim() ? 'var(--border-2)' : 'var(--accent)',
+                      color: 'var(--surface)',
                       cursor: saving || !nickname.trim() ? 'not-allowed' : 'pointer',
                     }}
                   >
@@ -491,7 +491,7 @@ export default function OnboardingPage() {
                   style={{
                     width: i + 1 === step ? 20 : 6,
                     height: 6,
-                    background: i + 1 <= step ? '#534AB7' : '#E5E3FF',
+                    background: i + 1 <= step ? 'var(--accent)' : 'var(--border)',
                   }}
                 />
               ))}
@@ -508,13 +508,19 @@ function AiBubble({ text }: { text: string }) {
     <div className="flex items-start gap-3">
       <div
         className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 text-xs font-bold"
-        style={{ background: '#534AB7', color: '#fff' }}
+        style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
       >
         ✦
       </div>
       <div
-        className="flex-1 px-4 py-3 rounded-2xl rounded-tl-sm text-sm leading-relaxed"
-        style={{ background: '#EEEDFE', color: '#374151' }}
+        className="flex-1 px-4 py-3 rounded-2xl rounded-tl-sm leading-relaxed"
+        style={{
+          background: 'var(--morning)',
+          color: 'var(--text)',
+          fontFamily: 'var(--font-lora), Georgia, serif',
+          fontSize: 14,
+          fontStyle: 'italic',
+        }}
       >
         {text}
       </div>
@@ -536,9 +542,9 @@ function PillButton({
       onClick={onClick}
       className="px-3.5 py-2 rounded-full text-sm font-medium transition-all"
       style={{
-        background: selected ? '#534AB7' : '#fff',
-        color: selected ? '#fff' : '#374151',
-        border: `1.5px solid ${selected ? '#534AB7' : '#E5E3FF'}`,
+        background: selected ? 'var(--accent)' : 'var(--surface)',
+        color: selected ? 'var(--surface)' : 'var(--text)',
+        border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
       }}
     >
       {label}
@@ -560,8 +566,8 @@ function StepFooter({
         disabled={!canAdvance}
         className="w-full py-3.5 rounded-2xl font-semibold text-sm transition-all"
         style={{
-          background: canAdvance ? '#534AB7' : '#E5E3FF',
-          color: canAdvance ? '#fff' : '#9CA3AF',
+          background: canAdvance ? 'var(--accent)' : 'var(--border)',
+          color: canAdvance ? 'var(--surface)' : 'var(--text-3)',
           cursor: canAdvance ? 'pointer' : 'not-allowed',
         }}
       >
@@ -574,10 +580,10 @@ function StepFooter({
 function SummaryLine({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-xs font-medium w-24 shrink-0" style={{ color: '#534AB7' }}>
+      <span className="text-xs font-medium w-24 shrink-0" style={{ color: 'var(--accent)' }}>
         {label}
       </span>
-      <span className="text-xs" style={{ color: '#374151' }}>
+      <span className="text-xs" style={{ color: 'var(--text)' }}>
         {value}
       </span>
     </div>

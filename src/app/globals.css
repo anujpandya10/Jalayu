@@ -1,38 +1,48 @@
 @import "tailwindcss";
 
 :root {
-  --primary: #534AB7;
-  --primary-dark: #26215C;
-  --primary-light: #EEEDFE;
-  --primary-border: #AFA9EC;
-  --background: #F8F7FF;
-  --card: #ffffff;
-  --border: #E5E3FF;
-  --border-secondary: #D1D5DB;
-  --text-primary: #111827;
-  --text-secondary: #6b7280;
-  --text-tertiary: #9CA3AF;
-  --success-bg: #EAF3DE;
-  --success-text: #27500A;
-  --success-border: #97C459;
-  --warning-bg: #FAEEDA;
-  --warning-text: #633806;
-  --warning-border: #FAC775;
-  --error-bg: #FCEBEB;
-  --error-text: #791F1F;
-  --error-border: #F09595;
-  --teal-bg: #E1F5EE;
-  --teal-text: #0F6E56;
-  --blue-bg: #E6F1FB;
-  --blue-text: #0C447C;
-  --pink-bg: #FBEAF0;
-  --pink-text: #993556;
-  --border-radius-lg: 12px;
+  /* ── Warm Paper Palette ── */
+  --bg: #F5F3EE;           /* warm cream — the page */
+  --surface: #FFFFFF;      /* card / panel surfaces */
+  --surface-2: #FAFAF8;    /* input backgrounds */
+  --morning: #F0EDE7;      /* morning note tinted bg */
+
+  --text: #1C1917;         /* warm near-black */
+  --text-2: #78716C;       /* secondary — stone */
+  --text-3: #A8A29E;       /* tertiary — timestamps */
+
+  --border: #E7E5DF;       /* warm tan */
+  --border-2: #D6D3CC;     /* stronger when needed */
+
+  --accent: #292524;       /* CTAs, focus rings */
+  --accent-fg: #FFFFFF;
+
+  /* ── Legacy aliases (keep so existing components don't break) ── */
+  --background: #F5F3EE;
+  --card: #FFFFFF;
+  --text-primary: #1C1917;
+  --text-secondary: #78716C;
+  --text-tertiary: #A8A29E;
+  --border-secondary: #D6D3CC;
+
+  /* ── Semantic colours (kept neutral) ── */
+  --success-bg: #ECFDF5;
+  --success-text: #065F46;
+  --success-border: #A7F3D0;
+  --warning-bg: #FFFBEB;
+  --warning-text: #92400E;
+  --warning-border: #FCD34D;
+  --error-bg: #FEF2F2;
+  --error-text: #991B1B;
+  --error-border: #FECACA;
+
+  --border-radius-lg: 10px;
   --border-radius-xl: 14px;
 }
 
 @theme inline {
   --font-sans: var(--font-inter), system-ui, sans-serif;
+  --font-serif: var(--font-lora), Georgia, serif;
 }
 
 *, *::before, *::after {
@@ -45,8 +55,8 @@ html {
 }
 
 body {
-  background-color: var(--background);
-  color: var(--text-primary);
+  background-color: var(--bg);
+  color: var(--text);
   min-height: 100%;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -54,7 +64,7 @@ body {
 }
 
 *:focus-visible {
-  outline: 2px solid var(--primary);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -85,10 +95,15 @@ input, textarea {
 
 /* Card base style — used everywhere */
 .card {
-  background: var(--card);
-  border: 0.5px solid var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: var(--border-radius-lg);
   padding: 12px 14px;
+}
+
+/* Lora font utility */
+.font-lora {
+  font-family: var(--font-lora), Georgia, serif;
 }
 
 /* Jalayu spinner */
