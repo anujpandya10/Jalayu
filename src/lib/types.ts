@@ -117,13 +117,12 @@ export type SidebarView =
   | 'calendar'
   | 'reminders'
   | 'mind'
+  | 'reflect'
   | 'progress'
   | 'wellness'
   | 'learning'
   | 'memory'
   | 'people'
   | 'widgets'
-
-export type BottomTab = 'home' | 'tasks' | 'memory' | 'reflect'
 
 export type JourneyView = 'day1' | 'day2' | 'day7' | 'day30'

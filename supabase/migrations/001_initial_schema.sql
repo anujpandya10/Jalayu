@@ -171,7 +171,7 @@ create table if not exists public.reminders (
   user_id uuid references public.profiles(id) on delete cascade not null,
   title text not null,
   description text,
-  remind_at time not null,
+  remind_at timestamptz not null default now(),
   days_of_week text[],
   is_active boolean not null default true,
   last_sent timestamptz,

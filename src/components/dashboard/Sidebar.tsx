@@ -1,56 +1,9 @@
 'use client'
 
-import {
-  LayoutDashboard,
-  Calendar,
-  Bell,
-  Brain,
-  TrendingUp,
-  Heart,
-  BookOpen,
-  History,
-  Users,
-  Puzzle,
-  Search,
-} from 'lucide-react'
+import { Search } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { getDisplayName, getDayNumber } from '@/lib/utils'
-import type { SidebarView } from '@/lib/types'
-
-interface NavItem {
-  key: SidebarView
-  icon: React.ComponentType<{ size?: number; color?: string }>
-  label: string
-  badge?: 'dot-red' | 'dot-green' | 'new-pill'
-}
-
-const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
-  {
-    section: 'Today',
-    items: [
-      { key: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { key: 'calendar', icon: Calendar, label: 'My day' },
-      { key: 'reminders', icon: Bell, label: 'Reminders', badge: 'dot-red' },
-      { key: 'mind', icon: Brain, label: 'My mind' },
-    ],
-  },
-  {
-    section: 'Grow',
-    items: [
-      { key: 'progress', icon: TrendingUp, label: 'Progress', badge: 'dot-green' },
-      { key: 'wellness', icon: Heart, label: 'Wellness' },
-      { key: 'learning', icon: BookOpen, label: 'Learning' },
-    ],
-  },
-  {
-    section: 'Life',
-    items: [
-      { key: 'memory', icon: History, label: 'Memory' },
-      { key: 'people', icon: Users, label: 'People' },
-      { key: 'widgets', icon: Puzzle, label: 'Widgets', badge: 'new-pill' },
-    ],
-  },
-]
+import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
 
 export default function Sidebar() {
   const { profile, sidebarView, setSidebarView, setShowChatPanel } = useStore()
@@ -70,7 +23,6 @@ export default function Sidebar() {
         flexShrink: 0,
       }}
     >
-      {/* Top: logo + search */}
       <div
         style={{
           padding: '14px 12px',
@@ -82,6 +34,7 @@ export default function Sidebar() {
           <span style={{ fontSize: 15, fontWeight: 500, color: '#534AB7' }}>yu</span>
         </div>
         <button
+          type="button"
           onClick={() => setShowChatPanel(true)}
           style={{
             width: '100%',
@@ -100,7 +53,6 @@ export default function Sidebar() {
         </button>
       </div>
 
-      {/* Nav */}
       <div
         style={{
           flex: 1,
@@ -127,6 +79,7 @@ export default function Sidebar() {
               return (
                 <button
                   key={key}
+                  type="button"
                   onClick={() => setSidebarView(key)}
                   className="sidebar-nav-item"
                   style={{
@@ -142,6 +95,7 @@ export default function Sidebar() {
                     fontWeight: isActive ? 500 : 400,
                     border: 'none',
                     cursor: 'pointer',
+                    boxShadow: isActive ? '0 1px 3px rgba(83, 74, 183, 0.12)' : undefined,
                   }}
                 >
                   <Icon size={15} color={isActive ? '#111827' : '#6b7280'} />
@@ -190,7 +144,6 @@ export default function Sidebar() {
         ))}
       </div>
 
-      {/* Bottom: user info */}
       <div
         style={{
           padding: '10px 8px',

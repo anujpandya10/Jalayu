@@ -1,18 +1,19 @@
 'use client'
 
+import type { ComponentType } from 'react'
 import { Home, CheckSquare, BookOpen, Sparkles } from 'lucide-react'
 import { useStore } from '@/store/useStore'
-import type { BottomTab } from '@/lib/types'
+import type { SidebarView } from '@/lib/types'
 
-const TABS: { key: BottomTab; icon: React.ComponentType<{ size?: number }>; label: string }[] = [
-  { key: 'home', icon: Home, label: 'Home' },
-  { key: 'tasks', icon: CheckSquare, label: 'Tasks' },
-  { key: 'memory', icon: BookOpen, label: 'Memory' },
-  { key: 'reflect', icon: Sparkles, label: 'Reflect' },
+const TABS: { key: string; icon: ComponentType<{ size?: number }>; label: string; view: SidebarView }[] = [
+  { key: 'home', icon: Home, label: 'Home', view: 'dashboard' },
+  { key: 'tasks', icon: CheckSquare, label: 'Tasks', view: 'calendar' },
+  { key: 'memory', icon: BookOpen, label: 'Memory', view: 'memory' },
+  { key: 'reflect', icon: Sparkles, label: 'Reflect', view: 'reflect' },
 ]
 
 export default function BottomNav() {
-  const { activeBottomTab, setActiveBottomTab } = useStore()
+  const { sidebarView, setSidebarView } = useStore()
 
   return (
     <nav
@@ -31,12 +32,13 @@ export default function BottomNav() {
         zIndex: 40,
       }}
     >
-      {TABS.map(({ key, icon: Icon, label }) => {
-        const isActive = activeBottomTab === key
+      {TABS.map(({ key, icon: Icon, label, view }) => {
+        const isActive = sidebarView === view
         return (
           <button
             key={key}
-            onClick={() => setActiveBottomTab(key)}
+            type="button"
+            onClick={() => setSidebarView(view)}
             style={{
               display: 'flex',
               flexDirection: 'column',

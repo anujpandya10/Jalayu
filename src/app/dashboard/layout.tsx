@@ -9,7 +9,7 @@ import Sidebar from '@/components/dashboard/Sidebar'
 import TopBar from '@/components/dashboard/TopBar'
 import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
-import type { Profile, Task, Mood, Note, Reflection, Insight } from '@/lib/types'
+import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder } from '@/lib/types'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -22,6 +22,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setInsights,
     setJourneyView,
     setLoading,
+    setReminders,
+    setMoodsRecent,
+    setTasksRecent,
+    setReflectionsRecent,
   } = useStore()
   const [initialized, setInitialized] = useState(false)
 
@@ -35,15 +39,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (!user) { router.push('/login'); return }
 
       const today = todayString()
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+      const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString()
+      const sixtyDaysAgoIso = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+      const sixtyDaysAgoDate = sixtyDaysAgoIso.split('T')[0]
 
-      const [profileRes, tasksRes, moodRes, reflectionRes, notesRes, insightsRes] = await Promise.all([
+      const [profileRes, tasksRes, moodRes, reflectionRes, notesRes, insightsRes, remindersRes, moodsRecentRes, tasksRecentRes, reflectionsRecentRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('tasks').select('*').eq('user_id', user.id).eq('due_date', today).order('created_at', { ascending: false }),
         supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', `${today}T00:00:00`).lte('created_at', `${today}T23:59:59`).order('created_at', { ascending: false }).limit(1),
         supabase.from('reflections').select('*').eq('user_id', user.id).eq('date', today).single(),
-        supabase.from('notes').select('*').eq('user_id', user.id).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(20),
+        supabase.from('notes').select('*').eq('user_id', user.id).gte('created_at', sixtyDaysAgoIso).order('created_at', { ascending: false }).limit(80),
         supabase.from('insights').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('reminders').select('*').eq('user_id', user.id).order('remind_at', { ascending: true }),
+        supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(60),
+        supabase.from('tasks').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(80),
+        supabase.from('reflections').select('*').eq('user_id', user.id).gte('date', sixtyDaysAgoDate).order('date', { ascending: false }).limit(40),
       ])
 
       if (profileRes.data) {
@@ -68,13 +78,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (reflectionRes.data) setTodayReflection(reflectionRes.data as Reflection)
       if (notesRes.data) setNotes(notesRes.data as Note[])
       if (insightsRes.data) setInsights(insightsRes.data as Insight[])
+      if (remindersRes.data) setReminders(remindersRes.data as Reminder[])
+      if (moodsRecentRes.data) setMoodsRecent(moodsRecentRes.data as Mood[])
+      if (tasksRecentRes.data) setTasksRecent(tasksRecentRes.data as Task[])
+      if (reflectionsRecentRes.data) setReflectionsRecent(reflectionsRecentRes.data as Reflection[])
     } catch (err) {
       console.error('Dashboard load error:', err)
     } finally {
       setLoading(false)
       setInitialized(true)
     }
-  }, [router, setProfile, setTasks, setTodayMood, setNotes, setTodayReflection, setInsights, setJourneyView, setLoading])
+  }, [router, setProfile, setTasks, setTodayMood, setNotes, setTodayReflection, setInsights, setJourneyView, setLoading, setReminders, setMoodsRecent, setTasksRecent, setReflectionsRecent])
 
   useEffect(() => {
     loadData()
