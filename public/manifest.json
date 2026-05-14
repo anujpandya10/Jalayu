@@ -1,0 +1,19 @@
+{
+  "name": "Jalayu — Your Personal Life OS",
+  "short_name": "Jalayu",
+  "description": "The one tool that moves through life with you",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F8F7FF",
+  "theme_color": "#534AB7",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ],
+  "categories": ["productivity", "lifestyle"],
+  "lang": "en"
+}
