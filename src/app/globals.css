@@ -1,40 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  /* ── Deep Space Palette ── */
-  --bg: #060A12;
-  --surface: #0C1220;
-  --surface-2: #111827;
-  --morning: rgba(99,102,241,0.07);
+  /* ── Warm Paper Palette ── */
+  --bg: #F5F3EE;           /* warm cream — the "paper" */
+  --surface: #FFFFFF;
+  --surface-2: #FAFAF8;    /* slightly warm white for cards / inputs */
+  --morning: #F0EDE7;      /* tinted warm block bg */
 
-  --text: #E4ECFF;
-  --text-2: #8BA3D4;
-  --text-3: #607AAF;
+  --text: #1C1917;         /* warm near-black */
+  --text-2: #78716C;       /* warm stone for secondary */
+  --text-3: #A8A29E;       /* tertiary, timestamps etc. */
 
-  --border: rgba(255,255,255,0.06);
-  --border-2: rgba(255,255,255,0.12);
+  --border: #E7E5DF;       /* warm tan border */
+  --border-2: #D6D3CC;     /* stronger border when needed */
 
-  --accent: #6366F1;
+  --accent: #292524;       /* dark warm brown — CTAs, focus */
   --accent-fg: #FFFFFF;
 
   /* ── Legacy aliases (keep so existing components don't break) ── */
-  --background: #060A12;
-  --card: #0C1220;
-  --text-primary: #E4ECFF;
-  --text-secondary: #8BA3D4;
-  --text-tertiary: #607AAF;
-  --border-secondary: rgba(255,255,255,0.12);
+  --background: #F5F3EE;
+  --card: #FFFFFF;
+  --text-primary: #1C1917;
+  --text-secondary: #78716C;
+  --text-tertiary: #A8A29E;
+  --border-secondary: #D6D3CC;
 
   /* ── Semantic colours ── */
-  --success-bg: rgba(16,185,129,0.1);
-  --success-text: #34D399;
-  --success-border: rgba(16,185,129,0.2);
-  --warning-bg: rgba(245,158,11,0.08);
-  --warning-text: #FCD34D;
-  --warning-border: rgba(245,158,11,0.2);
-  --error-bg: rgba(239,68,68,0.08);
-  --error-text: #FCA5A5;
-  --error-border: rgba(239,68,68,0.2);
+  --success-bg: rgba(22,163,74,0.08);
+  --success-text: #15803D;
+  --success-border: rgba(22,163,74,0.15);
+  --warning-bg: rgba(217,119,6,0.08);
+  --warning-text: #92400E;
+  --warning-border: rgba(217,119,6,0.15);
+  --error-bg: rgba(220,38,38,0.06);
+  --error-text: #B91C1C;
+  --error-border: rgba(220,38,38,0.12);
 
   --border-radius-lg: 10px;
   --border-radius-xl: 14px;
@@ -91,7 +91,7 @@ button {
 
 input, textarea {
   font-family: inherit;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 ::placeholder {
@@ -105,16 +105,12 @@ input, textarea {
   border: 1px solid var(--border);
   border-radius: var(--border-radius-lg);
   padding: 12px 14px;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
 }
 
-/* Glass card utility */
+/* Glass card utility (warm paper version) */
 .glass-card {
-  background: rgba(255,255,255,0.03);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255,255,255,0.07);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--border-radius-lg);
 }
 

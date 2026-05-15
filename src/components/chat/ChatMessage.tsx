@@ -25,7 +25,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           border: isUser ? 'none' : '1px solid var(--border)',
           fontSize: 13,
           lineHeight: 1.6,
-          boxShadow: isUser ? '0 0 12px rgba(99,102,241,0.25)' : 'none',
+          boxShadow: isUser ? '0 2px 8px rgba(28,25,23,0.12)' : 'none',
         }}
       >
         {message.content}

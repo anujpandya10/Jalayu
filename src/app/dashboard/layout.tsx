@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { todayString, getDayNumber, getJourneyView } from '@/lib/utils'
-import Sidebar from '@/components/dashboard/Sidebar'
 import TopBar from '@/components/dashboard/TopBar'
 import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
@@ -137,21 +136,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         overflow: 'hidden',
       }}
     >
-      {/* Desktop sidebar — hidden on mobile */}
-      <div
-        style={{
-          display: 'none',
-          position: 'sticky',
-          top: 0,
-          height: '100vh',
-          flexShrink: 0,
-        }}
-        className="dashboard-sidebar"
-      >
-        <Sidebar />
-      </div>
-
-      {/* Main column */}
+      {/* Main column — full width, no persistent sidebar */}
       <div
         style={{
           flex: 1,
@@ -161,8 +146,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           minWidth: 0,
         }}
       >
-        {/* TopBar — visible on mobile */}
-        <div className="dashboard-topbar">
+        {/* TopBar — visible on all screen sizes */}
+        <div>
           <TopBar />
         </div>
 
@@ -198,14 +183,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       <style>{`
         @media (min-width: 768px) {
-          .dashboard-sidebar { display: flex !important; }
-          .dashboard-topbar { display: none !important; }
           .dashboard-bottomnav { display: none !important; }
           main { padding-bottom: 0 !important; }
         }
         @media (max-width: 767px) {
-          .dashboard-sidebar { display: none !important; }
-          .dashboard-topbar { display: block !important; }
           .dashboard-bottomnav { display: block !important; }
         }
       `}</style>

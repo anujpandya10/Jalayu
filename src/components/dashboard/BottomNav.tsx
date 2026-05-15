@@ -1,7 +1,7 @@
 'use client'
 
 import type { ComponentType } from 'react'
-import { Home, CheckSquare, BookOpen, Brain } from 'lucide-react'
+import { Home, CheckSquare, BookOpen, Moon } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { SidebarView } from '@/lib/types'
 
@@ -9,7 +9,7 @@ const TABS: { key: string; icon: ComponentType<{ size?: number }>; label: string
   { key: 'home', icon: Home, label: 'Home', view: 'dashboard' },
   { key: 'today', icon: CheckSquare, label: 'Today', view: 'calendar' },
   { key: 'memory', icon: BookOpen, label: 'Memory', view: 'memory' },
-  { key: 'intelligence', icon: Brain, label: 'Intelligence', view: 'insights' },
+  { key: 'reflect', icon: Moon, label: 'Reflect', view: 'reflect' },
 ]
 
 export default function BottomNav() {
@@ -22,7 +22,7 @@ export default function BottomNav() {
         bottom: 0,
         left: 0,
         right: 0,
-        background: 'rgba(6,10,18,0.95)',
+        background: 'rgba(245,243,238,0.96)',
         backdropFilter: 'blur(16px)',
         WebkitBackdropFilter: 'blur(16px)',
         borderTop: '1px solid var(--border)',
@@ -52,7 +52,7 @@ export default function BottomNav() {
               background: 'transparent',
               color: isActive ? 'var(--accent)' : 'var(--text-3)',
               cursor: 'pointer',
-              filter: isActive ? 'drop-shadow(0 0 6px rgba(99,102,241,0.7))' : 'none',
+              filter: 'none',
               transition: 'color 0.2s, filter 0.2s',
             }}
           >

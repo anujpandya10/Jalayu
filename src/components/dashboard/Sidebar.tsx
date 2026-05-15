@@ -95,7 +95,7 @@ export default function Sidebar() {
                     fontWeight: isActive ? 500 : 400,
                     border: 'none',
                     cursor: 'pointer',
-                    boxShadow: isActive ? '0 0 8px rgba(99,102,241,0.15)' : undefined,
+                    boxShadow: 'none',
                   }}
                 >
                   <Icon size={15} color={isActive ? 'var(--text)' : 'var(--text-3)'} />

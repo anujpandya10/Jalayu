@@ -1,12 +1,12 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Bell, Menu, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
 
 export default function TopBar() {
-  const { setShowChatPanel, sidebarView, setSidebarView } = useStore()
+  const { sidebarView, setSidebarView } = useStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -47,27 +47,8 @@ export default function TopBar() {
         Jala<span style={{ color: 'var(--accent)' }}>yu</span>
       </span>
 
-      {/* Right: chat + hamburger */}
+      {/* Right: hamburger menu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <button
-          type="button"
-          onClick={() => setShowChatPanel(true)}
-          style={{
-            width: 32,
-            height: 32,
-            background: 'transparent',
-            border: 'none',
-            borderRadius: 8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-          title="Open chat"
-        >
-          <Bell size={16} color="var(--text-3)" />
-        </button>
-
         <div ref={menuRef} style={{ position: 'relative' }}>
           <button
             type="button"
@@ -98,12 +79,12 @@ export default function TopBar() {
                 width: 'min(92vw, 240px)',
                 maxHeight: 'min(70vh, 400px)',
                 overflowY: 'auto',
-                background: 'rgba(12,18,32,0.95)',
+                background: 'rgba(255,255,255,0.98)',
                 backdropFilter: 'blur(16px)',
                 WebkitBackdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255,255,255,0.08)',
+                border: '1px solid var(--border)',
                 borderRadius: 12,
-                boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+                boxShadow: '0 8px 32px rgba(28,25,23,0.12)',
                 padding: '6px',
                 zIndex: 50,
               }}

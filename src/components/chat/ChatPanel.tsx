@@ -222,7 +222,7 @@ export default function ChatPanel() {
             style={{
               position: 'fixed',
               inset: 0,
-              background: 'rgba(0,0,0,0.15)',
+              background: 'rgba(28,25,23,0.25)',
               zIndex: 50,
             }}
           />
@@ -268,7 +268,7 @@ export default function ChatPanel() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    boxShadow: '0 0 12px rgba(99,102,241,0.4)',
+                    boxShadow: '0 2px 8px rgba(28,25,23,0.15)',
                   }}
                 >
                   <Sparkles size={13} color="#fff" />
@@ -287,7 +287,7 @@ export default function ChatPanel() {
                     padding: '6px 8px',
                     borderRadius: 8,
                     border: explainWhy ? '1px solid var(--accent)' : '1px solid var(--border)',
-                    background: explainWhy ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)',
+                    background: explainWhy ? 'var(--morning)' : 'var(--surface-2)',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
@@ -341,12 +341,12 @@ export default function ChatPanel() {
                       width: 48,
                       height: 48,
                       borderRadius: 14,
-                      background: 'rgba(99,102,241,0.15)',
+                      background: 'var(--morning)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       margin: '0 auto 14px',
-                      boxShadow: '0 0 20px rgba(99,102,241,0.3)',
+                      boxShadow: 'none',
                     }}
                   >
                     <Sparkles size={20} color="var(--accent)" />
@@ -441,7 +441,7 @@ export default function ChatPanel() {
                   height: 36,
                   borderRadius: 10,
                   border: '1px solid var(--border)',
-                  background: listening ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)',
+                  background: listening ? 'var(--morning)' : 'var(--surface-2)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -491,7 +491,7 @@ export default function ChatPanel() {
                   cursor: input.trim() && !streaming ? 'pointer' : 'not-allowed',
                   flexShrink: 0,
                   transition: 'background 0.15s',
-                  boxShadow: input.trim() && !streaming ? '0 0 12px rgba(99,102,241,0.4)' : 'none',
+                  boxShadow: 'none',
                 }}
               >
                 {streaming ? (

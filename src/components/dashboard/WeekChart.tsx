@@ -78,7 +78,7 @@ export default function WeekChart({ tasks, moods, daysSinceSignup }: WeekChartPr
                   width: '100%',
                   height: barHeight,
                   borderRadius: 3,
-                  background: isToday ? 'var(--accent)' : isPast ? 'rgba(99,102,241,0.4)' : 'var(--border-2)',
+                  background: isToday ? 'var(--accent)' : isPast ? 'var(--border-2)' : 'var(--border)',
                   opacity: isFuture ? 0.3 : 1,
                   transition: 'height 0.4s ease',
                   alignSelf: 'flex-end',

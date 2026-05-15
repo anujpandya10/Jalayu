@@ -108,7 +108,7 @@ export default function InsightsView({ insights }: InsightsViewProps) {
               width: 56,
               height: 56,
               borderRadius: '50%',
-              background: 'rgba(99,102,241,0.08)',
+              background: 'var(--morning)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -132,7 +132,7 @@ export default function InsightsView({ insights }: InsightsViewProps) {
             <div
               style={{
                 background: 'var(--morning)',
-                border: '1px solid rgba(99,102,241,0.2)',
+                border: '1px solid var(--border)',
                 borderRadius: 14,
                 padding: '20px 20px',
                 marginBottom: 14,
