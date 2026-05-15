@@ -19,6 +19,8 @@ import PeopleView from '@/components/dashboard/views/PeopleView'
 import WidgetsView from '@/components/dashboard/views/WidgetsView'
 import MeetingsView from '@/components/dashboard/views/MeetingsView'
 import InsightsView from '@/components/dashboard/views/InsightsView'
+import HealthView from '@/components/dashboard/views/HealthView'
+import UnifiedCalendarView from '@/components/dashboard/views/UnifiedCalendarView'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
 
 async function getSupabase() {
@@ -40,6 +42,10 @@ export default function DashboardPage() {
     tasksRecent,
     reflectionsRecent,
     insights,
+    healthProfile,
+    medications,
+    healthAppointments,
+    medicalRecords,
     setTodayMood,
     setMoodsRecent,
     addTask,
@@ -128,7 +134,7 @@ export default function DashboardPage() {
   )
 
   const handleAddTask = useCallback(
-    async (title: string) => {
+    async (title: string, date?: string, eventType?: string) => {
       const supabase = await getSupabase()
       const {
         data: { user },
@@ -139,14 +145,15 @@ export default function DashboardPage() {
         .insert({
           user_id: user.id,
           title,
-          due_date: todayString(),
+          due_date: date || todayString(),
           priority: 'medium',
+          event_type: eventType || 'task',
         })
         .select()
         .single()
       if (!error && data) {
         addTask(data as Task)
-        toast.success('Task added')
+        toast.success('Added ✦')
       }
     },
     [addTask],
@@ -302,9 +309,9 @@ export default function DashboardPage() {
         )
       case 'calendar':
         return (
-          <MyDayView
-            profile={profile}
-            tasks={tasks}
+          <UnifiedCalendarView
+            tasks={[...tasks, ...tasksRecent]}
+            reminders={reminders}
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
           />
@@ -356,6 +363,15 @@ export default function DashboardPage() {
         return <WidgetsView />
       case 'insights':
         return <InsightsView insights={insights} />
+      case 'health':
+        return (
+          <HealthView
+            healthProfile={healthProfile}
+            medications={medications}
+            appointments={healthAppointments}
+            records={medicalRecords}
+          />
+        )
       default:
         return null
     }

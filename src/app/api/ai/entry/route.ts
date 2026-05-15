@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
+import { langInstruction } from '@/lib/language'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -149,7 +150,9 @@ export async function GET() {
       .filter(Boolean)
       .join('\n')
 
+    const langLine = langInstruction(profile?.preferred_language)
     const prompt = `You are Jalayu. You are ${name}'s personal presence — not a tool, not a chatbot. You are the one they open when they need to feel oriented.
+${langLine}
 
 ${timeDirective}
 

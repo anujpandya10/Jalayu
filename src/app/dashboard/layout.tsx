@@ -9,7 +9,7 @@ import TopBar from '@/components/dashboard/TopBar'
 import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
 import PwaRegister from '@/components/PwaRegister'
-import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder } from '@/lib/types'
+import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -26,6 +26,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setMoodsRecent,
     setTasksRecent,
     setReflectionsRecent,
+    setHealthProfile,
+    setMedications,
+    setHealthAppointments,
+    setMedicalRecords,
   } = useStore()
   const [initialized, setInitialized] = useState(false)
 
@@ -43,7 +47,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       const sixtyDaysAgoIso = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
       const sixtyDaysAgoDate = sixtyDaysAgoIso.split('T')[0]
 
-      const [profileRes, tasksRes, moodRes, reflectionRes, notesRes, insightsRes, remindersRes, moodsRecentRes, tasksRecentRes, reflectionsRecentRes] = await Promise.all([
+      const [profileRes, tasksRes, moodRes, reflectionRes, notesRes, insightsRes, remindersRes, moodsRecentRes, tasksRecentRes, reflectionsRecentRes, healthProfileRes, medsRes, apptRes, recordsRes] = await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase.from('tasks').select('*').eq('user_id', user.id).eq('due_date', today).order('created_at', { ascending: false }),
         supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', `${today}T00:00:00`).lte('created_at', `${today}T23:59:59`).order('created_at', { ascending: false }).limit(1),
@@ -54,6 +58,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(60),
         supabase.from('tasks').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(80),
         supabase.from('reflections').select('*').eq('user_id', user.id).gte('date', sixtyDaysAgoDate).order('date', { ascending: false }).limit(40),
+        supabase.from('health_profiles').select('*').eq('user_id', user.id).single(),
+        supabase.from('medications').select('*').eq('user_id', user.id).order('is_active', { ascending: false }).order('created_at', { ascending: false }),
+        supabase.from('health_appointments').select('*').eq('user_id', user.id).order('appointment_date', { ascending: false }).limit(30),
+        supabase.from('medical_records').select('*').eq('user_id', user.id).order('record_date', { ascending: false }).limit(50),
       ])
 
       if (profileRes.data) {
@@ -82,13 +90,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (moodsRecentRes.data) setMoodsRecent(moodsRecentRes.data as Mood[])
       if (tasksRecentRes.data) setTasksRecent(tasksRecentRes.data as Task[])
       if (reflectionsRecentRes.data) setReflectionsRecent(reflectionsRecentRes.data as Reflection[])
+      if (healthProfileRes.data) setHealthProfile(healthProfileRes.data as HealthProfile)
+      if (medsRes.data) setMedications(medsRes.data as Medication[])
+      if (apptRes.data) setHealthAppointments(apptRes.data as HealthAppointment[])
+      if (recordsRes.data) setMedicalRecords(recordsRes.data as MedicalRecord[])
     } catch (err) {
       console.error('Dashboard load error:', err)
     } finally {
       setLoading(false)
       setInitialized(true)
     }
-  }, [router, setProfile, setTasks, setTodayMood, setNotes, setTodayReflection, setInsights, setJourneyView, setLoading, setReminders, setMoodsRecent, setTasksRecent, setReflectionsRecent])
+  }, [router, setProfile, setTasks, setTodayMood, setNotes, setTodayReflection, setInsights, setJourneyView, setLoading, setReminders, setMoodsRecent, setTasksRecent, setReflectionsRecent, setHealthProfile, setMedications, setHealthAppointments, setMedicalRecords])
 
   useEffect(() => {
     loadData()
@@ -113,7 +125,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               color: 'var(--text)',
               letterSpacing: '-0.02em',
               marginBottom: 20,
-              textShadow: '0 0 30px rgba(99,102,241,0.4)',
+              textShadow: 'none',
             }}
           >
             Jala<span style={{ color: 'var(--accent)' }}>yu</span>

@@ -12,6 +12,7 @@ import {
   Mic2,
   Brain,
   Bell,
+  Stethoscope,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -35,6 +36,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
   {
     section: 'More',
     items: [
+      { key: 'health', icon: Stethoscope, label: 'Health' },
       { key: 'progress', icon: TrendingUp, label: 'Progress' },
       { key: 'wellness', icon: Heart, label: 'Wellness' },
       { key: 'meetings', icon: Mic2, label: 'Meetings' },

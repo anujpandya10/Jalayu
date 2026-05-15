@@ -12,6 +12,10 @@ import type {
   SidebarView,
   JourneyView,
   Reminder,
+  HealthProfile,
+  Medication,
+  HealthAppointment,
+  MedicalRecord,
 } from '@/lib/types'
 
 interface JalayuStore {
@@ -26,6 +30,11 @@ interface JalayuStore {
   moodsRecent: Mood[]
   tasksRecent: Task[]
   reflectionsRecent: Reflection[]
+  // Health
+  healthProfile: HealthProfile | null
+  medications: Medication[]
+  healthAppointments: HealthAppointment[]
+  medicalRecords: MedicalRecord[]
 
   // UI state
   sidebarView: SidebarView
@@ -50,6 +59,11 @@ interface JalayuStore {
   setMoodsRecent: (m: Mood[]) => void
   setTasksRecent: (t: Task[]) => void
   setReflectionsRecent: (r: Reflection[]) => void
+  // Health actions
+  setHealthProfile: (h: HealthProfile | null) => void
+  setMedications: (m: Medication[]) => void
+  setHealthAppointments: (a: HealthAppointment[]) => void
+  setMedicalRecords: (r: MedicalRecord[]) => void
 
   // UI actions
   setSidebarView: (v: SidebarView) => void
@@ -72,6 +86,10 @@ export const useStore = create<JalayuStore>((set) => ({
   moodsRecent: [],
   tasksRecent: [],
   reflectionsRecent: [],
+  healthProfile: null,
+  medications: [],
+  healthAppointments: [],
+  medicalRecords: [],
   sidebarView: 'dashboard',
   showChatPanel: false,
   chatMessages: [],
@@ -104,6 +122,10 @@ export const useStore = create<JalayuStore>((set) => ({
   setMoodsRecent: (moodsRecent) => set({ moodsRecent }),
   setTasksRecent: (tasksRecent) => set({ tasksRecent }),
   setReflectionsRecent: (reflectionsRecent) => set({ reflectionsRecent }),
+  setHealthProfile: (healthProfile) => set({ healthProfile }),
+  setMedications: (medications) => set({ medications }),
+  setHealthAppointments: (healthAppointments) => set({ healthAppointments }),
+  setMedicalRecords: (medicalRecords) => set({ medicalRecords }),
 
   setSidebarView: (sidebarView) => set({ sidebarView }),
   setShowChatPanel: (showChatPanel) => set({ showChatPanel }),

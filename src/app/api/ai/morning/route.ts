@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
+import { langInstruction } from '@/lib/language'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -48,7 +49,9 @@ export async function GET() {
       ? `${pendingTasks} task${pendingTasks > 1 ? 's' : ''} waiting for today.`
       : 'No tasks set for today yet.'
 
+    const langLine = langInstruction(profile.preferred_language)
     const prompt = `You are Jalayu. Write a short morning note (2–3 sentences, max 65 words) for ${name}.
+${langLine}
 
 Context:
 - Day ${dayNumber} of their journey

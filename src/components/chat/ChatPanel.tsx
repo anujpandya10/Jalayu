@@ -140,7 +140,7 @@ export default function ChatPanel() {
     const rec = new SR()
     rec.continuous = false
     rec.interimResults = false
-    rec.lang = 'en-US'
+    rec.lang = profile?.preferred_language || 'en-US'
     rec.onresult = (ev) => {
       const text = ev.results[0][0].transcript
       setInput((prev) => (prev ? `${prev} ${text}` : text))

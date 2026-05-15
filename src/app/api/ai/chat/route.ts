@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { detectLanguage, langInstruction } from '@/lib/language'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -67,13 +68,15 @@ export async function POST(request: Request) {
     const today = new Date().toISOString().split('T')[0]
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-    const [profileRes, moodsRes, tasksRes, notesRes, factsRes, threadRes] = await Promise.all([
+    const [profileRes, moodsRes, tasksRes, notesRes, factsRes, threadRes, healthRes, medsRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(14),
       supabase.from('tasks').select('*').eq('user_id', user.id).eq('completed', false).gte('due_date', today).limit(10),
       supabase.from('notes').select('content, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
       supabase.from('chat_memory_facts').select('fact').eq('user_id', user.id).order('created_at', { ascending: false }).limit(14),
       supabase.from('chat_messages').select('role, content').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
+      supabase.from('health_profiles').select('insurance_carrier, plan_name, plan_type, conditions, allergies').eq('user_id', user.id).single(),
+      supabase.from('medications').select('name, dosage_mg, frequency, purpose').eq('user_id', user.id).eq('is_active', true).limit(20),
     ])
 
     const profile = profileRes.data
@@ -82,6 +85,13 @@ export async function POST(request: Request) {
     const recentNotes = notesRes.data || []
     const facts = (factsRes.data || []).map((f) => f.fact)
     const thread = (threadRes.data || []).reverse()
+    const healthProfile = healthRes.data
+    const activeMeds = medsRes.data || []
+
+    // Language detection: check last 5 user messages
+    const recentUserMessages = messages.filter((m) => m.role === 'user').slice(-5).map((m) => m.content)
+    const detectedLang = detectLanguage(recentUserMessages) || profile?.preferred_language || 'en'
+    const langLine = langInstruction(detectedLang)
 
     const avgMood = moods.length
       ? (moods.reduce((sum, m) => sum + m.score, 0) / moods.length).toFixed(1)
@@ -98,8 +108,13 @@ export async function POST(request: Request) {
       ? 'When you make a recommendation, add one short sentence starting with "Because " that ties to their data or stated goals.'
       : ''
 
+    const healthBlock = healthProfile || activeMeds.length > 0
+      ? `\nHEALTH CONTEXT:\n${healthProfile ? `- Insurance: ${healthProfile.insurance_carrier || 'not set'} (${healthProfile.plan_type || '—'})\n- Conditions: ${healthProfile.conditions?.join(', ') || 'none listed'}\n- Allergies: ${healthProfile.allergies?.join(', ') || 'none listed'}` : '- No health profile set up yet'}${activeMeds.length > 0 ? `\n- Active medications: ${activeMeds.map((m) => `${m.name}${m.dosage_mg ? ` ${m.dosage_mg}mg` : ''}${m.frequency ? ` (${m.frequency})` : ''}`).join(', ')}` : ''}`
+      : ''
+
     const systemPrompt = `You are Jalayu, a deeply personal AI life companion for ${profile?.nickname || profile?.full_name || 'this person'}.
 
+${langLine}
 TONE: ${toneFromProfile(profile?.work_type ?? null, profile?.struggles ?? null)}
 ${explainRule}
 
@@ -128,6 +143,7 @@ ${recentNotes.length > 0 ? recentNotes.map((n) => `- "${n.content.slice(0, 100)}
 
 RECENT SAVED CHAT (oldest to newest within window):
 ${threadBlock}
+${healthBlock}
 
 YOUR ROLE:
 You are warm, honest, direct, and genuinely care about this person's growth and wellbeing. You are not a generic AI assistant.

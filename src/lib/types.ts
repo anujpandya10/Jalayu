@@ -15,6 +15,7 @@ export interface Profile {
   growth_score: number
   streak_count: number
   last_active: string | null
+  preferred_language: string | null  // BCP-47, e.g. 'en', 'es', 'hi', 'ar'
 }
 
 export interface Mood {
@@ -41,6 +42,7 @@ export interface Task {
   priority: 'low' | 'medium' | 'high'
   skipped_count: number
   category: string | null
+  event_type: string | null  // 'task' | 'event' | 'birthday' | 'meeting'
 }
 
 export interface Note {
@@ -113,6 +115,91 @@ export interface ChatMsg {
   timestamp: string
 }
 
+// ── Health Module ─────────────────────────────────────────────────────────────
+
+export interface HealthProfile {
+  id: string
+  user_id: string
+  created_at: string
+  updated_at: string
+  // Insurance
+  insurance_carrier: string | null
+  plan_name: string | null
+  plan_type: string | null         // 'HMO' | 'PPO' | 'EPO' | 'HDHP' | 'Medicare' | 'Medicaid'
+  member_id: string | null
+  group_number: string | null
+  deductible_cents: number | null
+  deductible_met_cents: number | null
+  out_of_pocket_max_cents: number | null
+  copay_primary_cents: number | null
+  copay_specialist_cents: number | null
+  copay_er_cents: number | null
+  insurance_phone: string | null
+  insurance_website: string | null
+  // Primary care
+  primary_care_name: string | null
+  primary_care_phone: string | null
+  primary_care_address: string | null
+  primary_care_fax: string | null
+  // Medical history
+  conditions: string[] | null
+  allergies: string[] | null
+  blood_type: string | null
+  notes: string | null
+}
+
+export interface Medication {
+  id: string
+  user_id: string
+  created_at: string
+  name: string
+  dosage_mg: number | null
+  frequency: string | null
+  prescriber: string | null
+  purpose: string | null
+  start_date: string | null
+  end_date: string | null      // null = currently active
+  is_active: boolean
+  notes: string | null
+}
+
+export interface MedicationLog {
+  id: string
+  user_id: string
+  medication_id: string
+  taken_at: string
+  dose_mg: number | null
+  notes: string | null
+}
+
+export interface HealthAppointment {
+  id: string
+  user_id: string
+  created_at: string
+  updated_at: string
+  title: string
+  provider_name: string | null
+  appointment_date: string
+  location: string | null
+  reason: string | null
+  notes: string | null
+  follow_up_needed: boolean
+}
+
+export interface MedicalRecord {
+  id: string
+  user_id: string
+  created_at: string
+  title: string
+  record_type: string   // 'lab' | 'imaging' | 'prescription' | 'visit_summary' | 'other'
+  record_date: string | null
+  file_url: string | null
+  file_name: string | null
+  notes: string | null
+}
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
 export type SidebarView =
   | 'dashboard'
   | 'calendar'
@@ -127,5 +214,6 @@ export type SidebarView =
   | 'people'
   | 'widgets'
   | 'insights'
+  | 'health'
 
 export type JourneyView = 'day1' | 'day2' | 'day7' | 'day30'
