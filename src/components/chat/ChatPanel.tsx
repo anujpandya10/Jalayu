@@ -47,6 +47,10 @@ export default function ChatPanel() {
     updateLastChatMessage,
     setChatMessages,
     profile,
+    addTask,
+    addReminder,
+    addNote,
+    setTodayMood,
   } = useStore()
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -249,7 +253,7 @@ export default function ChatPanel() {
 
     let accumulated = ''
     try {
-      // Fire action detection in parallel (insurance add/update, medication add, etc.)
+      // Fire action detection in parallel — handle results to keep store in sync
       const recentCtx = [...chatMessages, userMsg]
         .slice(-8)
         .map((m) => ({ role: m.role, content: m.content.slice(0, 600) }))
@@ -257,7 +261,38 @@ export default function ChatPanel() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text, recentMessages: recentCtx }),
-      }).catch(() => {})
+      })
+        .then((r) => r.json())
+        .then((result: { executed?: Array<{ type: string; data: Record<string, unknown>; message: string }> }) => {
+          for (const action of result.executed ?? []) {
+            if (action.type === 'task_added') {
+              addTask(action.data as never)
+              toast.success('Task added ✦')
+            }
+            if (action.type === 'event_added') {
+              addTask(action.data as never)
+              toast.success('Added to calendar ✦')
+            }
+            if (action.type === 'reminder_added') {
+              addReminder(action.data as never)
+              toast.success('Reminder set ✦')
+            }
+            if (action.type === 'memory_saved') {
+              addNote(action.data as never)
+              toast.success('Saved to memory ✦')
+            }
+            if (action.type === 'mood_logged') {
+              setTodayMood(action.data as never)
+            }
+            if (action.type === 'insurance_saved' || action.type === 'insurance_updated') {
+              toast.success(action.message)
+            }
+            if (action.type === 'medication_saved') {
+              toast.success(action.message)
+            }
+          }
+        })
+        .catch(() => {})
 
       const res = await fetch('/api/ai/chat', {
         method: 'POST',

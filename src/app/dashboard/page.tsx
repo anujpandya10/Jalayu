@@ -128,6 +128,10 @@ export default function DashboardPage() {
           toast.success('Decision tracked ✦')
           addNote(action.data as unknown as Note)
         }
+        if (action.type === 'event_added') {
+          addTask(action.data as unknown as Task)
+          toast.success('Added to calendar ✦')
+        }
       }
     },
     [addTask, setTodayMood, setMoodsRecent, addReminder, addNote, updateTask],
