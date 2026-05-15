@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Menu, X } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
+import JalayuLogo from '@/components/JalayuLogo'
 
 export default function TopBar() {
   const { sidebarView, setSidebarView } = useStore()
@@ -35,17 +36,8 @@ export default function TopBar() {
         flexShrink: 0,
       }}
     >
-      {/* Wordmark */}
-      <span
-        style={{
-          fontSize: 15,
-          fontWeight: 600,
-          color: 'var(--text)',
-          letterSpacing: '-0.01em',
-        }}
-      >
-        Jala<span style={{ color: 'var(--accent)' }}>yu</span>
-      </span>
+      {/* Brand logo */}
+      <JalayuLogo size={22} />
 
       {/* Right: hamburger menu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

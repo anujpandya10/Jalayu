@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Profile, Task, Mood } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 import { getDayNumber } from '@/lib/utils'
+import GalaxyOrb from '@/components/GalaxyOrb'
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -20,91 +21,6 @@ const MOODS = [
 ]
 
 type OrbState = 'idle' | 'listening' | 'speaking'
-
-function LivingOrb({ state }: { state: OrbState }) {
-  return (
-    <div
-      style={{
-        position: 'relative',
-        width: 72,
-        height: 72,
-        margin: '0 auto 28px',
-      }}
-    >
-      {/* Ambient glow */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: -12,
-          borderRadius: '50%',
-          background: state === 'speaking'
-            ? 'radial-gradient(circle, rgba(41,37,36,0.12) 0%, transparent 70%)'
-            : state === 'listening'
-            ? 'radial-gradient(circle, rgba(41,37,36,0.08) 0%, transparent 70%)'
-            : 'radial-gradient(circle, rgba(41,37,36,0.05) 0%, transparent 70%)',
-          animation: state === 'speaking' ? 'orbGlow 2s ease-in-out infinite' : undefined,
-          transition: 'background 0.6s ease',
-        }}
-      />
-      {/* Sonar ring — visible when speaking or listening */}
-      {state !== 'idle' && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: -4,
-            borderRadius: '50%',
-            border: '1.5px solid rgba(41,37,36,0.18)',
-            animation: 'orbSonar 1.8s ease-out infinite',
-          }}
-        />
-      )}
-      {/* Main sphere */}
-      <div
-        style={{
-          position: 'relative',
-          width: 72,
-          height: 72,
-          borderRadius: '50%',
-          background: 'radial-gradient(circle at 38% 35%, #78716C 0%, #44403C 40%, #292524 100%)',
-          boxShadow: state === 'speaking'
-            ? '0 4px 24px rgba(41,37,36,0.35), 0 0 0 2px rgba(41,37,36,0.1)'
-            : '0 4px 16px rgba(41,37,36,0.2)',
-          animation: state === 'speaking' ? 'orbHeartbeat 1.4s ease-in-out infinite' : 'orbBreath 4s ease-in-out infinite',
-          transition: 'box-shadow 0.4s ease',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Globe lines SVG */}
-        <svg
-          viewBox="0 0 72 72"
-          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0.22 }}
-        >
-          {/* Latitude lines */}
-          <ellipse cx="36" cy="36" rx="34" ry="10" fill="none" stroke="#F5F3EE" strokeWidth="0.8" />
-          <ellipse cx="36" cy="36" rx="34" ry="22" fill="none" stroke="#F5F3EE" strokeWidth="0.7" />
-          <ellipse cx="36" cy="20" rx="20" ry="6" fill="none" stroke="#F5F3EE" strokeWidth="0.6" />
-          <ellipse cx="36" cy="52" rx="20" ry="6" fill="none" stroke="#F5F3EE" strokeWidth="0.6" />
-          {/* Longitude lines */}
-          <ellipse cx="36" cy="36" rx="10" ry="34" fill="none" stroke="#F5F3EE" strokeWidth="0.8" />
-          <ellipse cx="36" cy="36" rx="22" ry="34" fill="none" stroke="#F5F3EE" strokeWidth="0.7" />
-        </svg>
-        {/* Specular highlight */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 10,
-            left: 15,
-            width: 18,
-            height: 10,
-            borderRadius: '50%',
-            background: 'rgba(255,255,255,0.2)',
-            transform: 'rotate(-30deg)',
-          }}
-        />
-      </div>
-    </div>
-  )
-}
 
 function Dots() {
   return (
@@ -318,24 +234,9 @@ export default function HomeContent({
         }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
         .letter-fadein { animation: fadein 0.45s ease forwards; }
-        @keyframes orbBreath {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.03); }
-        }
-        @keyframes orbHeartbeat {
-          0%, 100% { transform: scale(1); }
-          14% { transform: scale(1.06); }
-          28% { transform: scale(1); }
-          42% { transform: scale(1.04); }
-          70% { transform: scale(1); }
-        }
-        @keyframes orbSonar {
-          0% { transform: scale(1); opacity: 0.7; }
-          100% { transform: scale(1.6); opacity: 0; }
-        }
-        @keyframes orbGlow {
-          0%, 100% { opacity: 0.6; }
-          50% { opacity: 1; }
+        @keyframes galaxySonar {
+          0% { transform: scale(1); opacity: 0.6; }
+          100% { transform: scale(1.55); opacity: 0; }
         }
       `}</style>
 
@@ -346,8 +247,8 @@ export default function HomeContent({
           padding: '32px 20px 96px',
         }}
       >
-        {/* Living Orb */}
-        <LivingOrb state={orbState} />
+        {/* Galaxy Orb */}
+        <GalaxyOrb state={orbState} size={180} />
 
         {/* Date + Day */}
         <div
