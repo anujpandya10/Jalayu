@@ -29,6 +29,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
       { key: 'calendar', icon: CheckSquare, label: 'Today' },
       { key: 'memory', icon: BookOpen, label: 'Memory' },
       { key: 'reflect', icon: Sparkles, label: 'Reflect' },
+      { key: 'insights', icon: Brain, label: 'Intelligence' },
     ],
   },
   {

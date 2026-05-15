@@ -17,7 +17,7 @@ export async function GET() {
     const hour = now.getHours()
     const timeOfDay = hour < 12 ? 'morning' : hour < 18 ? 'afternoon' : 'evening'
 
-    const [profileRes, tasksRes, todayMoodRes, yesterdayMoodRes, notesRes, threadRes] =
+    const [profileRes, tasksRes, todayMoodRes, yesterdayMoodRes, notesRes, threadRes, freshInsightsRes, sevenDayMoodsRes] =
       await Promise.all([
         supabase.from('profiles').select('*').eq('id', user.id).single(),
         supabase
@@ -53,6 +53,23 @@ export async function GET() {
           .eq('user_id', user.id)
           .order('created_at', { ascending: false })
           .limit(16),
+        // Intelligence layer
+        supabase
+          .from('insights')
+          .select('type, title, content, created_at')
+          .eq('user_id', user.id)
+          .in('type', ['behavioral_mirror', 'goal_momentum', 'energy_debt', 'silence_observer'])
+          .eq('is_read', false)
+          .order('created_at', { ascending: false })
+          .limit(3),
+        // 7-day mood trend
+        supabase
+          .from('moods')
+          .select('score, created_at')
+          .eq('user_id', user.id)
+          .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(7),
       ])
 
     const profile = profileRes.data
@@ -64,6 +81,17 @@ export async function GET() {
     const yesterdayMood = yesterdayMoodRes.data?.[0]?.score ?? null
     const recentNotes = (notesRes.data || []).map((n) => n.content.slice(0, 150))
     const thread = [...(threadRes.data || [])].reverse()
+    const freshInsights = freshInsightsRes.data || []
+    const sevenDayMoods = sevenDayMoodsRes.data || []
+
+    // Consecutive low mood days
+    const moodArr = sevenDayMoods
+    const consecutiveLow = (() => { let n = 0; for (const m of moodArr) { if (m.score <= 2) n++; else break; } return n })()
+
+    // Intelligence signals to inject
+    const intelligenceSignals = freshInsights
+      .map(i => `[${i.type.replace('_', ' ').toUpperCase()}]: ${i.content.split('|||')[0]}`)
+      .join('\n')
     const dayNumber = profile?.created_at
       ? Math.floor((Date.now() - new Date(profile.created_at).getTime()) / 86400000) + 1
       : 1
@@ -112,6 +140,8 @@ export async function GET() {
       recentNotes.length > 0
         ? `Recent notes from memory: "${recentNotes[0]}"${recentNotes[1] ? ` / "${recentNotes[1]}"` : ''}`
         : '',
+      consecutiveLow >= 2 ? `⚠ Energy signal: ${consecutiveLow} consecutive low-mood days` : '',
+      intelligenceSignals ? `Intelligence signals from weekly analysis:\n${intelligenceSignals}` : '',
       threadSummary
         ? `Recent conversation (continue this thread naturally):\n${threadSummary}`
         : 'No prior conversation to reference.',
@@ -133,7 +163,9 @@ Write your opening message. Non-negotiable rules:
 - 2–4 sentences. Warm. Present. Honest.
 - End in a way that opens space — sometimes one question, sometimes just stating what you see and letting them respond.
 - No bullet points. No markdown. No line breaks. Pure conversation.
-- Never be a life coach. Never say "you've got this." Never diagnose. Be the person who's been quietly paying attention.`
+- Never be a life coach. Never say "you've got this." Never diagnose. Be the person who's been quietly paying attention.
+- If intelligence signals are present, weave the most relevant one into your opening naturally — but like you noticed it yourself, not like you're reading a report.
+- If energy debt is signaled, be gentle and acknowledge the weight without dramatizing.`
 
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',

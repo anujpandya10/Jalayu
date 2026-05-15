@@ -5,6 +5,14 @@ import type { Profile, Task, Mood } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 import { getDayNumber } from '@/lib/utils'
 
+function useFocusScore(): number | null {
+  const insights = useStore((s) => s.insights)
+  const fsInsight = insights.find((i) => i.type === 'focus_score')
+  if (!fsInsight) return null
+  const score = parseInt(fsInsight.content.split('|||')[0], 10)
+  return isNaN(score) ? null : score
+}
+
 type Msg = {
   role: 'assistant' | 'user'
   content: string
@@ -159,6 +167,7 @@ function StatusChips({
 }) {
   const dayN = profile ? getDayNumber(profile.created_at) : null
   const pending = tasks.filter((t) => !t.completed).length
+  const focusScore = useFocusScore()
 
   const MOOD_EMOJI: Record<number, string> = {
     1: '😔', 2: '😕', 3: '😐', 4: '🙂', 5: '😊',
@@ -178,6 +187,11 @@ function StatusChips({
     gap: 4,
     whiteSpace: 'nowrap' as const,
   }
+
+  const focusColor = focusScore === null ? 'var(--text-3)'
+    : focusScore >= 75 ? 'var(--success-text)'
+    : focusScore >= 50 ? 'var(--accent)'
+    : 'var(--warning-text)'
 
   return (
     <div
@@ -205,6 +219,12 @@ function StatusChips({
           : <span style={{ color: 'var(--text-3)' }}>—</span>
         }
       </span>
+      {focusScore !== null && (
+        <span style={chipStyle} title="Weekly focus score">
+          <span style={{ color: focusColor, fontWeight: 600 }}>{focusScore}</span>
+          <span style={{ color: 'var(--text-3)' }}>focus</span>
+        </span>
+      )}
     </div>
   )
 }

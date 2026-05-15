@@ -126,5 +126,6 @@ export type SidebarView =
   | 'meetings'
   | 'people'
   | 'widgets'
+  | 'insights'
 
 export type JourneyView = 'day1' | 'day2' | 'day7' | 'day30'

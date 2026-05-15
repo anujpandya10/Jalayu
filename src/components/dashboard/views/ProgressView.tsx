@@ -1,7 +1,8 @@
 'use client'
 
 import { useMemo } from 'react'
-import type { Profile, Mood, Task } from '@/lib/types'
+import { Zap, Eye } from 'lucide-react'
+import type { Profile, Mood, Task, Insight } from '@/lib/types'
 
 function dayKey(d: Date) {
   return d.toISOString().split('T')[0]
@@ -11,10 +12,12 @@ export default function ProgressView({
   profile,
   moodsRecent,
   tasksRecent,
+  insights = [],
 }: {
   profile: Profile | null
   moodsRecent: Mood[]
   tasksRecent: Task[]
+  insights?: Insight[]
 }) {
   const completedLast14 = useMemo(
     () => tasksRecent.filter((t) => t.completed).length,
@@ -90,6 +93,52 @@ export default function ProgressView({
         </div>
         <p style={{ fontSize: 11, color: 'var(--text-2)', margin: '12px 0 0' }}>Missing days simply mean no mood was logged.</p>
       </div>
+
+      {/* Compound Effects & Behavioral Patterns from Intelligence */}
+      {insights.filter((i) => i.type === 'compound_effect' || i.type === 'behavioral_mirror').length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 10px' }}>
+            Intelligence Signals
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {insights
+              .filter((i) => i.type === 'compound_effect' || i.type === 'behavioral_mirror')
+              .slice(0, 2)
+              .map((insight) => (
+                <div
+                  key={insight.id}
+                  className="card"
+                  style={{ padding: '12px 14px' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                    {insight.type === 'compound_effect' ? (
+                      <Zap size={12} color="var(--accent)" />
+                    ) : (
+                      <Eye size={12} color="var(--text-2)" />
+                    )}
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        color: insight.type === 'compound_effect' ? 'var(--accent)' : 'var(--text-2)',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      {insight.type === 'compound_effect' ? 'Compound Effect' : 'Behavioral Pattern'}
+                    </span>
+                  </div>
+                  <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 4px' }}>
+                    {insight.title}
+                  </p>
+                  <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>
+                    {insight.content.includes('|||') ? insight.content.split('|||')[1].trim() : insight.content}
+                  </p>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

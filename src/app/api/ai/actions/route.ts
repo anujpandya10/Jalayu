@@ -65,10 +65,22 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['title_match'],
     },
   },
+  {
+    name: 'track_decision',
+    description: 'Track a significant decision the user has made for future follow-up. Use when user says "I decided", "I\'ve decided to", "my decision is", "going with", "I\'m going to [major life choice]".',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        decision: { type: 'string', description: 'The decision made, stated clearly' },
+        follow_up_days: { type: 'number', description: 'Days until Jalayu should follow up (default: 14)' },
+      },
+      required: ['decision'],
+    },
+  },
 ]
 
 export type ExecutedAction = {
-  type: 'task_added' | 'mood_logged' | 'reminder_added' | 'memory_saved' | 'task_completed'
+  type: 'task_added' | 'mood_logged' | 'reminder_added' | 'memory_saved' | 'task_completed' | 'decision_tracked'
   data: Record<string, unknown>
   message: string
 }
@@ -174,6 +186,29 @@ export async function POST(request: Request) {
           const task = tasks[0]
           const { error } = await supabase.from('tasks').update({ completed: true, completed_at: now.toISOString() }).eq('id', task.id)
           if (!error) executed.push({ type: 'task_completed', data: { ...task, completed: true, completed_at: now.toISOString() } as Record<string, unknown>, message: `Done: "${task.title}"` })
+        }
+      }
+
+      if (block.name === 'track_decision') {
+        const input = block.input as { decision: string; follow_up_days?: number }
+        const followUpDays = input.follow_up_days ?? 14
+        const followUpDate = new Date(now.getTime() + followUpDays * 86400000).toISOString().split('T')[0]
+        const { data, error } = await supabase
+          .from('notes')
+          .insert({
+            user_id: user.id,
+            content: input.decision,
+            type: 'decision',
+            meta: { follow_up_at: followUpDate, outcome: null },
+          })
+          .select()
+          .single()
+        if (!error && data) {
+          executed.push({
+            type: 'decision_tracked',
+            data: data as Record<string, unknown>,
+            message: `Decision tracked — I'll check back in ${followUpDays} days`,
+          })
         }
       }
     }

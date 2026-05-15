@@ -50,7 +50,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', `${today}T00:00:00`).lte('created_at', `${today}T23:59:59`).order('created_at', { ascending: false }).limit(1),
         supabase.from('reflections').select('*').eq('user_id', user.id).eq('date', today).single(),
         supabase.from('notes').select('*').eq('user_id', user.id).gte('created_at', sixtyDaysAgoIso).order('created_at', { ascending: false }).limit(80),
-        supabase.from('insights').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(10),
+        supabase.from('insights').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(60),
         supabase.from('reminders').select('*').eq('user_id', user.id).order('remind_at', { ascending: true }),
         supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(60),
         supabase.from('tasks').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(80),

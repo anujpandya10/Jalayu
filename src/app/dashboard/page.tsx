@@ -18,6 +18,7 @@ import WellnessView from '@/components/dashboard/views/WellnessView'
 import PeopleView from '@/components/dashboard/views/PeopleView'
 import WidgetsView from '@/components/dashboard/views/WidgetsView'
 import MeetingsView from '@/components/dashboard/views/MeetingsView'
+import InsightsView from '@/components/dashboard/views/InsightsView'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
 
 async function getSupabase() {
@@ -38,6 +39,7 @@ export default function DashboardPage() {
     moodsRecent,
     tasksRecent,
     reflectionsRecent,
+    insights,
     setTodayMood,
     setMoodsRecent,
     addTask,
@@ -115,6 +117,10 @@ export default function DashboardPage() {
           const task = action.data as unknown as Task
           updateTask(task.id, { completed: true, completed_at: task.completed_at ?? null })
           toast.success('Task done! ✦')
+        }
+        if (action.type === 'decision_tracked') {
+          toast.success('Decision tracked ✦')
+          addNote(action.data as unknown as Note)
         }
       }
     },
@@ -332,7 +338,7 @@ export default function DashboardPage() {
         return <ReflectView todayReflection={todayReflection} onSave={handleSaveReflection} />
       case 'progress':
         return (
-          <ProgressView profile={profile} moodsRecent={moodsRecent} tasksRecent={tasksRecent} />
+          <ProgressView profile={profile} moodsRecent={moodsRecent} tasksRecent={tasksRecent} insights={insights} />
         )
       case 'wellness':
         return (
@@ -348,6 +354,8 @@ export default function DashboardPage() {
         )
       case 'widgets':
         return <WidgetsView />
+      case 'insights':
+        return <InsightsView insights={insights} />
       default:
         return null
     }
