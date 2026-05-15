@@ -31,8 +31,23 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'add_calendar_event',
+    description: 'Add an event to the calendar. Use when user says "I have an event", "I have a meeting", "put it on my calendar", "schedule", "I have an appointment", "block time for", "add to my calendar". Also use when user describes something happening at a specific date+time that is NOT just a task.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string', description: 'Event title. If the user didn\'t give a title, infer one from context (e.g. "Event" or "Meeting")' },
+        date: { type: 'string', description: 'YYYY-MM-DD date of the event. Resolve relative dates like "next Wednesday" against today\'s date accurately.' },
+        start_time: { type: 'string', description: 'Start time in HH:MM 24h format, e.g. "16:00" for 4 PM. Required if user gives a time.' },
+        end_time: { type: 'string', description: 'End time in HH:MM 24h format if given, e.g. "19:00" for 7 PM.' },
+        event_type: { type: 'string', enum: ['event', 'meeting', 'birthday'], description: 'Type of event — default "event".' },
+      },
+      required: ['title', 'date'],
+    },
+  },
+  {
     name: 'add_reminder',
-    description: 'Set a reminder. Use when user says "remind me", "don\'t let me forget", "alert me".',
+    description: 'Set a reminder alert. Use when user says "remind me", "don\'t let me forget", "alert me" — but NOT for calendar events with a specific date/time (use add_calendar_event for those).',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -142,7 +157,7 @@ const TOOLS: Anthropic.Tool[] = [
 ]
 
 export type ExecutedAction = {
-  type: 'task_added' | 'mood_logged' | 'reminder_added' | 'memory_saved' | 'task_completed' | 'decision_tracked' | 'insurance_saved' | 'insurance_updated' | 'medication_saved'
+  type: 'task_added' | 'mood_logged' | 'reminder_added' | 'memory_saved' | 'task_completed' | 'decision_tracked' | 'insurance_saved' | 'insurance_updated' | 'medication_saved' | 'event_added'
   data: Record<string, unknown>
   message: string
 }
@@ -214,6 +229,12 @@ IMPORTANT for insurance:
 IMPORTANT for medications:
 - Trigger add_medication when user mentions taking a medication in any form.
 
+IMPORTANT for calendar events:
+- Use add_calendar_event (NOT add_reminder) whenever the user mentions having an event, meeting, appointment, or anything happening at a specific date and time.
+- Examples that should trigger add_calendar_event: "I have an event next Wed 4-7", "schedule a meeting Friday at 2", "put dinner on my calendar Saturday", "I have a doctor's appointment Thursday at 3pm"
+- Resolve relative dates accurately: today is ${today}. "Next Wednesday" means the Wednesday of next week.
+- Convert times to 24h: "4 PM" = "16:00", "7 PM" = "19:00", "9 AM" = "09:00"
+
 For other actions (tasks, mood, reminders, memory), only act on explicit requests.
 If the message is purely conversational with no action intent, do NOT call any tools.`,
       messages: contextMessages,
@@ -223,6 +244,54 @@ If the message is purely conversational with no action intent, do NOT call any t
 
     for (const block of response.content) {
       if (block.type !== 'tool_use') continue
+
+      if (block.name === 'add_calendar_event') {
+        const input = block.input as {
+          title: string
+          date: string
+          start_time?: string
+          end_time?: string
+          event_type?: string
+        }
+        // Build a description that includes the time range if both ends given
+        let description: string | null = null
+        if (input.start_time && input.end_time) {
+          // Convert HH:MM to 12h for display
+          const fmt = (t: string) => {
+            const [h, m] = t.split(':').map(Number)
+            const ampm = h >= 12 ? 'PM' : 'AM'
+            const h12 = h % 12 || 12
+            return `${h12}:${String(m).padStart(2, '0')} ${ampm}`
+          }
+          description = `${fmt(input.start_time)} – ${fmt(input.end_time)}`
+        }
+
+        const { data, error } = await supabase
+          .from('tasks')
+          .insert({
+            user_id: user.id,
+            title: input.title,
+            due_date: input.date,
+            due_time: input.start_time || null,
+            description,
+            event_type: input.event_type || 'event',
+            priority: 'medium',
+            completed: false,
+          })
+          .select()
+          .single()
+
+        if (!error && data) {
+          const timeLabel = input.start_time
+            ? ` at ${input.start_time}${input.end_time ? `–${input.end_time}` : ''}`
+            : ''
+          executed.push({
+            type: 'event_added',
+            data: data as Record<string, unknown>,
+            message: `Added to calendar: "${input.title}" on ${input.date}${timeLabel}`,
+          })
+        }
+      }
 
       if (block.name === 'add_task') {
         const input = block.input as { title: string; priority?: string; due_date: string }
