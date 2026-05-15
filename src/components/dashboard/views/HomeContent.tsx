@@ -1,10 +1,27 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { Mic, MicOff } from 'lucide-react'
+import toast from 'react-hot-toast'
 import type { Profile, Task, Mood } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 import { getDayNumber } from '@/lib/utils'
 import GalaxyOrb from '@/components/GalaxyOrb'
+
+declare global {
+  interface Window {
+    SpeechRecognition?: new () => HomeSpeechRec
+    webkitSpeechRecognition?: new () => HomeSpeechRec
+  }
+}
+interface HomeSpeechResultItem { isFinal: boolean; 0: { transcript: string } }
+interface HomeSpeechRec extends EventTarget {
+  continuous: boolean; interimResults: boolean; lang: string
+  start(): void; stop(): void; abort(): void
+  onresult: ((ev: { results: HomeSpeechResultItem[] & { length: number } }) => void) | null
+  onerror: ((ev: { error: string }) => void) | null
+  onend: (() => void) | null
+}
 
 function formatDate(d: Date): string {
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
@@ -68,6 +85,10 @@ export default function HomeContent({
   const [morningNote, setMorningNote] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
   const [noteLoading, setNoteLoading] = useState(true)
+  const [voiceListening, setVoiceListening] = useState(false)
+  const homeRecRef = useRef<HomeSpeechRec | null>(null)
+  const homeVoiceBaseRef = useRef('')
+  const homeFinalRef = useRef('')
   const [input, setInput] = useState('')
   const [submitted, setSubmitted] = useState(false)
   const [userAnswer, setUserAnswer] = useState('')
@@ -84,8 +105,8 @@ export default function HomeContent({
   const pendingTasks = tasks.filter((t) => !t.completed)
   const todayStr = new Date().toISOString().split('T')[0]
 
-  // Orb state: speaking while morning note loads, listening while user types, idle otherwise
-  const orbState: OrbState = noteLoading ? 'speaking' : input.trim() ? 'listening' : 'idle'
+  // Orb state: speaking while morning note loads, listening while mic/typing active, idle otherwise
+  const orbState: OrbState = noteLoading ? 'speaking' : (voiceListening || input.trim()) ? 'listening' : 'idle'
 
   // Load morning note + focus recommendation from cache or API
   useEffect(() => {
@@ -137,6 +158,70 @@ export default function HomeContent({
   useEffect(() => {
     if (reply) replyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [reply])
+
+  const stopHomeVoice = useCallback(() => {
+    homeRecRef.current?.stop()
+    homeRecRef.current = null
+    setVoiceListening(false)
+  }, [])
+
+  const startHomeVoice = useCallback(async () => {
+    if (voiceListening) { stopHomeVoice(); return }
+
+    const SR = typeof window !== 'undefined'
+      ? (window.SpeechRecognition || window.webkitSpeechRecognition)
+      : null
+    if (!SR) {
+      toast.error('Voice input isn\'t supported in this browser. Try Chrome.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream.getTracks().forEach((t) => t.stop())
+    } catch {
+      toast.error('Microphone access denied. Enable it in your browser settings.')
+      return
+    }
+
+    const rec = new SR()
+    rec.continuous = true
+    rec.interimResults = true
+    rec.lang = 'en-US'
+
+    homeVoiceBaseRef.current = input.trim()
+    homeFinalRef.current = ''
+
+    rec.onresult = (ev) => {
+      let finalChunk = ''
+      let interimChunk = ''
+      for (let i = 0; i < ev.results.length; i++) {
+        const r = ev.results[i]
+        if (r.isFinal) finalChunk += r[0].transcript
+        else interimChunk += r[0].transcript
+      }
+      homeFinalRef.current = finalChunk
+      const combined = [homeVoiceBaseRef.current, finalChunk, interimChunk].filter(Boolean).join(' ')
+      setInput(combined)
+    }
+
+    rec.onerror = (ev) => {
+      if (ev.error === 'not-allowed') toast.error('Microphone blocked. Check your browser permissions.')
+      else if (ev.error !== 'no-speech') toast.error('Voice capture stopped.')
+      setVoiceListening(false)
+    }
+
+    rec.onend = () => {
+      const clean = [homeVoiceBaseRef.current, homeFinalRef.current].filter(Boolean).join(' ').trim()
+      if (clean) setInput(clean)
+      setVoiceListening(false)
+      setTimeout(() => inputRef.current?.focus(), 50)
+    }
+
+    homeRecRef.current = rec
+    setVoiceListening(true)
+    rec.start()
+  }, [voiceListening, stopHomeVoice, input])
 
   const sendMessage = useCallback(async () => {
     const text = input.trim()
@@ -249,6 +334,14 @@ export default function HomeContent({
           0% { transform: scale(1); opacity: 0.6; }
           100% { transform: scale(1.55); opacity: 0; }
         }
+        @keyframes homeMicRipple {
+          0%   { transform: scale(1);   opacity: 0.5; }
+          100% { transform: scale(2.4); opacity: 0;   }
+        }
+        @keyframes homeMicDot {
+          0%, 100% { opacity: 1; }
+          50%       { opacity: 0.25; }
+        }
       `}</style>
 
       <div
@@ -355,8 +448,12 @@ export default function HomeContent({
 
             <div
               style={{
-                borderBottom: '1.5px solid var(--border-2)',
+                borderBottom: `1.5px solid ${voiceListening ? 'rgba(220,38,38,0.35)' : 'var(--border-2)'}`,
                 paddingBottom: 6,
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: 8,
+                transition: 'border-color 0.2s',
               }}
             >
               <textarea
@@ -368,11 +465,11 @@ export default function HomeContent({
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder={focus ? 'That lands. / Actually, I need to…' : 'type here…'}
+                placeholder={voiceListening ? 'Listening — speak now…' : focus ? 'That lands. / Actually, I need to…' : 'type here…'}
                 rows={1}
                 autoFocus
                 style={{
-                  width: '100%',
+                  flex: 1,
                   resize: 'none',
                   border: 'none',
                   background: 'transparent',
@@ -387,7 +484,65 @@ export default function HomeContent({
                   padding: 0,
                 }}
               />
+
+              {/* Mic button */}
+              <div style={{ position: 'relative', flexShrink: 0, marginBottom: 2 }}>
+                {voiceListening && (
+                  <>
+                    <span style={{
+                      position: 'absolute', inset: -2, borderRadius: '50%',
+                      background: 'rgba(220,38,38,0.18)',
+                      animation: 'homeMicRipple 1.4s ease-out infinite',
+                      pointerEvents: 'none',
+                    }} />
+                    <span style={{
+                      position: 'absolute', inset: -2, borderRadius: '50%',
+                      background: 'rgba(220,38,38,0.12)',
+                      animation: 'homeMicRipple 1.4s ease-out 0.55s infinite',
+                      pointerEvents: 'none',
+                    }} />
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={startHomeVoice}
+                  title={voiceListening ? 'Tap to stop' : 'Tap to speak'}
+                  style={{
+                    position: 'relative',
+                    width: 28,
+                    height: 28,
+                    borderRadius: '50%',
+                    border: voiceListening ? '1.5px solid rgba(220,38,38,0.4)' : '1px solid var(--border)',
+                    background: voiceListening ? 'rgba(220,38,38,0.06)' : 'var(--surface-2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    transition: 'border-color 0.2s, background 0.2s',
+                    zIndex: 1,
+                  }}
+                >
+                  {voiceListening
+                    ? <MicOff size={13} color="#DC2626" />
+                    : <Mic size={13} color="var(--text-3)" />}
+                </button>
+              </div>
             </div>
+
+            {/* Recording label */}
+            {voiceListening && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                marginTop: 8, fontSize: 11, color: '#DC2626',
+              }}>
+                <span style={{
+                  width: 5, height: 5, borderRadius: '50%',
+                  background: '#DC2626', flexShrink: 0,
+                  animation: 'homeMicDot 1.1s ease-in-out infinite',
+                }} />
+                Listening — tap to stop
+              </div>
+            )}
 
             {input.trim() && (
               <button
