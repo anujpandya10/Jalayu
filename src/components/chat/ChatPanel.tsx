@@ -238,8 +238,8 @@ export default function ChatPanel() {
               right: 0,
               bottom: 0,
               width: 'min(420px, 100vw)',
-              background: '#fff',
-              borderLeft: '0.5px solid #E5E3FF',
+              background: 'var(--bg)',
+              borderLeft: '1px solid var(--border)',
               zIndex: 51,
               display: 'flex',
               flexDirection: 'column',
@@ -248,7 +248,8 @@ export default function ChatPanel() {
             <div
               style={{
                 padding: '14px 16px',
-                borderBottom: '0.5px solid #E5E3FF',
+                borderBottom: '1px solid var(--border)',
+                background: 'var(--surface)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
@@ -263,17 +264,18 @@ export default function ChatPanel() {
                     width: 28,
                     height: 28,
                     borderRadius: 8,
-                    background: '#534AB7',
+                    background: 'var(--accent)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
+                    boxShadow: '0 0 12px rgba(99,102,241,0.4)',
                   }}
                 >
                   <Sparkles size={13} color="#fff" />
                 </div>
                 <div>
-                  <p style={{ fontSize: 13, fontWeight: 500, color: '#111827', margin: 0 }}>Ask Jalayu</p>
-                  <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>Your personal AI companion</p>
+                  <p style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', margin: 0 }}>Ask Jalayu</p>
+                  <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>Your personal AI companion</p>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -284,14 +286,14 @@ export default function ChatPanel() {
                   style={{
                     padding: '6px 8px',
                     borderRadius: 8,
-                    border: explainWhy ? '1px solid #534AB7' : '0.5px solid #E5E3FF',
-                    background: explainWhy ? '#EEEDFE' : '#F8F7FF',
+                    border: explainWhy ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    background: explainWhy ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     gap: 4,
                     fontSize: 10,
-                    color: '#534AB7',
+                    color: 'var(--accent)',
                   }}
                 >
                   <Lightbulb size={12} />
@@ -304,12 +306,12 @@ export default function ChatPanel() {
                   style={{
                     padding: '6px 8px',
                     borderRadius: 8,
-                    border: '0.5px solid #E5E3FF',
-                    background: '#F8F7FF',
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-2)',
                     cursor: 'pointer',
                   }}
                 >
-                  <BookmarkPlus size={14} color="#534AB7" />
+                  <BookmarkPlus size={14} color="var(--accent)" />
                 </button>
                 <button
                   type="button"
@@ -318,15 +320,15 @@ export default function ChatPanel() {
                     width: 28,
                     height: 28,
                     borderRadius: 8,
-                    background: '#F8F7FF',
-                    border: '0.5px solid #E5E3FF',
+                    background: 'var(--surface-2)',
+                    border: '1px solid var(--border)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
                   }}
                 >
-                  <X size={14} color="#6b7280" />
+                  <X size={14} color="var(--text-2)" />
                 </button>
               </div>
             </div>
@@ -339,17 +341,18 @@ export default function ChatPanel() {
                       width: 48,
                       height: 48,
                       borderRadius: 14,
-                      background: '#EEEDFE',
+                      background: 'rgba(99,102,241,0.15)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
                       margin: '0 auto 14px',
+                      boxShadow: '0 0 20px rgba(99,102,241,0.3)',
                     }}
                   >
-                    <Sparkles size={20} color="#534AB7" />
+                    <Sparkles size={20} color="var(--accent)" />
                   </div>
-                  <p style={{ fontSize: 14, fontWeight: 500, color: '#111827', marginBottom: 6 }}>Hey, {name}</p>
-                  <p style={{ fontSize: 12, color: '#6b7280', lineHeight: 1.6, maxWidth: 260, margin: '0 auto 20px' }}>
+                  <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>Hey, {name}</p>
+                  <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.6, maxWidth: 260, margin: '0 auto 20px' }}>
                     I know your goals, struggles, and daily patterns. Ask me anything — I&apos;m built for you specifically.
                   </p>
                   {['How am I doing this week?', 'What should I focus on right now?', 'Help me with my energy levels'].map((suggestion) => (
@@ -366,11 +369,11 @@ export default function ChatPanel() {
                         margin: '0 auto 8px',
                         maxWidth: 280,
                         padding: '9px 14px',
-                        background: '#F8F7FF',
-                        border: '0.5px solid #E5E3FF',
+                        background: 'var(--surface-2)',
+                        border: '1px solid var(--border)',
                         borderRadius: 10,
                         fontSize: 12,
-                        color: '#374151',
+                        color: 'var(--text-2)',
                         cursor: 'pointer',
                         textAlign: 'left',
                       }}
@@ -391,8 +394,8 @@ export default function ChatPanel() {
                     style={{
                       padding: '9px 12px',
                       borderRadius: '12px 12px 12px 2px',
-                      background: '#fff',
-                      border: '0.5px solid #E5E3FF',
+                      background: 'var(--surface)',
+                      border: '1px solid var(--border)',
                       display: 'flex',
                       gap: 4,
                     }}
@@ -404,7 +407,7 @@ export default function ChatPanel() {
                           width: 5,
                           height: 5,
                           borderRadius: '50%',
-                          background: '#AFA9EC',
+                          background: 'var(--accent)',
                           display: 'inline-block',
                           animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
                         }}
@@ -420,7 +423,8 @@ export default function ChatPanel() {
             <div
               style={{
                 padding: '12px 14px',
-                borderTop: '0.5px solid #E5E3FF',
+                borderTop: '1px solid var(--border)',
+                background: 'var(--surface)',
                 display: 'flex',
                 gap: 8,
                 alignItems: 'flex-end',
@@ -436,8 +440,8 @@ export default function ChatPanel() {
                   width: 36,
                   height: 36,
                   borderRadius: 10,
-                  border: '0.5px solid #E5E3FF',
-                  background: listening ? '#EEEDFE' : '#F8F7FF',
+                  border: '1px solid var(--border)',
+                  background: listening ? 'rgba(99,102,241,0.15)' : 'var(--surface-2)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -445,7 +449,7 @@ export default function ChatPanel() {
                   flexShrink: 0,
                 }}
               >
-                <Mic size={16} color="#534AB7" />
+                <Mic size={16} color="var(--accent)" />
               </button>
               <textarea
                 ref={inputRef}
@@ -457,19 +461,19 @@ export default function ChatPanel() {
                 style={{
                   flex: 1,
                   resize: 'none',
-                  border: '0.5px solid #E5E3FF',
+                  border: '1px solid var(--border)',
                   borderRadius: 10,
                   padding: '9px 12px',
                   fontSize: 13,
-                  color: '#111827',
-                  background: '#F8F7FF',
+                  color: 'var(--text)',
+                  background: 'var(--surface-2)',
                   outline: 'none',
                   lineHeight: 1.5,
                   maxHeight: 100,
                   overflowY: 'auto',
                 }}
-                onFocus={(e) => (e.target.style.borderColor = '#534AB7')}
-                onBlur={(e) => (e.target.style.borderColor = '#E5E3FF')}
+                onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
+                onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
               />
               <button
                 type="button"
@@ -479,20 +483,21 @@ export default function ChatPanel() {
                   width: 36,
                   height: 36,
                   borderRadius: 10,
-                  background: input.trim() && !streaming ? '#534AB7' : '#E5E3FF',
-                  border: 'none',
+                  background: input.trim() && !streaming ? 'var(--accent)' : 'var(--surface-2)',
+                  border: '1px solid var(--border)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   cursor: input.trim() && !streaming ? 'pointer' : 'not-allowed',
                   flexShrink: 0,
                   transition: 'background 0.15s',
+                  boxShadow: input.trim() && !streaming ? '0 0 12px rgba(99,102,241,0.4)' : 'none',
                 }}
               >
                 {streaming ? (
-                  <Loader2 size={14} color={input.trim() ? '#fff' : '#9CA3AF'} className="animate-spin" />
+                  <Loader2 size={14} color={input.trim() ? '#fff' : 'var(--text-3)'} className="animate-spin" />
                 ) : (
-                  <Send size={14} color={input.trim() ? '#fff' : '#9CA3AF'} />
+                  <Send size={14} color={input.trim() ? '#fff' : 'var(--text-3)'} />
                 )}
               </button>
             </div>

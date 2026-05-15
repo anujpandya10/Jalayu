@@ -22,7 +22,9 @@ export default function BottomNav() {
         bottom: 0,
         left: 0,
         right: 0,
-        background: 'var(--surface)',
+        background: 'rgba(6,10,18,0.95)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
         borderTop: '1px solid var(--border)',
         display: 'flex',
         alignItems: 'center',
@@ -48,8 +50,10 @@ export default function BottomNav() {
               borderRadius: 10,
               border: 'none',
               background: 'transparent',
-              color: isActive ? 'var(--text)' : 'var(--text-3)',
+              color: isActive ? 'var(--accent)' : 'var(--text-3)',
               cursor: 'pointer',
+              filter: isActive ? 'drop-shadow(0 0 6px rgba(99,102,241,0.7))' : 'none',
+              transition: 'color 0.2s, filter 0.2s',
             }}
           >
             <Icon size={20} />

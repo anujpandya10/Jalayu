@@ -109,18 +109,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div style={{ textAlign: 'center' }}>
           <div
             style={{
-              fontSize: 22,
+              fontSize: 24,
               fontWeight: 600,
               color: 'var(--text)',
               letterSpacing: '-0.02em',
-              marginBottom: 16,
+              marginBottom: 20,
+              textShadow: '0 0 30px rgba(99,102,241,0.4)',
             }}
           >
-            Jalayu
+            Jala<span style={{ color: 'var(--accent)' }}>yu</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', justifyContent: 'center' }}>
-            <Loader2 size={13} className="animate-spin" />
-            <span style={{ fontSize: 12 }}>Getting ready…</span>
+            <Loader2 size={13} className="animate-spin" style={{ color: 'var(--accent)' }} />
+            <span style={{ fontSize: 12 }}>Preparing your command center…</span>
           </div>
         </div>
       </div>

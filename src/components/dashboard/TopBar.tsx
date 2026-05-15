@@ -44,7 +44,7 @@ export default function TopBar() {
           letterSpacing: '-0.01em',
         }}
       >
-        Jalayu
+        Jala<span style={{ color: 'var(--accent)' }}>yu</span>
       </span>
 
       {/* Right: chat + hamburger */}
@@ -98,10 +98,12 @@ export default function TopBar() {
                 width: 'min(92vw, 240px)',
                 maxHeight: 'min(70vh, 400px)',
                 overflowY: 'auto',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
+                background: 'rgba(12,18,32,0.95)',
+                backdropFilter: 'blur(16px)',
+                WebkitBackdropFilter: 'blur(16px)',
+                border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: 12,
-                boxShadow: '0 8px 24px rgba(0,0,0,0.08)',
+                boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
                 padding: '6px',
                 zIndex: 50,
               }}

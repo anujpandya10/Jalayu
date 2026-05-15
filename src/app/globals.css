@@ -1,40 +1,40 @@
 @import "tailwindcss";
 
 :root {
-  /* ── Warm Paper Palette ── */
-  --bg: #F5F3EE;           /* warm cream — the page */
-  --surface: #FFFFFF;      /* card / panel surfaces */
-  --surface-2: #FAFAF8;    /* input backgrounds */
-  --morning: #F0EDE7;      /* morning note tinted bg */
+  /* ── Deep Space Palette ── */
+  --bg: #060A12;
+  --surface: #0C1220;
+  --surface-2: #111827;
+  --morning: rgba(99,102,241,0.07);
 
-  --text: #1C1917;         /* warm near-black */
-  --text-2: #78716C;       /* secondary — stone */
-  --text-3: #A8A29E;       /* tertiary — timestamps */
+  --text: #C8D5F0;
+  --text-2: #6B7FA8;
+  --text-3: #3A4A6B;
 
-  --border: #E7E5DF;       /* warm tan */
-  --border-2: #D6D3CC;     /* stronger when needed */
+  --border: rgba(255,255,255,0.06);
+  --border-2: rgba(255,255,255,0.12);
 
-  --accent: #292524;       /* CTAs, focus rings */
+  --accent: #6366F1;
   --accent-fg: #FFFFFF;
 
   /* ── Legacy aliases (keep so existing components don't break) ── */
-  --background: #F5F3EE;
-  --card: #FFFFFF;
-  --text-primary: #1C1917;
-  --text-secondary: #78716C;
-  --text-tertiary: #A8A29E;
-  --border-secondary: #D6D3CC;
+  --background: #060A12;
+  --card: #0C1220;
+  --text-primary: #C8D5F0;
+  --text-secondary: #6B7FA8;
+  --text-tertiary: #3A4A6B;
+  --border-secondary: rgba(255,255,255,0.12);
 
-  /* ── Semantic colours (kept neutral) ── */
-  --success-bg: #ECFDF5;
-  --success-text: #065F46;
-  --success-border: #A7F3D0;
-  --warning-bg: #FFFBEB;
-  --warning-text: #92400E;
-  --warning-border: #FCD34D;
-  --error-bg: #FEF2F2;
-  --error-text: #991B1B;
-  --error-border: #FECACA;
+  /* ── Semantic colours ── */
+  --success-bg: rgba(16,185,129,0.1);
+  --success-text: #34D399;
+  --success-border: rgba(16,185,129,0.2);
+  --warning-bg: rgba(245,158,11,0.08);
+  --warning-text: #FCD34D;
+  --warning-border: rgba(245,158,11,0.2);
+  --error-bg: rgba(239,68,68,0.08);
+  --error-text: #FCA5A5;
+  --error-border: rgba(239,68,68,0.2);
 
   --border-radius-lg: 10px;
   --border-radius-xl: 14px;
@@ -78,7 +78,7 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--border-2);
   border-radius: 99px;
 }
 
@@ -99,6 +99,17 @@ input, textarea {
   border: 1px solid var(--border);
   border-radius: var(--border-radius-lg);
   padding: 12px 14px;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Glass card utility */
+.glass-card {
+  background: rgba(255,255,255,0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: var(--border-radius-lg);
 }
 
 /* Lora font utility */
@@ -111,13 +122,47 @@ input, textarea {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--primary);
+  color: var(--accent);
   animation: spin 1s linear infinite;
 }
 
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* Orb animations */
+@keyframes orbBreath {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.025); opacity: 0.92; }
+}
+@keyframes orbHeartbeat {
+  0%   { transform: scale(1); }
+  8%   { transform: scale(1.10); }
+  18%  { transform: scale(0.97); }
+  28%  { transform: scale(1.07); }
+  42%  { transform: scale(1); }
+  100% { transform: scale(1); }
+}
+@keyframes orbSpeaking {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
+@keyframes sonarRing {
+  0% { transform: scale(0.8); opacity: 0.7; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+@keyframes ambientPulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.9; transform: scale(1.08); }
+}
+@keyframes starTwinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.9; }
+}
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Transition defaults */
@@ -129,4 +174,3 @@ input, textarea {
 .sidebar-nav-item {
   transition: background 0.1s, color 0.1s;
 }
-

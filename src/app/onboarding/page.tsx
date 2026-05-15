@@ -367,7 +367,7 @@ export default function OnboardingPage() {
                     rows={4}
                     className="w-full px-4 py-3 rounded-2xl text-sm resize-none transition-all"
                     style={{
-                      border: '1.5px solid #E5E3FF',
+                      border: '1.5px solid var(--border)',
                       background: 'var(--surface)',
                       color: 'var(--text)',
                       outline: 'none',
@@ -382,10 +382,10 @@ export default function OnboardingPage() {
                   />
                   <div
                     className="flex items-center gap-2 mt-3 p-3 rounded-xl"
-                    style={{ background: '#EAF3DE' }}
+                    style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
                   >
-                    <ShieldCheck size={14} style={{ color: '#3B6D11' }} className="shrink-0" />
-                    <p className="text-xs" style={{ color: '#3B6D11' }}>
+                    <ShieldCheck size={14} style={{ color: 'var(--success-text)' }} className="shrink-0" />
+                    <p className="text-xs" style={{ color: 'var(--success-text)' }}>
                       This stays completely private. Only you and your personal AI ever see it.
                     </p>
                   </div>
@@ -413,7 +413,7 @@ export default function OnboardingPage() {
                     placeholder="Your name or nickname"
                     className="w-full px-4 py-3 rounded-xl text-sm mb-5 transition-all"
                     style={{
-                      border: '1.5px solid #E5E3FF',
+                      border: '1.5px solid var(--border)',
                       background: 'var(--surface)',
                       color: 'var(--text)',
                       outline: 'none',
@@ -425,7 +425,7 @@ export default function OnboardingPage() {
                   {/* Summary */}
                   <div
                     className="rounded-2xl p-4 mb-6 space-y-2"
-                    style={{ background: 'var(--morning)', border: '1px solid #E5E3FF' }}
+                    style={{ background: 'var(--morning)', border: '1px solid var(--border-2)' }}
                   >
                     <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>
                       What Jalayu learned about you

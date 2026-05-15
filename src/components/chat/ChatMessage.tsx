@@ -20,11 +20,12 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           maxWidth: '82%',
           padding: '9px 12px',
           borderRadius: isUser ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-          background: isUser ? '#534AB7' : '#fff',
-          color: isUser ? '#fff' : '#374151',
-          border: isUser ? 'none' : '0.5px solid #E5E3FF',
+          background: isUser ? 'var(--accent)' : 'var(--surface)',
+          color: isUser ? '#fff' : 'var(--text)',
+          border: isUser ? 'none' : '1px solid var(--border)',
           fontSize: 13,
           lineHeight: 1.6,
+          boxShadow: isUser ? '0 0 12px rgba(99,102,241,0.25)' : 'none',
         }}
       >
         {message.content}

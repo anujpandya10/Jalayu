@@ -15,12 +15,13 @@ export default function Sidebar() {
       style={{
         width: 200,
         minWidth: 200,
-        background: 'var(--surface-2)',
+        background: 'var(--surface)',
         borderRight: '1px solid var(--border)',
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
         flexShrink: 0,
+        backdropFilter: 'blur(8px)',
       }}
     >
       <div
@@ -89,12 +90,12 @@ export default function Sidebar() {
                     borderRadius: 8,
                     fontSize: 12,
                     width: '100%',
-                    background: isActive ? 'var(--surface)' : 'transparent',
+                    background: isActive ? 'var(--morning)' : 'transparent',
                     color: isActive ? 'var(--text)' : 'var(--text-2)',
                     fontWeight: isActive ? 500 : 400,
                     border: 'none',
                     cursor: 'pointer',
-                    boxShadow: isActive ? '0 1px 3px rgba(0,0,0,0.06)' : undefined,
+                    boxShadow: isActive ? '0 0 8px rgba(99,102,241,0.15)' : undefined,
                   }}
                 >
                   <Icon size={15} color={isActive ? 'var(--text)' : 'var(--text-3)'} />
