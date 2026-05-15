@@ -331,6 +331,7 @@ export default function DashboardPage() {
               journeyView={journeyView}
               profile={profile}
               tasks={tasks}
+              tasksRecent={tasksRecent}
               todayMood={todayMood}
               notes={notes}
               moodsRecent={moodsRecent}
