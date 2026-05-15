@@ -46,12 +46,12 @@ export default function MindView({
 
   return (
     <div style={{ padding: '16px 14px' }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>My mind</h2>
-      <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 14px' }}>Dump thoughts here — only you see them.</p>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>My mind</h2>
+      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 14px' }}>Dump thoughts here — only you see them.</p>
 
-      <div className="card" style={{ marginBottom: 12, padding: '12px 14px', background: '#FDFCFF' }}>
-        <p style={{ fontSize: 12, color: '#534AB7', fontWeight: 500, margin: '0 0 8px' }}>Today&apos;s prompt</p>
-        <p style={{ fontSize: 14, color: '#374151', margin: 0, lineHeight: 1.5 }}>{prompt}</p>
+      <div className="card" style={{ marginBottom: 12, padding: '12px 14px' }}>
+        <p style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 500, margin: '0 0 8px' }}>Today&apos;s prompt</p>
+        <p style={{ fontSize: 14, color: 'var(--text)', margin: 0, lineHeight: 1.5 }}>{prompt}</p>
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
@@ -62,15 +62,15 @@ export default function MindView({
           rows={6}
           style={{
             width: '100%', fontSize: 13, resize: 'none', outline: 'none',
-            background: 'transparent', border: 'none', color: '#374151', lineHeight: 1.7,
+            background: 'transparent', border: 'none', color: 'var(--text)', lineHeight: 1.7,
           }}
         />
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTop: '0.5px solid #F3F4F6' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 10, borderTop: '0.5px solid var(--border)' }}>
           <button
             type="button"
             onClick={() => setShowChatPanel(true)}
             style={{
-              display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#534AB7',
+              display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--accent)',
               background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500,
             }}
           >
@@ -83,8 +83,8 @@ export default function MindView({
             disabled={saving || !content.trim()}
             style={{
               padding: '7px 14px',
-              background: content.trim() ? '#534AB7' : '#E5E3FF',
-              color: content.trim() ? '#fff' : '#9CA3AF',
+              background: content.trim() ? 'var(--accent)' : 'var(--border)',
+              color: content.trim() ? '#fff' : 'var(--text-2)',
               border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500,
               cursor: content.trim() && !saving ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', gap: 6,
@@ -98,14 +98,14 @@ export default function MindView({
 
       {mindNotes.length > 0 && (
         <div>
-          <p style={{ fontSize: 11, fontWeight: 500, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Recent mind captures</p>
+          <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Recent mind captures</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {mindNotes.map((note) => (
               <div key={note.id} className="card">
-                <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6, margin: 0 }}>
+                <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6, margin: 0 }}>
                   {note.content.length > 200 ? `${note.content.slice(0, 200)}…` : note.content}
                 </p>
-                <p style={{ fontSize: 10, color: '#9CA3AF', margin: '8px 0 0' }}>
+                <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '8px 0 0' }}>
                   {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 </p>
               </div>

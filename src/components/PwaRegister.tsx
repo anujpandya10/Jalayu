@@ -80,17 +80,17 @@ export default function PwaRegister() {
           width: '100%',
           padding: '10px 12px',
           borderRadius: 10,
-          border: '0.5px solid #E5E3FF',
-          background: '#fff',
+          border: '0.5px solid var(--border-2)',
+          background: 'var(--surface)',
           fontSize: 12,
           fontWeight: 500,
-          color: '#534AB7',
+          color: 'var(--accent)',
           cursor: subscribing ? 'wait' : 'pointer',
         }}
       >
         {subscribing ? 'Enabling…' : 'Enable reminder notifications (this device)'}
       </button>
-      <p style={{ fontSize: 10, color: '#9CA3AF', margin: '6px 0 0', textAlign: 'center' }}>
+      <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '6px 0 0', textAlign: 'center' }}>
         Install the app (Add to Home Screen) for the best experience.
       </p>
     </div>

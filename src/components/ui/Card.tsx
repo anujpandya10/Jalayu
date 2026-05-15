@@ -36,14 +36,14 @@ export function CardHeader({ icon, label, right }: CardHeaderProps) {
         marginBottom: 10,
       }}
     >
-      <span style={{ color: '#534AB7', display: 'flex', alignItems: 'center' }}>
+      <span style={{ color: 'var(--accent)', display: 'flex', alignItems: 'center' }}>
         {icon}
       </span>
       <span
         style={{
           fontSize: 13,
           fontWeight: 500,
-          color: '#111827',
+          color: 'var(--text)',
           flex: 1,
         }}
       >

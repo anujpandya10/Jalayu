@@ -35,27 +35,27 @@ export default function ReflectView({
 
   const inputStyle: React.CSSProperties = {
     width: '100%', fontSize: 13, outline: 'none',
-    background: 'transparent', border: 'none', color: '#374151',
+    background: 'transparent', border: 'none', color: 'var(--text)',
   }
 
   return (
     <div style={{ padding: '16px 14px' }}>
       <div style={{ marginBottom: 14 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0 }}>End of day reflection</h2>
-        <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0' }}>Takes 2 minutes. Builds your life archive.</p>
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: 0 }}>End of day reflection</h2>
+        <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '2px 0 0' }}>Takes 2 minutes. Builds your life archive.</p>
       </div>
 
       {alreadySaved && !hasChanges && (
         <div
-          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: '#EAF3DE', border: '1px solid #c4e09c', marginBottom: 14 }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, background: 'var(--success-bg)', border: '1px solid var(--border-2)', marginBottom: 14 }}
         >
-          <span style={{ fontSize: 13, fontWeight: 500, color: '#3B6D11' }}>Today&apos;s reflection is saved ✦</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--success-text)' }}>Today&apos;s reflection is saved ✦</span>
         </div>
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
         <div className="card">
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#534AB7', marginBottom: 6 }}>One word for today</label>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--accent)', marginBottom: 6 }}>One word for today</label>
           <input
             type="text"
             value={oneWord}
@@ -65,7 +65,7 @@ export default function ReflectView({
           />
         </div>
         <div className="card">
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#534AB7', marginBottom: 6 }}>Win of the day</label>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--accent)', marginBottom: 6 }}>Win of the day</label>
           <input
             type="text"
             value={winOfDay}
@@ -75,7 +75,7 @@ export default function ReflectView({
           />
         </div>
         <div className="card">
-          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: '#534AB7', marginBottom: 6 }}>What does tomorrow-you need to know?</label>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 500, color: 'var(--accent)', marginBottom: 6 }}>What does tomorrow-you need to know?</label>
           <textarea
             value={tomorrowNote}
             onChange={(e) => setTomorrowNote(e.target.value)}
@@ -91,7 +91,7 @@ export default function ReflectView({
         onClick={handleSave}
         disabled={saving}
         style={{
-          width: '100%', padding: '13px', background: '#534AB7', color: '#fff',
+          width: '100%', padding: '13px', background: 'var(--accent)', color: '#fff',
           border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 500,
           cursor: saving ? 'not-allowed' : 'pointer',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
@@ -101,7 +101,7 @@ export default function ReflectView({
         {alreadySaved ? 'Update reflection ✦' : 'Save reflection ✦'}
       </button>
 
-      <p style={{ textAlign: 'center', fontSize: 11, color: '#9CA3AF', marginTop: 12 }}>
+      <p style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-2)', marginTop: 12 }}>
         Your reflections are private and build your personal life archive over time
       </p>
     </div>

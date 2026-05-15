@@ -45,30 +45,30 @@ export default function MyDayView({
           margin: '12px 14px 0',
           padding: '14px 16px',
           borderRadius: 12,
-          background: 'linear-gradient(135deg, #EEEDFE 0%, #fff 100%)',
-          border: '0.5px solid #E5E3FF',
+          background: 'var(--surface)',
+          border: '0.5px solid var(--border-2)',
         }}
       >
-        <p style={{ fontSize: 11, fontWeight: 500, color: '#534AB7', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+        <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
           My day
         </p>
-        <h1 style={{ fontSize: 20, fontWeight: 600, color: '#111827', margin: '0 0 6px' }}>{formatDate()}</h1>
-        <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 10px', lineHeight: 1.5 }}>
-          You said you&apos;re sharpest in the <strong style={{ color: '#26215C' }}>{peak}</strong> and usually up around{' '}
-          <strong style={{ color: '#26215C' }}>{wake}</strong>. Protect one deep block when you can.
+        <h1 style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>{formatDate()}</h1>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 10px', lineHeight: 1.5 }}>
+          You said you&apos;re sharpest in the <strong style={{ color: 'var(--text)' }}>{peak}</strong> and usually up around{' '}
+          <strong style={{ color: 'var(--text)' }}>{wake}</strong>. Protect one deep block when you can.
         </p>
         {calConnected === false && (
           <a
             href="/api/calendar/google/start"
-            style={{ fontSize: 12, fontWeight: 500, color: '#534AB7' }}
+            style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent)' }}
           >
             Connect Google Calendar (read-only)
           </a>
         )}
         {calConnected && events.length > 0 && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid #E5E3FF' }}>
-            <p style={{ fontSize: 11, fontWeight: 600, color: '#534AB7', margin: '0 0 6px' }}>Up next</p>
-            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#374151' }}>
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '0.5px solid var(--border-2)' }}>
+            <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', margin: '0 0 6px' }}>Up next</p>
+            <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--text)' }}>
               {events.slice(0, 5).map((e) => (
                 <li key={`${e.title}-${e.start}`} style={{ marginBottom: 4 }}>
                   {e.title}

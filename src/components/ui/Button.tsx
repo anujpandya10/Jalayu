@@ -6,7 +6,7 @@ type Variant = 'primary' | 'secondary' | 'ghost' | 'pill-primary' | 'pill-ghost'
 
 const styles: Record<Variant, React.CSSProperties> = {
   primary: {
-    background: '#534AB7',
+    background: 'var(--accent)',
     color: '#fff',
     borderRadius: 10,
     padding: '10px 16px',
@@ -16,16 +16,16 @@ const styles: Record<Variant, React.CSSProperties> = {
   },
   secondary: {
     background: 'transparent',
-    color: '#6b7280',
+    color: 'var(--text-2)',
     borderRadius: 10,
     padding: '10px 16px',
     fontSize: 13,
     fontWeight: 400,
-    border: '1px solid #E5E3FF',
+    border: '1px solid var(--border-2)',
   },
   ghost: {
     background: 'transparent',
-    color: '#534AB7',
+    color: 'var(--accent)',
     borderRadius: 8,
     padding: '6px 12px',
     fontSize: 12,
@@ -33,7 +33,7 @@ const styles: Record<Variant, React.CSSProperties> = {
     border: 'none',
   },
   'pill-primary': {
-    background: '#534AB7',
+    background: 'var(--accent)',
     color: '#fff',
     borderRadius: 99,
     padding: '5px 12px',
@@ -43,12 +43,12 @@ const styles: Record<Variant, React.CSSProperties> = {
   },
   'pill-ghost': {
     background: 'transparent',
-    color: '#534AB7',
+    color: 'var(--accent)',
     borderRadius: 99,
     padding: '5px 12px',
     fontSize: 11,
     fontWeight: 500,
-    border: '0.5px solid #AFA9EC',
+    border: '0.5px solid var(--border-2)',
   },
 }
 

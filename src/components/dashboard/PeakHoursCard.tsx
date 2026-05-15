@@ -58,20 +58,20 @@ export default function PeakHoursCard({ peakHours, wakeTime }: PeakHoursCardProp
         style={{
           fontSize: 22,
           fontWeight: 500,
-          color: '#111827',
+          color: 'var(--text)',
           margin: '0 0 4px',
           lineHeight: 1.2,
         }}
       >
         {getPeakDisplay(peakHours)}
       </p>
-      <p style={{ fontSize: 10, color: '#9CA3AF', margin: '0 0 10px' }}>
+      <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '0 0 10px' }}>
         When you said you feel sharpest
       </p>
 
       <div
         style={{
-          background: '#EEEDFE',
+          background: 'var(--morning)',
           borderRadius: 8,
           padding: '8px 10px',
           display: 'flex',
@@ -79,8 +79,8 @@ export default function PeakHoursCard({ peakHours, wakeTime }: PeakHoursCardProp
           gap: 6,
         }}
       >
-        <Sparkles size={12} color="#534AB7" style={{ marginTop: 1, flexShrink: 0 }} />
-        <p style={{ fontSize: 11, color: '#3C3489', margin: 0, lineHeight: 1.5 }}>
+        <Sparkles size={12} color="var(--accent)" style={{ marginTop: 1, flexShrink: 0 }} />
+        <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>
           {getInsight(peakHours)}
         </p>
       </div>

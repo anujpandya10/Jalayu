@@ -42,14 +42,14 @@ export default function TasksPanel({
     <div style={{ padding: '16px 14px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0 }}>{title}</h2>
-          <p style={{ fontSize: 12, color: '#9CA3AF', margin: '2px 0 0' }}>{subtitle ?? formatDate()}</p>
+          <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{title}</h2>
+          <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '2px 0 0' }}>{subtitle ?? formatDate()}</p>
         </div>
         <button
           onClick={() => setShowInput(!showInput)}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,
-            padding: '7px 12px', background: '#534AB7', color: '#fff',
+            padding: '7px 12px', background: 'var(--accent)', color: '#fff',
             border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: 'pointer',
           }}
         >
@@ -60,13 +60,13 @@ export default function TasksPanel({
 
       {tasks.length > 0 && (
         <div style={{ marginBottom: 14 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#9CA3AF', marginBottom: 5 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-2)', marginBottom: 5 }}>
             <span>{completed.length} of {tasks.length} done</span>
             <span>{progress}%</span>
           </div>
-          <div style={{ height: 4, background: '#E5E3FF', borderRadius: 99, overflow: 'hidden' }}>
+          <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
             <motion.div
-              style={{ height: '100%', background: '#534AB7', borderRadius: 99 }}
+              style={{ height: '100%', background: 'var(--accent)', borderRadius: 99 }}
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               transition={{ type: 'spring', stiffness: 100 }}
@@ -85,7 +85,7 @@ export default function TasksPanel({
           >
             <div style={{
               display: 'flex', gap: 6, padding: '8px 10px',
-              background: '#fff', border: '1.5px solid #534AB7', borderRadius: 10,
+              background: 'var(--surface-2)', border: '1.5px solid var(--accent)', borderRadius: 10,
             }}>
               <input
                 type="text"
@@ -94,14 +94,14 @@ export default function TasksPanel({
                 onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
                 placeholder="What needs to happen today?"
                 autoFocus
-                style={{ flex: 1, fontSize: 13, background: 'transparent', border: 'none', outline: 'none', color: '#111827' }}
+                style={{ flex: 1, fontSize: 13, background: 'transparent', border: 'none', outline: 'none', color: 'var(--text)' }}
               />
               <button
                 onClick={handleAdd}
                 disabled={adding || !newTitle.trim()}
                 style={{
-                  background: newTitle.trim() ? '#534AB7' : '#E5E3FF',
-                  color: newTitle.trim() ? '#fff' : '#9CA3AF',
+                  background: newTitle.trim() ? 'var(--accent)' : 'var(--border)',
+                  color: newTitle.trim() ? '#fff' : 'var(--text-2)',
                   border: 'none', borderRadius: 6, width: 26, height: 26,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   cursor: newTitle.trim() ? 'pointer' : 'not-allowed', flexShrink: 0,
@@ -111,7 +111,7 @@ export default function TasksPanel({
               </button>
               <button
                 onClick={() => { setShowInput(false); setNewTitle('') }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9CA3AF', padding: 2 }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-2)', padding: 2 }}
               >
                 <X size={14} />
               </button>
@@ -131,8 +131,8 @@ export default function TasksPanel({
       {tasks.length === 0 && !showInput && (
         <div style={{ textAlign: 'center', padding: '48px 0' }}>
           <div style={{ fontSize: 32, marginBottom: 10 }}>✦</div>
-          <p style={{ fontSize: 14, fontWeight: 500, color: '#374151', marginBottom: 6 }}>Nothing on the list yet</p>
-          <p style={{ fontSize: 12, color: '#9CA3AF' }}>What&apos;s the one thing you need to do today?</p>
+          <p style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>Nothing on the list yet</p>
+          <p style={{ fontSize: 12, color: 'var(--text-2)' }}>What&apos;s the one thing you need to do today?</p>
         </div>
       )}
 
@@ -140,11 +140,11 @@ export default function TasksPanel({
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          style={{ textAlign: 'center', padding: '20px', borderRadius: 12, background: '#EAF3DE', border: '1px solid #c4e09c', marginTop: 12 }}
+          style={{ textAlign: 'center', padding: '20px', borderRadius: 12, background: 'var(--success-bg)', border: '1px solid var(--border-2)', marginTop: 12 }}
         >
           <div style={{ fontSize: 24, marginBottom: 6 }}>🎉</div>
-          <p style={{ fontWeight: 600, color: '#3B6D11', margin: 0 }}>All done for today!</p>
-          <p style={{ fontSize: 12, color: '#4a8a1a', marginTop: 4 }}>That&apos;s a full day. Give yourself credit.</p>
+          <p style={{ fontWeight: 600, color: 'var(--success-text)', margin: 0 }}>All done for today!</p>
+          <p style={{ fontSize: 12, color: 'var(--success-text)', marginTop: 4 }}>That&apos;s a full day. Give yourself credit.</p>
         </motion.div>
       )}
     </div>
@@ -163,8 +163,8 @@ function FullTaskRow({ task, onToggle }: { task: Task; onToggle: (t: Task) => Pr
       style={{
         display: 'flex', alignItems: 'center', gap: 10, padding: '11px 12px',
         borderRadius: 10, marginBottom: 6,
-        background: task.completed ? '#FAFAFA' : '#fff',
-        border: `1px solid ${task.completed ? '#F0F0F0' : '#E5E3FF'}`,
+        background: task.completed ? 'var(--surface-2)' : 'var(--surface)',
+        border: `1px solid ${task.completed ? 'var(--border)' : 'var(--border-2)'}`,
       }}
     >
       <button
@@ -172,18 +172,18 @@ function FullTaskRow({ task, onToggle }: { task: Task; onToggle: (t: Task) => Pr
         disabled={toggling}
         style={{
           width: 18, height: 18, borderRadius: 5, flexShrink: 0, cursor: 'pointer',
-          border: `1.5px solid ${task.completed ? '#534AB7' : '#D1D5DB'}`,
-          background: task.completed ? '#534AB7' : 'transparent',
+          border: `1.5px solid ${task.completed ? 'var(--accent)' : 'var(--border-2)'}`,
+          background: task.completed ? 'var(--accent)' : 'transparent',
           display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s',
         }}
       >
         {toggling
-          ? <Loader2 size={9} className="animate-spin" color={task.completed ? '#fff' : '#534AB7'} />
+          ? <Loader2 size={9} className="animate-spin" color={task.completed ? '#fff' : 'var(--accent)'} />
           : task.completed ? <Check size={9} color="#fff" /> : null}
       </button>
       <span style={{
         fontSize: 13, flex: 1,
-        color: task.completed ? '#9CA3AF' : '#374151',
+        color: task.completed ? 'var(--text-2)' : 'var(--text)',
         textDecoration: task.completed ? 'line-through' : 'none',
       }}>
         {task.title}

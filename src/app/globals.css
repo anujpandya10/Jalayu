@@ -7,9 +7,9 @@
   --surface-2: #111827;
   --morning: rgba(99,102,241,0.07);
 
-  --text: #C8D5F0;
-  --text-2: #6B7FA8;
-  --text-3: #3A4A6B;
+  --text: #E4ECFF;
+  --text-2: #8BA3D4;
+  --text-3: #607AAF;
 
   --border: rgba(255,255,255,0.06);
   --border-2: rgba(255,255,255,0.12);
@@ -20,9 +20,9 @@
   /* ── Legacy aliases (keep so existing components don't break) ── */
   --background: #060A12;
   --card: #0C1220;
-  --text-primary: #C8D5F0;
-  --text-secondary: #6B7FA8;
-  --text-tertiary: #3A4A6B;
+  --text-primary: #E4ECFF;
+  --text-secondary: #8BA3D4;
+  --text-tertiary: #607AAF;
   --border-secondary: rgba(255,255,255,0.12);
 
   /* ── Semantic colours ── */
@@ -91,6 +91,12 @@ button {
 
 input, textarea {
   font-family: inherit;
+  color-scheme: dark;
+}
+
+::placeholder {
+  color: var(--text-3);
+  opacity: 1;
 }
 
 /* Card base style — used everywhere */

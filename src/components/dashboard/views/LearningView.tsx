@@ -62,19 +62,19 @@ export default function LearningView({
 
   return (
     <div style={{ padding: '16px 14px' }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <BookMarked size={20} color="#534AB7" />
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <BookMarked size={20} color="var(--accent)" />
         Learning
       </h2>
-      <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 14px' }}>Prebuilt tracks add today&apos;s tasks; your saves stay in this list.</p>
+      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 14px' }}>Prebuilt tracks add today&apos;s tasks; your saves stay in this list.</p>
 
       {tracks.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
           {tracks.map((t) => (
             <div key={t.id} className="card" style={{ padding: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ flex: 1, minWidth: 160 }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>{t.title}</p>
-                <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>{t.description}</p>
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>{t.title}</p>
+                <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0 }}>{t.description}</p>
               </div>
               <button
                 type="button"
@@ -84,7 +84,7 @@ export default function LearningView({
                   padding: '8px 14px',
                   borderRadius: 8,
                   border: 'none',
-                  background: '#534AB7',
+                  background: 'var(--accent)',
                   color: '#fff',
                   fontSize: 12,
                   fontWeight: 500,
@@ -110,18 +110,18 @@ export default function LearningView({
           rows={4}
           style={{
             width: '100%', fontSize: 13, resize: 'none', outline: 'none',
-            background: 'transparent', border: 'none', color: '#374151', lineHeight: 1.7,
+            background: 'transparent', border: 'none', color: 'var(--text)', lineHeight: 1.7,
           }}
         />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, paddingTop: 10, borderTop: '0.5px solid #F3F4F6' }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10, paddingTop: 10, borderTop: '0.5px solid var(--border)' }}>
           <button
             type="button"
             onClick={handleSave}
             disabled={saving || !content.trim()}
             style={{
               padding: '7px 14px',
-              background: content.trim() ? '#534AB7' : '#E5E3FF',
-              color: content.trim() ? '#fff' : '#9CA3AF',
+              background: content.trim() ? 'var(--accent)' : 'var(--border)',
+              color: content.trim() ? '#fff' : 'var(--text-2)',
               border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 500,
               cursor: content.trim() && !saving ? 'pointer' : 'not-allowed',
               display: 'flex', alignItems: 'center', gap: 6,
@@ -134,13 +134,13 @@ export default function LearningView({
       </div>
 
       {learningNotes.length === 0 ? (
-        <p style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', padding: '24px 8px' }}>Nothing saved yet. Paste a link or a sentence above.</p>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', textAlign: 'center', padding: '24px 8px' }}>Nothing saved yet. Paste a link or a sentence above.</p>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {learningNotes.map((note) => (
             <div key={note.id} className="card">
-              <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.6, margin: 0 }}>{note.content}</p>
-              <p style={{ fontSize: 10, color: '#9CA3AF', margin: '8px 0 0' }}>
+              <p style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6, margin: 0 }}>{note.content}</p>
+              <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '8px 0 0' }}>
                 {new Date(note.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </p>
             </div>

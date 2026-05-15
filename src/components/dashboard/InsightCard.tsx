@@ -44,7 +44,7 @@ export default function InsightCard({ profile, daysSinceSignup }: InsightCardPro
 
       <div
         style={{
-          background: '#FAEEDA',
+          background: 'var(--warning-bg)',
           border: '0.5px solid #FAC775',
           borderRadius: 8,
           padding: '8px 10px',
@@ -54,13 +54,13 @@ export default function InsightCard({ profile, daysSinceSignup }: InsightCardPro
           marginBottom: 8,
         }}
       >
-        <AlertTriangle size={12} color="#854F0B" style={{ marginTop: 1, flexShrink: 0 }} />
-        <p style={{ fontSize: 11, color: '#412402', margin: 0, lineHeight: 1.6 }}>
+        <AlertTriangle size={12} color="var(--warning-text)" style={{ marginTop: 1, flexShrink: 0 }} />
+        <p style={{ fontSize: 11, color: 'var(--warning-text)', margin: 0, lineHeight: 1.6 }}>
           {getFirstInsight(profile)}
         </p>
       </div>
 
-      <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>
+      <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>
         Tomorrow&apos;s insight will be based on what you actually did.
       </p>
     </div>

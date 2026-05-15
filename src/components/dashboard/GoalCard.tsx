@@ -19,9 +19,9 @@ export default function GoalCard({ goal }: GoalCardProps) {
         <div>
           <div
             style={{
-              background: '#F5F4FF',
+              background: 'var(--morning)',
               borderRadius: 8,
-              borderLeft: '3px solid #534AB7',
+              borderLeft: '3px solid var(--accent)',
               padding: '9px 11px',
               marginBottom: 8,
             }}
@@ -29,7 +29,7 @@ export default function GoalCard({ goal }: GoalCardProps) {
             <p
               style={{
                 fontSize: 12,
-                color: '#26215C',
+                color: 'var(--text)',
                 fontStyle: 'italic',
                 lineHeight: 1.6,
                 margin: 0,
@@ -38,12 +38,12 @@ export default function GoalCard({ goal }: GoalCardProps) {
               &ldquo;{goal}&rdquo;
             </p>
           </div>
-          <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>
+          <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>
             Everything I do is working toward this.
           </p>
         </div>
       ) : (
-        <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>
+        <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0 }}>
           Your goal will appear here after onboarding.
         </p>
       )}

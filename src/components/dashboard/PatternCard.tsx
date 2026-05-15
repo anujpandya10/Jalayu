@@ -27,7 +27,7 @@ function generatePatterns(tasks: Task[], moods: Mood[], days: number): Pattern[]
 
   const patterns: Pattern[] = [
     {
-      dot: '#7F77DD',
+      dot: 'var(--accent)',
       bold: `${completionRate}% task completion rate`,
       detail: completionRate >= 70
         ? "You're consistently getting things done. This is a strong foundation."
@@ -80,7 +80,7 @@ export default function PatternCard({ tasks, moods, daysSinceSignup }: PatternCa
           <div
             key={i}
             style={{
-              background: '#F8F7FF',
+              background: 'var(--surface-2)',
               borderRadius: 8,
               padding: '9px 11px',
               display: 'flex',
@@ -99,10 +99,10 @@ export default function PatternCard({ tasks, moods, daysSinceSignup }: PatternCa
               }}
             />
             <div>
-              <p style={{ fontSize: 11, fontWeight: 500, color: '#111827', margin: '0 0 2px' }}>
+              <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--text)', margin: '0 0 2px' }}>
                 {p.bold}
               </p>
-              <p style={{ fontSize: 10, color: '#6b7280', margin: 0, lineHeight: 1.5 }}>
+              <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0, lineHeight: 1.5 }}>
                 {p.detail}
               </p>
             </div>

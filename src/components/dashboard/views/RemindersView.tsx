@@ -86,17 +86,17 @@ export default function RemindersView({
   return (
     <div style={{ padding: '16px 14px' }}>
       <div style={{ marginBottom: 16 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Bell size={20} color="#534AB7" />
+        <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Bell size={20} color="var(--accent)" />
           Reminders
         </h2>
-        <p style={{ fontSize: 12, color: '#9CA3AF', margin: '6px 0 0' }}>
+        <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '6px 0 0' }}>
           Daily nudges at the time you pick. Push notifications pair with the PWA when you enable them.
         </p>
       </div>
 
       <div className="card" style={{ marginBottom: 14, padding: 12 }}>
-        <p style={{ fontSize: 11, fontWeight: 500, color: '#534AB7', margin: '0 0 8px' }}>New reminder</p>
+        <p style={{ fontSize: 11, fontWeight: 500, color: 'var(--accent)', margin: '0 0 8px' }}>New reminder</p>
         <input
           type="text"
           value={title}
@@ -104,16 +104,20 @@ export default function RemindersView({
           placeholder="What should we remember?"
           style={{
             width: '100%', fontSize: 13, padding: '10px 12px', borderRadius: 8,
-            border: '0.5px solid #E5E3FF', marginBottom: 8, outline: 'none', color: '#374151',
+            border: '0.5px solid var(--border-2)', marginBottom: 8, outline: 'none', color: 'var(--text)',
+            background: 'var(--surface-2)',
           }}
         />
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ fontSize: 12, color: '#6b7280' }}>Time</label>
+          <label style={{ fontSize: 12, color: 'var(--text-2)' }}>Time</label>
           <input
             type="time"
             value={time}
             onChange={(e) => setTime(e.target.value)}
-            style={{ fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '0.5px solid #E5E3FF' }}
+            style={{
+              fontSize: 13, padding: '8px 10px', borderRadius: 8, border: '0.5px solid var(--border-2)',
+              background: 'var(--surface-2)', color: 'var(--text)',
+            }}
           />
           <button
             type="button"
@@ -121,7 +125,7 @@ export default function RemindersView({
             disabled={saving}
             style={{
               marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6,
-              padding: '8px 14px', background: '#534AB7', color: '#fff', border: 'none',
+              padding: '8px 14px', background: 'var(--accent)', color: '#fff', border: 'none',
               borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: saving ? 'not-allowed' : 'pointer',
             }}
           >
@@ -133,7 +137,7 @@ export default function RemindersView({
 
       {active.length > 0 && (
         <section style={{ marginBottom: 16 }}>
-          <p style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Active</p>
+          <p style={{ fontSize: 11, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Active</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {active.map((r) => (
               <button
@@ -142,12 +146,12 @@ export default function RemindersView({
                 onClick={() => toggleActive(r)}
                 style={{
                   textAlign: 'left', padding: '12px 14px', borderRadius: 10,
-                  border: '0.5px solid #E5E3FF', background: '#fff', cursor: 'pointer',
+                  border: '0.5px solid var(--border-2)', background: 'var(--surface)', cursor: 'pointer',
                 }}
               >
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#111827' }}>{r.title}</div>
-                <div style={{ fontSize: 12, color: '#534AB7', marginTop: 4 }}>{formatReminderTime(String(r.remind_at))}</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>Tap to pause</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{r.title}</div>
+                <div style={{ fontSize: 12, color: 'var(--accent)', marginTop: 4 }}>{formatReminderTime(String(r.remind_at))}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 6 }}>Tap to pause</div>
               </button>
             ))}
           </div>
@@ -156,7 +160,7 @@ export default function RemindersView({
 
       {paused.length > 0 && (
         <section>
-          <p style={{ fontSize: 11, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Paused</p>
+          <p style={{ fontSize: 11, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Paused</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {paused.map((r) => (
               <button
@@ -165,11 +169,11 @@ export default function RemindersView({
                 onClick={() => toggleActive(r)}
                 style={{
                   textAlign: 'left', padding: '12px 14px', borderRadius: 10,
-                  border: '0.5px dashed #E5E3FF', background: '#FAFAFA', cursor: 'pointer', opacity: 0.85,
+                  border: '0.5px dashed var(--border-2)', background: 'var(--surface-2)', cursor: 'pointer', opacity: 0.85,
                 }}
               >
-                <div style={{ fontSize: 14, fontWeight: 500, color: '#6b7280' }}>{r.title}</div>
-                <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 6 }}>Tap to turn back on</div>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-2)' }}>{r.title}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-2)', marginTop: 6 }}>Tap to turn back on</div>
               </button>
             ))}
           </div>
@@ -178,7 +182,7 @@ export default function RemindersView({
 
       {reminders.length === 0 && (
         <div style={{ textAlign: 'center', padding: '40px 12px' }}>
-          <p style={{ fontSize: 14, color: '#6b7280', margin: 0 }}>No reminders yet. Add one above — Jalayu will grow with you.</p>
+          <p style={{ fontSize: 14, color: 'var(--text-2)', margin: 0 }}>No reminders yet. Add one above — Jalayu will grow with you.</p>
         </div>
       )}
     </div>

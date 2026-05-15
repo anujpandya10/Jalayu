@@ -72,11 +72,11 @@ export default function MeetingsView() {
 
   return (
     <div style={{ padding: '16px 14px' }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <ClipboardList size={20} color="#534AB7" />
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <ClipboardList size={20} color="var(--accent)" />
         Meetings
       </h2>
-      <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 14px' }}>
+      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 14px' }}>
         Paste a transcript (or export from Zoom / Meet). Jalayu extracts a summary and action items — nothing is recorded until you run extract.
       </p>
 
@@ -90,11 +90,13 @@ export default function MeetingsView() {
           fontSize: 13,
           padding: 12,
           borderRadius: 10,
-          border: '0.5px solid #E5E3FF',
+          border: '0.5px solid var(--border-2)',
           marginBottom: 10,
           resize: 'vertical',
           lineHeight: 1.6,
-          color: '#374151',
+          color: 'var(--text)',
+          background: 'var(--surface-2)',
+          outline: 'none',
         }}
       />
 
@@ -107,7 +109,7 @@ export default function MeetingsView() {
           padding: '12px',
           borderRadius: 10,
           border: 'none',
-          background: '#534AB7',
+          background: 'var(--accent)',
           color: '#fff',
           fontSize: 13,
           fontWeight: 500,
@@ -124,15 +126,15 @@ export default function MeetingsView() {
 
       {summary && (
         <div className="card" style={{ marginTop: 14, padding: 12 }}>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#534AB7', margin: '0 0 6px' }}>Summary</p>
-          <p style={{ fontSize: 13, color: '#374151', margin: 0, lineHeight: 1.6 }}>{summary}</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', margin: '0 0 6px' }}>Summary</p>
+          <p style={{ fontSize: 13, color: 'var(--text)', margin: 0, lineHeight: 1.6 }}>{summary}</p>
         </div>
       )}
 
       {actionItems.length > 0 && (
         <div style={{ marginTop: 14 }}>
-          <p style={{ fontSize: 12, fontWeight: 500, color: '#111827', marginBottom: 8 }}>Action items</p>
-          <ul style={{ margin: '0 0 10px', paddingLeft: 18, color: '#374151', fontSize: 13 }}>
+          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', marginBottom: 8 }}>Action items</p>
+          <ul style={{ margin: '0 0 10px', paddingLeft: 18, color: 'var(--text)', fontSize: 13 }}>
             {actionItems.map((a) => (
               <li key={a} style={{ marginBottom: 4 }}>
                 {a}

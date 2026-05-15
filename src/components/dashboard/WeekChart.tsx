@@ -78,7 +78,7 @@ export default function WeekChart({ tasks, moods, daysSinceSignup }: WeekChartPr
                   width: '100%',
                   height: barHeight,
                   borderRadius: 3,
-                  background: isToday ? '#7F77DD' : isPast ? '#AFA9EC' : '#E5E3FF',
+                  background: isToday ? 'var(--accent)' : isPast ? 'rgba(99,102,241,0.4)' : 'var(--border-2)',
                   opacity: isFuture ? 0.3 : 1,
                   transition: 'height 0.4s ease',
                   alignSelf: 'flex-end',
@@ -87,7 +87,7 @@ export default function WeekChart({ tasks, moods, daysSinceSignup }: WeekChartPr
               <span
                 style={{
                   fontSize: 9,
-                  color: isToday ? '#534AB7' : '#9CA3AF',
+                  color: isToday ? 'var(--accent)' : 'var(--text-2)',
                   fontWeight: isToday ? 600 : 400,
                 }}
               >
@@ -98,7 +98,7 @@ export default function WeekChart({ tasks, moods, daysSinceSignup }: WeekChartPr
         })}
       </div>
 
-      <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>
+      <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>
         {daysSinceSignup <= 1
           ? "Your journey starts today. By Friday you'll see patterns."
           : `${completedByDay.reduce((a, b) => a + b, 0)} tasks completed this week`}

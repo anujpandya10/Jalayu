@@ -46,28 +46,28 @@ export default function ProgressView({
 
   return (
     <div style={{ padding: '16px 14px' }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: '0 0 4px' }}>Progress</h2>
-      <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 16px' }}>Honest signals from what you&apos;ve logged — not judgment, just pattern.</p>
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Progress</h2>
+      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 16px' }}>Honest signals from what you&apos;ve logged — not judgment, just pattern.</p>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
         <div className="card" style={{ padding: 14 }}>
-          <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>Growth score</p>
-          <p style={{ fontSize: 28, fontWeight: 600, color: '#534AB7', margin: 0 }}>{profile?.growth_score ?? 0}</p>
+          <p style={{ fontSize: 11, color: 'var(--text-2)', margin: '0 0 4px' }}>Growth score</p>
+          <p style={{ fontSize: 28, fontWeight: 600, color: 'var(--accent)', margin: 0 }}>{profile?.growth_score ?? 0}</p>
         </div>
         <div className="card" style={{ padding: 14 }}>
-          <p style={{ fontSize: 11, color: '#9CA3AF', margin: '0 0 4px' }}>Streak</p>
-          <p style={{ fontSize: 28, fontWeight: 600, color: '#111827', margin: 0 }}>{profile?.streak_count ?? 0} days</p>
+          <p style={{ fontSize: 11, color: 'var(--text-2)', margin: '0 0 4px' }}>Streak</p>
+          <p style={{ fontSize: 28, fontWeight: 600, color: 'var(--text)', margin: 0 }}>{profile?.streak_count ?? 0} days</p>
         </div>
       </div>
 
       <div className="card" style={{ padding: 14, marginBottom: 16 }}>
-        <p style={{ fontSize: 12, fontWeight: 500, color: '#374151', margin: '0 0 10px' }}>Tasks completed (last ~2 weeks)</p>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 10px' }}>Tasks completed (last ~2 weeks)</p>
         <p style={{ fontSize: 22, fontWeight: 600, color: '#22C55E', margin: 0 }}>{completedLast14}</p>
-        <p style={{ fontSize: 11, color: '#9CA3AF', margin: '6px 0 0' }}>Based on tasks created in the last 14 days that you marked done.</p>
+        <p style={{ fontSize: 11, color: 'var(--text-2)', margin: '6px 0 0' }}>Based on tasks created in the last 14 days that you marked done.</p>
       </div>
 
       <div className="card" style={{ padding: 14 }}>
-        <p style={{ fontSize: 12, fontWeight: 500, color: '#374151', margin: '0 0 12px' }}>Mood (7-day snapshot)</p>
+        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 12px' }}>Mood (7-day snapshot)</p>
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6, height: 100 }}>
           {last7.map(({ label, avg }) => (
             <div key={label} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -77,18 +77,18 @@ export default function ProgressView({
                   maxWidth: 36,
                   margin: '0 auto',
                   borderRadius: 6,
-                  background: avg != null ? '#534AB7' : '#F3F4F6',
+                  background: avg != null ? 'var(--accent)' : 'var(--border)',
                   height: avg != null ? `${(avg / 5) * 100}%` : 8,
                   minHeight: avg != null ? 12 : 8,
                   transition: 'height 0.2s ease',
                 }}
                 title={avg != null ? `${avg.toFixed(1)}/5` : 'No log'}
               />
-              <span style={{ fontSize: 9, color: '#9CA3AF' }}>{label}</span>
+              <span style={{ fontSize: 9, color: 'var(--text-2)' }}>{label}</span>
             </div>
           ))}
         </div>
-        <p style={{ fontSize: 11, color: '#9CA3AF', margin: '12px 0 0' }}>Missing days simply mean no mood was logged.</p>
+        <p style={{ fontSize: 11, color: 'var(--text-2)', margin: '12px 0 0' }}>Missing days simply mean no mood was logged.</p>
       </div>
     </div>
   )

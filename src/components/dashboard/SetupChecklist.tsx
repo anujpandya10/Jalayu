@@ -27,7 +27,7 @@ export default function SetupChecklist({ profile, notes }: SetupChecklistProps) 
           <span
             style={{
               fontSize: 11,
-              color: '#534AB7',
+              color: 'var(--accent)',
               fontWeight: 500,
             }}
           >
@@ -44,14 +44,14 @@ export default function SetupChecklist({ profile, notes }: SetupChecklistProps) 
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
-                background: item.done ? '#22C55E' : '#D1D5DB',
+                background: item.done ? '#22C55E' : 'var(--border-2)',
                 flexShrink: 0,
               }}
             />
             <span
               style={{
                 fontSize: 12,
-                color: item.done ? '#9CA3AF' : '#374151',
+                color: item.done ? 'var(--text-3)' : 'var(--text)',
                 textDecoration: item.done ? 'line-through' : 'none',
               }}
             >
@@ -61,7 +61,7 @@ export default function SetupChecklist({ profile, notes }: SetupChecklistProps) 
         ))}
       </div>
 
-      <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>
+      <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>
         Each step unlocks a new superpower. None are required.
       </p>
     </div>

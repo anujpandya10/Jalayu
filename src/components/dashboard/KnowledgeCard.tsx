@@ -47,7 +47,7 @@ export default function KnowledgeCard({
         />
       </div>
 
-      <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 10, marginBottom: 0 }}>
+      <p style={{ fontSize: 10, color: 'var(--text-2)', marginTop: 10, marginBottom: 0 }}>
         The more you use this, the smarter it gets.
       </p>
     </div>

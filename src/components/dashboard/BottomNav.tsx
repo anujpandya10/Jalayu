@@ -7,7 +7,7 @@ import type { SidebarView } from '@/lib/types'
 
 const TABS: { key: string; icon: ComponentType<{ size?: number }>; label: string; view: SidebarView }[] = [
   { key: 'home', icon: Home, label: 'Home', view: 'dashboard' },
-  { key: 'tasks', icon: CheckSquare, label: 'Tasks', view: 'calendar' },
+  { key: 'today', icon: CheckSquare, label: 'Today', view: 'calendar' },
   { key: 'memory', icon: BookOpen, label: 'Memory', view: 'memory' },
   { key: 'reflect', icon: Sparkles, label: 'Reflect', view: 'reflect' },
 ]

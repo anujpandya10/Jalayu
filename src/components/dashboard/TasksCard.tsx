@@ -49,7 +49,7 @@ export default function TasksCard({ tasks, profile, onAdd, onToggle }: TasksCard
             onClick={() => setShowInput(!showInput)}
             style={{
               fontSize: 12,
-              color: '#534AB7',
+              color: 'var(--accent)',
               background: 'none',
               border: 'none',
               cursor: 'pointer',
@@ -71,7 +71,7 @@ export default function TasksCard({ tasks, profile, onAdd, onToggle }: TasksCard
           <div
             style={{
               height: 3,
-              background: '#E5E3FF',
+              background: 'var(--border-2)',
               borderRadius: 99,
               overflow: 'hidden',
             }}
@@ -80,13 +80,13 @@ export default function TasksCard({ tasks, profile, onAdd, onToggle }: TasksCard
               style={{
                 height: '100%',
                 width: `${Math.round((completed / tasks.length) * 100)}%`,
-                background: '#534AB7',
+                background: 'var(--accent)',
                 borderRadius: 99,
                 transition: 'width 0.4s ease',
               }}
             />
           </div>
-          <p style={{ fontSize: 10, color: '#9CA3AF', margin: '4px 0 0' }}>
+          <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '4px 0 0' }}>
             {completed} of {tasks.length} done
           </p>
         </div>
@@ -106,8 +106,8 @@ export default function TasksCard({ tasks, profile, onAdd, onToggle }: TasksCard
                 display: 'flex',
                 gap: 6,
                 padding: '7px 10px',
-                background: '#F8F7FF',
-                border: '1px solid #534AB7',
+                background: 'var(--morning)',
+                border: '1px solid var(--accent)',
                 borderRadius: 8,
               }}
             >
@@ -124,15 +124,15 @@ export default function TasksCard({ tasks, profile, onAdd, onToggle }: TasksCard
                   background: 'transparent',
                   border: 'none',
                   outline: 'none',
-                  color: '#111827',
+                  color: 'var(--text)',
                 }}
               />
               <button
                 onClick={handleAdd}
                 disabled={adding || !newTitle.trim()}
                 style={{
-                  background: newTitle.trim() ? '#534AB7' : '#E5E3FF',
-                  color: newTitle.trim() ? '#fff' : '#9CA3AF',
+                  background: newTitle.trim() ? 'var(--accent)' : 'var(--border)',
+                  color: newTitle.trim() ? '#fff' : 'var(--text-2)',
                   border: 'none',
                   borderRadius: 6,
                   width: 22,
@@ -165,7 +165,7 @@ export default function TasksCard({ tasks, profile, onAdd, onToggle }: TasksCard
 
         {tasks.length === 0 && !showInput && (
           <div style={{ textAlign: 'center', padding: '16px 0' }}>
-            <p style={{ fontSize: 12, color: '#9CA3AF', margin: 0 }}>
+            <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0 }}>
               Your journey starts today ✦
             </p>
           </div>
@@ -175,12 +175,12 @@ export default function TasksCard({ tasks, profile, onAdd, onToggle }: TasksCard
       {/* Insight */}
       <div
         style={{
-          background: '#EAF3DE',
+          background: 'var(--success-bg)',
           borderRadius: 8,
           padding: '7px 10px',
         }}
       >
-        <p style={{ fontSize: 10, color: '#27500A', margin: 0 }}>{structureInsight}</p>
+        <p style={{ fontSize: 10, color: 'var(--success-text)', margin: 0 }}>{structureInsight}</p>
       </div>
     </div>
   )
@@ -212,7 +212,7 @@ function TaskRow({
         alignItems: 'center',
         gap: 8,
         padding: '6px 0',
-        borderBottom: '0.5px solid #F3F4F6',
+        borderBottom: '0.5px solid var(--border)',
       }}
     >
       <button
@@ -222,8 +222,8 @@ function TaskRow({
           width: 14,
           height: 14,
           borderRadius: 4,
-          border: `1.5px solid ${task.completed ? '#534AB7' : '#D1D5DB'}`,
-          background: task.completed ? '#534AB7' : 'transparent',
+          border: `1.5px solid ${task.completed ? 'var(--accent)' : '#D1D5DB'}`,
+          background: task.completed ? 'var(--accent)' : 'transparent',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -233,7 +233,7 @@ function TaskRow({
         }}
       >
         {toggling ? (
-          <Loader2 size={8} className="animate-spin" color={task.completed ? '#fff' : '#534AB7'} />
+          <Loader2 size={8} className="animate-spin" color={task.completed ? '#fff' : 'var(--accent)'} />
         ) : task.completed ? (
           <Check size={8} color="#fff" />
         ) : null}
@@ -241,7 +241,7 @@ function TaskRow({
       <span
         style={{
           fontSize: 12,
-          color: task.completed ? '#9CA3AF' : '#374151',
+          color: task.completed ? 'var(--text-2)' : 'var(--text)',
           textDecoration: task.completed ? 'line-through' : 'none',
           flex: 1,
         }}

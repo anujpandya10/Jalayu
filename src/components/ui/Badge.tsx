@@ -4,13 +4,13 @@ import type { ReactNode } from 'react'
 type BadgeVariant = 'green' | 'amber' | 'red' | 'purple' | 'blue' | 'teal' | 'pink'
 
 const variantStyles: Record<BadgeVariant, React.CSSProperties> = {
-  green: { background: '#EAF3DE', color: '#27500A', border: '0.5px solid #97C459' },
-  amber: { background: '#FAEEDA', color: '#633806', border: '0.5px solid #FAC775' },
-  red: { background: '#FCEBEB', color: '#791F1F', border: '0.5px solid #F09595' },
-  purple: { background: '#EEEDFE', color: '#534AB7', border: '0.5px solid #AFA9EC' },
-  blue: { background: '#E6F1FB', color: '#0C447C', border: '0.5px solid #93C5E8' },
-  teal: { background: '#E1F5EE', color: '#0F6E56', border: '0.5px solid #7DD4B8' },
-  pink: { background: '#FBEAF0', color: '#993556', border: '0.5px solid #E8A0B4' },
+  green: { background: 'var(--success-bg)', color: 'var(--success-text)', border: '0.5px solid #97C459' },
+  amber: { background: 'var(--warning-bg)', color: 'var(--warning-text)', border: '0.5px solid #FAC775' },
+  red: { background: 'var(--error-bg)', color: 'var(--error-text)', border: '0.5px solid #F09595' },
+  purple: { background: 'var(--morning)', color: 'var(--accent)', border: '0.5px solid var(--accent)' },
+  blue: { background: 'rgba(59,130,246,0.1)', color: '#60A5FA', border: '0.5px solid #93C5E8' },
+  teal: { background: 'rgba(20,184,166,0.1)', color: '#2DD4BF', border: '0.5px solid #7DD4B8' },
+  pink: { background: 'rgba(236,72,153,0.1)', color: '#F472B6', border: '0.5px solid #E8A0B4' },
 }
 
 interface BadgeProps {

@@ -52,11 +52,11 @@ export default function WidgetsView() {
 
   return (
     <div style={{ padding: '16px 14px' }}>
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: '#111827', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <Puzzle size={20} color="#534AB7" />
+      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <Puzzle size={20} color="var(--accent)" />
         Widgets
       </h2>
-      <p style={{ fontSize: 12, color: '#9CA3AF', margin: '0 0 16px' }}>
+      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 16px' }}>
         Built-in shortcuts and sandboxed embeds from this origin only — third-party manifests will follow the same contract.
       </p>
 
@@ -72,18 +72,18 @@ export default function WidgetsView() {
                 textAlign: 'left',
                 padding: 14,
                 borderRadius: 12,
-                border: '0.5px solid #E5E3FF',
-                background: '#fff',
+                border: '0.5px solid var(--border-2)',
+                background: 'var(--surface)',
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 8,
-                boxShadow: '0 1px 2px rgba(83, 74, 183, 0.06)',
+                boxShadow: '0 1px 2px rgba(99, 102, 241, 0.06)',
               }}
             >
-              <Icon size={18} color="#534AB7" />
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>{t.title}</span>
-              <span style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.4 }}>{t.description}</span>
+              <Icon size={18} color="var(--accent)" />
+              <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{t.title}</span>
+              <span style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>{t.description}</span>
             </button>
           )
         })}
@@ -91,11 +91,11 @@ export default function WidgetsView() {
 
       {registry.length > 0 && (
         <>
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#9CA3AF', textTransform: 'uppercase', marginBottom: 10 }}>Sandboxed embeds</p>
+          <p style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', marginBottom: 10 }}>Sandboxed embeds</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {registry.map((w) => (
               <div key={w.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <p style={{ fontSize: 12, fontWeight: 600, color: '#111827', padding: '10px 12px', margin: 0, borderBottom: '0.5px solid #E5E3FF' }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', padding: '10px 12px', margin: 0, borderBottom: '0.5px solid var(--border-2)' }}>
                   {w.title}
                 </p>
                 <iframe

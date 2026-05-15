@@ -1,18 +1,17 @@
 import type { ComponentType } from 'react'
 import type { SidebarView } from '@/lib/types'
 import {
-  LayoutDashboard,
-  Calendar,
-  Bell,
-  Brain,
+  Home,
+  CheckSquare,
+  BookOpen,
   Sparkles,
   TrendingUp,
   Heart,
-  BookOpen,
-  History,
   Users,
   Puzzle,
   Mic2,
+  Brain,
+  Bell,
 } from 'lucide-react'
 
 export interface NavItem {
@@ -24,29 +23,23 @@ export interface NavItem {
 
 export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
   {
-    section: 'Today',
+    section: 'Main',
     items: [
-      { key: 'dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-      { key: 'calendar', icon: Calendar, label: 'My day' },
-      { key: 'reminders', icon: Bell, label: 'Reminders', badge: 'dot-red' },
-      { key: 'mind', icon: Brain, label: 'My mind' },
-      { key: 'meetings', icon: Mic2, label: 'Meetings' },
+      { key: 'dashboard', icon: Home, label: 'Home' },
+      { key: 'calendar', icon: CheckSquare, label: 'Today' },
+      { key: 'memory', icon: BookOpen, label: 'Memory' },
       { key: 'reflect', icon: Sparkles, label: 'Reflect' },
     ],
   },
   {
-    section: 'Grow',
+    section: 'More',
     items: [
-      { key: 'progress', icon: TrendingUp, label: 'Progress', badge: 'dot-green' },
+      { key: 'progress', icon: TrendingUp, label: 'Progress' },
       { key: 'wellness', icon: Heart, label: 'Wellness' },
-      { key: 'learning', icon: BookOpen, label: 'Learning' },
-    ],
-  },
-  {
-    section: 'Life',
-    items: [
-      { key: 'memory', icon: History, label: 'Memory' },
+      { key: 'meetings', icon: Mic2, label: 'Meetings' },
+      { key: 'mind', icon: Brain, label: 'My mind' },
       { key: 'people', icon: Users, label: 'People' },
+      { key: 'reminders', icon: Bell, label: 'Reminders' },
       { key: 'widgets', icon: Puzzle, label: 'Widgets', badge: 'new-pill' },
     ],
   },

@@ -25,10 +25,10 @@ export default function MoodCard({ todayMood, onLog }: MoodCardProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: 28 }}>{EMOJIS[todayMood.score - 1]}</span>
             <div>
-              <p style={{ fontSize: 12, fontWeight: 500, color: '#374151', margin: 0 }}>
+              <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: 0 }}>
                 {MOOD_LABELS[todayMood.score - 1]}
               </p>
-              <p style={{ fontSize: 10, color: '#9CA3AF', margin: '2px 0 0' }}>
+              <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '2px 0 0' }}>
                 Logged at{' '}
                 {new Date(todayMood.created_at).toLocaleTimeString('en-US', {
                   hour: 'numeric',
@@ -41,7 +41,7 @@ export default function MoodCard({ todayMood, onLog }: MoodCardProps) {
               style={{
                 marginLeft: 'auto',
                 fontSize: 11,
-                color: '#534AB7',
+                color: 'var(--accent)',
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
@@ -51,7 +51,7 @@ export default function MoodCard({ todayMood, onLog }: MoodCardProps) {
               Update
             </button>
           </div>
-          <p style={{ fontSize: 10, color: '#9CA3AF', marginTop: 8, marginBottom: 0 }}>
+          <p style={{ fontSize: 10, color: 'var(--text-2)', marginTop: 8, marginBottom: 0 }}>
             We track this over time to find your patterns
           </p>
         </div>
@@ -71,8 +71,8 @@ export default function MoodCard({ todayMood, onLog }: MoodCardProps) {
                 style={{
                   flex: 1,
                   padding: '6px 4px',
-                  background: '#F8F7FF',
-                  border: '0.5px solid #E5E3FF',
+                  background: 'var(--surface-2)',
+                  border: '0.5px solid var(--border-2)',
                   borderRadius: 8,
                   fontSize: 18,
                   cursor: 'pointer',
@@ -83,18 +83,18 @@ export default function MoodCard({ todayMood, onLog }: MoodCardProps) {
                 }}
                 onMouseEnter={(e) => {
                   e.currentTarget.style.transform = 'scale(1.15)'
-                  e.currentTarget.style.background = '#EEEDFE'
+                  e.currentTarget.style.background = 'var(--morning)'
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.transform = 'scale(1)'
-                  e.currentTarget.style.background = '#F8F7FF'
+                  e.currentTarget.style.background = 'var(--surface-2)'
                 }}
               >
                 {emoji}
               </button>
             ))}
           </div>
-          <p style={{ fontSize: 10, color: '#9CA3AF', margin: 0 }}>
+          <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>
             We track this over time to find your patterns
           </p>
         </div>
