@@ -7,7 +7,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const TOOLS: Anthropic.Tool[] = [
   {
     name: 'add_task',
-    description: 'Add a new task to the list. Use when user says "add task", "I need to", "remind me to do", "put on my list".',
+    description: 'Add a new task or to-do. Use when user says "add task", "I need to", "I have to", "I should", "remind me to do", "put on my list", "don\'t forget to". NOT for calendar events with specific date+time — use add_calendar_event for those.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -20,7 +20,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'log_mood',
-    description: 'Log current mood 1-5. Use when user expresses feelings. Score guide: amazing/great=5, good=4, okay/fine/alright=3, low/off/meh=2, terrible/rough/struggling=1.',
+    description: 'Log current mood 1-5. Use whenever user expresses how they feel — even casually. "I feel great", "having a rough day", "kind of anxious", "feeling good", "so tired", "overwhelmed" etc. Score: amazing/great=5, good=4, okay/fine/alright=3, low/off/tired/stressed=2, terrible/rough/awful=1.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -32,15 +32,15 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'add_calendar_event',
-    description: 'Add an event to the calendar. Use when user says "I have an event", "I have a meeting", "put it on my calendar", "schedule", "I have an appointment", "block time for", "add to my calendar". Also use when user describes something happening at a specific date+time that is NOT just a task.',
+    description: 'Add an event, meeting, or appointment to the calendar. Use liberally — any time the user describes something happening on a specific date and/or time. Natural phrasings: "I have X on [date]", "add X to my calendar", "schedule X for [date/time]", "put X on my schedule", "X is on [date] from [time] to [time]", "can you add X", "[place/event] [date] [time]". Prefer this over add_reminder when a date+time is given.',
     input_schema: {
       type: 'object' as const,
       properties: {
-        title: { type: 'string', description: 'Event title. If the user didn\'t give a title, infer one from context (e.g. "Event" or "Meeting")' },
-        date: { type: 'string', description: 'YYYY-MM-DD date of the event. Resolve relative dates like "next Wednesday" against today\'s date accurately.' },
-        start_time: { type: 'string', description: 'Start time in HH:MM 24h format, e.g. "16:00" for 4 PM. Required if user gives a time.' },
-        end_time: { type: 'string', description: 'End time in HH:MM 24h format if given, e.g. "19:00" for 7 PM.' },
-        event_type: { type: 'string', enum: ['event', 'meeting', 'birthday'], description: 'Type of event — default "event".' },
+        title: { type: 'string', description: 'Event title — use the location, event name, or activity from the user\'s message. E.g. "ION Event", "Doctor Appointment", "Team Meeting". Infer if not explicitly stated.' },
+        date: { type: 'string', description: 'YYYY-MM-DD. Resolve relative dates accurately against today. "Next Wednesday" = Wednesday of next week.' },
+        start_time: { type: 'string', description: 'Start time HH:MM 24h. "4pm"→"16:00", "9am"→"09:00", "noon"→"12:00". Provide if user mentions a start time.' },
+        end_time: { type: 'string', description: 'End time HH:MM 24h. "7pm"→"19:00". Provide if user gives a range like "4 to 7" or "4-7pm".' },
+        event_type: { type: 'string', enum: ['event', 'meeting', 'birthday'], description: 'Default "event". Use "meeting" for work/professional meetings, "birthday" for birthdays.' },
       },
       required: ['title', 'date'],
     },
@@ -218,25 +218,71 @@ export async function POST(request: Request) {
       max_tokens: 1024,
       tools: TOOLS,
       tool_choice: { type: 'auto' },
-      system: `You are an intent parser for Jalayu. Extract ONLY clear, explicit actions from the user's message and conversation context. Today is ${today}, current time is ${timeStr}.
+      system: `You are the action-detection brain for Jalayu, a personal AI companion. Your ONLY job: read what the user said and call the right tool(s). You never reply with text — only tool calls.
 
-IMPORTANT for insurance:
-- Trigger add_insurance_profile whenever the user provides insurance data (carrier, plan type, member ID, deductible, copays, etc.) — even partial info.
-- Use the conversation context to determine whose insurance it is if not stated in the current message.
-- Convert all dollar amounts to numbers (e.g. "$1,500" → 1500, "thirty dollars" → 30).
-- If user says "update my deductible" or "correct my copay", use update_insurance_profile.
+TODAY: ${today} (${now.toLocaleDateString('en-US', { weekday: 'long' })}), current time: ${timeStr}
 
-IMPORTANT for medications:
-- Trigger add_medication when user mentions taking a medication in any form.
+GOLDEN RULE: Be liberal. If the intent is 65%+ clear, call the tool. A missed action is worse than an extra one. Humans talk naturally — match the intent, not the exact words.
 
-IMPORTANT for calendar events:
-- Use add_calendar_event (NOT add_reminder) whenever the user mentions having an event, meeting, appointment, or anything happening at a specific date and time.
-- Examples that should trigger add_calendar_event: "I have an event next Wed 4-7", "schedule a meeting Friday at 2", "put dinner on my calendar Saturday", "I have a doctor's appointment Thursday at 3pm"
-- Resolve relative dates accurately: today is ${today}. "Next Wednesday" means the Wednesday of next week.
-- Convert times to 24h: "4 PM" = "16:00", "7 PM" = "19:00", "9 AM" = "09:00"
+━━━ CALENDAR EVENTS → add_calendar_event ━━━
+Trigger when user says anything like:
+- "add an event / meeting / appointment to my calendar"
+- "I have [thing] on [date] at [time]"
+- "put [thing] on my calendar / schedule"
+- "can you add X to my calendar"
+- "schedule X for [date/time]"
+- "block time for X on [date]"
+- "I'm going to [place/event] on [date]"
+- "[event name] is on [date] from [time] to [time]"
+- Any date + time + activity combination — even phrased casually
+Title: use what the user says (location, event name, etc.). If no clear title, use "Event" or infer from context.
 
-For other actions (tasks, mood, reminders, memory), only act on explicit requests.
-If the message is purely conversational with no action intent, do NOT call any tools.`,
+━━━ TASKS → add_task ━━━
+Trigger when user says:
+- "add to my list / to-do", "I need to", "I have to", "I should", "don't forget to"
+- "remind me to DO something" (action-oriented, not time-specific)
+- "put X on my task list"
+
+━━━ REMINDERS → add_reminder ━━━
+Trigger for time-based alerts: "remind me at X", "alert me when", "set a reminder for"
+NOTE: If the user is scheduling an actual event (not just an alert), use add_calendar_event instead or in addition.
+
+━━━ MOOD → log_mood ━━━
+Trigger whenever user expresses how they feel, even casually:
+- "I feel / I'm feeling / feeling X"
+- "today was X", "having a X day"
+- Emotional words: great, good, okay, tired, anxious, stressed, low, rough, sad, happy, excited, overwhelmed, etc.
+Score: 5=amazing/great, 4=good, 3=okay/fine/alright, 2=low/off/tired/stressed, 1=terrible/rough/awful
+
+━━━ MEMORY → save_memory ━━━
+Trigger for: "save this", "remember that", "note this", "add to memory", "capture this"
+
+━━━ INSURANCE → add_insurance_profile ━━━
+Trigger whenever user shares insurance details (even partial): carrier, plan type, member ID, copays, deductible.
+Use conversation context for whose insurance it is. Dollar amounts: "$1,500" → 1500.
+
+━━━ MEDICATIONS → add_medication ━━━
+Trigger for: "I take", "I'm on", "I'm prescribed", "my medication is", any drug name + dose + frequency.
+
+━━━ DECISIONS → track_decision ━━━
+Trigger for: "I decided", "I've decided", "going with", "I'm going to [major life choice]".
+
+━━━ DATE RESOLUTION — MUST BE ACCURATE ━━━
+- "next Wednesday" → the Wednesday of NEXT week (not this week, even if today is before Wednesday)
+- "this Saturday" → the coming Saturday
+- "tomorrow" → ${new Date(now.getTime() + 86400000).toISOString().split('T')[0]}
+- "next week" alone → use Monday of next week as a default
+- Always output YYYY-MM-DD
+
+━━━ TIME RESOLUTION ━━━
+- "4 to 7", "4-7" → start_time: "16:00", end_time: "19:00"
+- "4pm" / "4 PM" → "16:00"
+- "7am" → "07:00", "noon" → "12:00", "midnight" → "00:00"
+- Always 24h HH:MM format
+
+━━━ COMPOUND REQUESTS ━━━
+If the user wants multiple things in one message (e.g. "add this event AND remind me about it"), call BOTH tools.
+If intent is purely conversational with zero action content, call no tools.`,
       messages: contextMessages,
     })
 

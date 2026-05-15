@@ -158,6 +158,9 @@ export default function DashboardPage() {
       if (!error && data) {
         addTask(data as Task)
         toast.success('Added ✦')
+      } else if (error) {
+        console.error('[handleAddTask] DB error:', error)
+        toast.error(`Could not save: ${error.message}`)
       }
     },
     [addTask],
