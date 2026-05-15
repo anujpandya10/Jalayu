@@ -4,71 +4,135 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Profile, Task, Mood } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 
-function cacheKey(userId: string, date: string) {
-  return `jalayu_morning_${userId}_${date}`
+type Msg = {
+  role: 'assistant' | 'user'
+  content: string
+  streaming?: boolean
 }
 
-function TaskRow({
-  task,
-  onToggle,
-}: {
-  task: Task
-  onToggle: (task: Task) => Promise<void>
-}) {
-  const [toggling, setToggling] = useState(false)
+function TypingDots() {
+  return (
+    <div style={{ display: 'flex', gap: 5, alignItems: 'center', padding: '2px 0 6px' }}>
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            background: 'var(--text-3)',
+            display: 'inline-block',
+            animation: `jdot 1.3s ease-in-out ${i * 0.18}s infinite`,
+          }}
+        />
+      ))}
+    </div>
+  )
+}
 
-  async function handleToggle() {
-    setToggling(true)
-    await onToggle(task)
-    setToggling(false)
-  }
+function AgentMessage({ content, streaming }: { content: string; streaming?: boolean }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 7,
+          marginBottom: 10,
+        }}
+      >
+        <div
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: '50%',
+            background: 'var(--accent)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 10,
+            color: 'var(--accent-fg)',
+            flexShrink: 0,
+            fontWeight: 600,
+          }}
+        >
+          J
+        </div>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 600,
+            color: 'var(--text-3)',
+            letterSpacing: '0.05em',
+            textTransform: 'uppercase',
+          }}
+        >
+          Jalayu
+        </span>
+      </div>
 
+      {!content && streaming ? (
+        <TypingDots />
+      ) : (
+        <p
+          style={{
+            fontFamily: 'var(--font-lora), Georgia, serif',
+            fontSize: 17,
+            lineHeight: 1.8,
+            color: 'var(--text)',
+            margin: 0,
+            fontStyle: 'italic',
+            paddingLeft: 29,
+          }}
+        >
+          {content}
+          {streaming && content && (
+            <span
+              style={{
+                display: 'inline-block',
+                width: 2,
+                height: 17,
+                background: 'var(--text-2)',
+                marginLeft: 2,
+                verticalAlign: 'middle',
+                animation: 'jblink 1s step-end infinite',
+              }}
+            />
+          )}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function UserMessage({ content }: { content: string }) {
   return (
     <div
       style={{
+        marginBottom: 28,
         display: 'flex',
-        alignItems: 'flex-start',
-        gap: 10,
-        padding: '6px 0',
-        opacity: task.completed ? 0.45 : 1,
-        transition: 'opacity 0.2s',
+        justifyContent: 'flex-end',
       }}
     >
-      <button
-        onClick={handleToggle}
-        disabled={toggling}
-        aria-label={task.completed ? 'Mark incomplete' : 'Mark complete'}
+      <div
         style={{
-          width: 18,
-          height: 18,
-          borderRadius: 4,
-          border: `1.5px solid ${task.completed ? 'var(--accent)' : 'var(--border-2)'}`,
-          background: task.completed ? 'var(--accent)' : 'transparent',
-          flexShrink: 0,
-          marginTop: 2,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: toggling ? 'wait' : 'pointer',
-          transition: 'background 0.15s, border-color 0.15s',
+          background: 'var(--morning)',
+          borderRadius: '18px 18px 4px 18px',
+          padding: '11px 16px',
+          maxWidth: '78%',
         }}
       >
-        {task.completed && (
-          <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-            <path d="M1 4L3.5 6.5L9 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        )}
-      </button>
-      <span
-        style={{
-          fontSize: 14,
-          color: 'var(--text)',
-          lineHeight: '1.5',
-          textDecoration: task.completed ? 'line-through' : 'none',
-        }}
-      >
-        {task.title}
-      </span>
+        <p
+          style={{
+            fontSize: 15,
+            lineHeight: 1.6,
+            color: 'var(--text)',
+            margin: 0,
+          }}
+        >
+          {content}
+        </p>
+      </div>
     </div>
   )
 }
@@ -94,144 +158,220 @@ export default function HomeContent({
 }) {
   const setShowChatPanel = useStore((s) => s.setShowChatPanel)
 
-  // Morning note
-  const [morningNote, setMorningNote] = useState<string | null>(null)
-  const [noteLoading, setNoteLoading] = useState(true)
-
-  // Day-starter conversation
-  const [dayAnswer, setDayAnswer] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const [aiReply, setAiReply] = useState('')
-  const [replyStreaming, setReplyStreaming] = useState(false)
-
-  // Task add
+  const [messages, setMessages] = useState<Msg[]>([])
+  const [loadingEntry, setLoadingEntry] = useState(true)
+  const [sending, setSending] = useState(false)
+  const [input, setInput] = useState('')
+  const [showTasks, setShowTasks] = useState(false)
   const [newTask, setNewTask] = useState('')
   const [addingTask, setAddingTask] = useState(false)
 
+  const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
-  // Date info
-  const today = new Date()
-  const dayLabel = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
-  const dayNumber = profile?.created_at
-    ? Math.floor((Date.now() - new Date(profile.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1
-    : null
-
-  // Load morning note
+  // Scroll to bottom when messages update
   useEffect(() => {
-    async function loadNote() {
-      setNoteLoading(true)
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages, loadingEntry])
+
+  // Stream the entry message on mount
+  useEffect(() => {
+    let cancelled = false
+
+    async function streamEntry() {
+      setLoadingEntry(true)
+
+      // Brief pause — like someone looking up before speaking
+      await new Promise((r) => setTimeout(r, 500))
+      if (cancelled) return
+
+      setLoadingEntry(false)
+      setMessages([{ role: 'assistant', content: '', streaming: true }])
+
       try {
-        const dateStr = today.toISOString().split('T')[0]
-        // Try cache first
-        if (profile?.id) {
-          const cached = localStorage.getItem(cacheKey(profile.id, dateStr))
-          if (cached) {
-            setMorningNote(cached)
-            setNoteLoading(false)
-            return
-          }
+        const res = await fetch('/api/ai/entry')
+        if (!res.ok || !res.body) {
+          if (!cancelled)
+            setMessages([
+              {
+                role: 'assistant',
+                content: "You're back. Let's see what today needs.",
+                streaming: false,
+              },
+            ])
+          return
         }
-        const res = await fetch('/api/ai/morning')
-        if (res.ok) {
-          const data = await res.json()
-          if (data.note) {
-            setMorningNote(data.note)
-            if (data.userId && data.date) {
-              localStorage.setItem(cacheKey(data.userId, data.date), data.note)
-            }
+
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let text = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done || cancelled) break
+          text += decoder.decode(value, { stream: true })
+          setMessages([{ role: 'assistant', content: text, streaming: true }])
+        }
+
+        if (!cancelled) {
+          setMessages([{ role: 'assistant', content: text, streaming: false }])
+          // Persist entry message to thread (fire and forget)
+          if (text.trim()) {
+            fetch('/api/chat/messages', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                messages: [{ role: 'assistant', content: text }],
+              }),
+            }).catch(() => {})
           }
         }
       } catch {
-        setMorningNote('Morning. A new day to work toward what matters.')
-      } finally {
-        setNoteLoading(false)
+        if (!cancelled)
+          setMessages([
+            {
+              role: 'assistant',
+              content: "You're back. Let's see what today needs.",
+              streaming: false,
+            },
+          ])
       }
     }
-    loadNote()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile?.id])
 
-  // Auto-resize textarea
-  function handleAnswerInput(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    setDayAnswer(e.target.value)
-    e.target.style.height = 'auto'
-    e.target.style.height = `${e.target.scrollHeight}px`
-  }
+    streamEntry()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
-  const submitAnswer = useCallback(async () => {
-    const trimmed = dayAnswer.trim()
-    if (!trimmed || replyStreaming) return
-    setSubmitted(true)
-    setReplyStreaming(true)
-    setAiReply('')
+  const sendMessage = useCallback(async () => {
+    const text = input.trim()
+    if (!text || sending || loadingEntry) return
+
+    setInput('')
+    // Reset textarea height
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
+    setSending(true)
+
+    const userMsg: Msg = { role: 'user', content: text }
+    const updatedMessages = [...messages, userMsg]
+    setMessages(updatedMessages)
+
+    // Add empty assistant message (will stream into it)
+    setMessages((prev) => [
+      ...prev,
+      { role: 'assistant', content: '', streaming: true },
+    ])
 
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: trimmed,
-          context: `The user just answered "What does today need to be about?" with: "${trimmed}". Respond warmly and briefly (1–2 sentences). Acknowledge what they said and leave them with one thought that helps them actually start. No bullet points, no lists, no markdown.`,
+          messages: updatedMessages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
         }),
       })
 
       if (!res.ok || !res.body) {
-        setAiReply("That sounds like the right thing to hold onto today.")
-        setReplyStreaming(false)
+        setMessages((prev) => {
+          const copy = [...prev]
+          copy[copy.length - 1] = {
+            role: 'assistant',
+            content: "I'm here. Keep going.",
+            streaming: false,
+          }
+          return copy
+        })
         return
       }
 
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
-      let buffer = ''
+      let reply = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() ?? ''
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const payload = line.slice(6).trim()
-            if (payload === '[DONE]') continue
-            try {
-              const json = JSON.parse(payload)
-              const delta = json.choices?.[0]?.delta?.content ?? json.delta?.text ?? ''
-              if (delta) setAiReply((prev) => prev + delta)
-            } catch {
-              // non-JSON chunk, skip
-            }
+        reply += decoder.decode(value, { stream: true })
+        setMessages((prev) => {
+          const copy = [...prev]
+          copy[copy.length - 1] = {
+            role: 'assistant',
+            content: reply,
+            streaming: true,
           }
+          return copy
+        })
+      }
+
+      setMessages((prev) => {
+        const copy = [...prev]
+        copy[copy.length - 1] = {
+          role: 'assistant',
+          content: reply,
+          streaming: false,
         }
+        return copy
+      })
+
+      // Persist the exchange (fire and forget)
+      if (text && reply) {
+        fetch('/api/chat/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: [
+              { role: 'user', content: text },
+              { role: 'assistant', content: reply },
+            ],
+          }),
+        }).catch(() => {})
       }
     } catch {
-      setAiReply("That sounds like the right thing to hold onto today.")
+      setMessages((prev) => {
+        const copy = [...prev]
+        copy[copy.length - 1] = {
+          role: 'assistant',
+          content: "I'm here. Keep going.",
+          streaming: false,
+        }
+        return copy
+      })
     } finally {
-      setReplyStreaming(false)
+      setSending(false)
     }
-  }, [dayAnswer, replyStreaming])
+  }, [input, messages, sending, loadingEntry])
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      submitAnswer()
+      sendMessage()
     }
+  }
+
+  function handleInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    setInput(e.target.value)
+    e.target.style.height = 'auto'
+    e.target.style.height = `${Math.min(e.target.scrollHeight, 130)}px`
   }
 
   async function handleAddTask(e: React.FormEvent) {
     e.preventDefault()
-    const trimmed = newTask.trim()
-    if (!trimmed || addingTask) return
+    const t = newTask.trim()
+    if (!t || addingTask) return
     setAddingTask(true)
     setNewTask('')
-    await onAddTask(trimmed)
+    await onAddTask(t)
     setAddingTask(false)
   }
 
   const pendingTasks = tasks.filter((t) => !t.completed)
-  const completedTasks = tasks.filter((t) => t.completed)
+  const doneTasks = tasks.filter((t) => t.completed)
 
   const MOODS = [
     { score: 1, emoji: '😔', label: 'Rough' },
@@ -242,197 +382,232 @@ export default function HomeContent({
   ]
 
   return (
-    <div
-      style={{
-        maxWidth: 500,
-        margin: '0 auto',
-        padding: '28px 20px 80px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 0,
-      }}
-    >
-      {/* Date line */}
+    <>
+      <style>{`
+        @keyframes jdot {
+          0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+          30% { transform: translateY(-6px); opacity: 1; }
+        }
+        @keyframes jblink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+        @keyframes jfadein { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .jmsg { animation: jfadein 0.25s ease forwards; }
+      `}</style>
+
       <div
         style={{
-          fontSize: 12,
-          color: 'var(--text-3)',
-          letterSpacing: '0.04em',
-          marginBottom: 20,
+          maxWidth: 580,
+          margin: '0 auto',
           display: 'flex',
-          alignItems: 'center',
-          gap: 6,
+          flexDirection: 'column',
+          minHeight: 'calc(100vh - 60px)',
+          padding: '0 0 20px',
         }}
       >
-        <span>{dayLabel}</span>
-        {dayNumber !== null && (
-          <>
-            <span style={{ color: 'var(--border-2)' }}>·</span>
-            <span>Day {dayNumber}</span>
-          </>
-        )}
-      </div>
-
-      {/* Morning note block */}
-      <div
-        style={{
-          background: 'var(--morning)',
-          borderRadius: 10,
-          padding: '16px 18px',
-          marginBottom: 24,
-          minHeight: 64,
-        }}
-      >
-        {noteLoading ? (
-          <div style={{ display: 'flex', gap: 4, alignItems: 'center', height: 24 }}>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
+        {/* Conversation area */}
+        <div
+          style={{
+            flex: 1,
+            padding: '36px 24px 8px',
+          }}
+        >
+          {/* Loading state */}
+          {loadingEntry && (
+            <div className="jmsg" style={{ marginBottom: 24 }}>
+              <div
                 style={{
-                  width: 5,
-                  height: 5,
-                  borderRadius: '50%',
-                  background: 'var(--text-3)',
-                  animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
-                }}
-              />
-            ))}
-            <style>{`@keyframes pulse { 0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); } 40% { opacity: 1; transform: scale(1); } }`}</style>
-          </div>
-        ) : (
-          <p
-            style={{
-              fontFamily: 'var(--font-lora), Georgia, serif',
-              fontSize: 15,
-              lineHeight: 1.7,
-              color: 'var(--text)',
-              margin: 0,
-              fontStyle: 'italic',
-            }}
-          >
-            {morningNote}
-          </p>
-        )}
-      </div>
-
-      {/* Day-starter question + input */}
-      {!submitted ? (
-        <div style={{ marginBottom: 28 }}>
-          <p
-            style={{
-              fontSize: 14,
-              color: 'var(--text-2)',
-              marginBottom: 10,
-              lineHeight: 1.5,
-            }}
-          >
-            What does today need to be about?
-          </p>
-          <textarea
-            ref={inputRef}
-            value={dayAnswer}
-            onChange={handleAnswerInput}
-            onKeyDown={handleKeyDown}
-            placeholder="type here…"
-            rows={1}
-            style={{
-              width: '100%',
-              resize: 'none',
-              border: 'none',
-              borderBottom: '1.5px solid var(--border)',
-              borderRadius: 0,
-              background: 'transparent',
-              fontSize: 15,
-              color: 'var(--text)',
-              padding: '4px 0',
-              outline: 'none',
-              fontFamily: 'inherit',
-              lineHeight: 1.6,
-              overflow: 'hidden',
-              transition: 'border-color 0.15s',
-            }}
-            onFocus={(e) => (e.target.style.borderBottomColor = 'var(--accent)')}
-            onBlur={(e) => (e.target.style.borderBottomColor = 'var(--border)')}
-          />
-          {dayAnswer.trim() && (
-            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                onClick={submitAnswer}
-                style={{
-                  fontSize: 12,
-                  color: 'var(--text-3)',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 7,
+                  marginBottom: 12,
                 }}
               >
-                enter ↵
-              </button>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div style={{ marginBottom: 28 }}>
-          {/* User answer */}
-          <p
-            style={{
-              fontSize: 14,
-              color: 'var(--text-2)',
-              marginBottom: 6,
-              lineHeight: 1.5,
-            }}
-          >
-            What does today need to be about?
-          </p>
-          <p
-            style={{
-              fontSize: 15,
-              color: 'var(--text)',
-              lineHeight: 1.6,
-              marginBottom: 14,
-              paddingBottom: 12,
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            {dayAnswer}
-          </p>
-
-          {/* AI reply */}
-          {(aiReply || replyStreaming) && (
-            <p
-              style={{
-                fontFamily: 'var(--font-lora), Georgia, serif',
-                fontSize: 14,
-                lineHeight: 1.75,
-                color: 'var(--text-2)',
-                margin: '0 0 12px',
-                fontStyle: 'italic',
-              }}
-            >
-              {aiReply}
-              {replyStreaming && (
+                <div
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: 'var(--accent)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 10,
+                    color: 'var(--accent-fg)',
+                    fontWeight: 600,
+                  }}
+                >
+                  J
+                </div>
                 <span
                   style={{
-                    display: 'inline-block',
-                    width: 2,
-                    height: 14,
-                    background: 'var(--text-3)',
-                    marginLeft: 2,
-                    verticalAlign: 'middle',
-                    animation: 'blink 1s step-end infinite',
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: 'var(--text-3)',
+                    letterSpacing: '0.05em',
+                    textTransform: 'uppercase',
                   }}
-                />
-              )}
-              <style>{`@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }`}</style>
-            </p>
+                >
+                  Jalayu
+                </span>
+              </div>
+              <div style={{ paddingLeft: 29 }}>
+                <TypingDots />
+              </div>
+            </div>
           )}
 
-          {!replyStreaming && aiReply && (
+          {/* Messages */}
+          {messages.map((msg, i) => (
+            <div key={i} className="jmsg">
+              {msg.role === 'assistant' ? (
+                <AgentMessage
+                  content={msg.content}
+                  streaming={msg.streaming}
+                />
+              ) : (
+                <UserMessage content={msg.content} />
+              )}
+            </div>
+          ))}
+
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div
+          style={{
+            padding: '14px 24px',
+            borderTop: '1px solid var(--border)',
+            background: 'var(--bg)',
+            position: 'sticky',
+            bottom: 0,
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-end',
+              gap: 10,
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              borderRadius: 14,
+              padding: '10px 14px',
+              transition: 'border-color 0.15s',
+            }}
+            onFocus={() => {}}
+          >
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                loadingEntry ? '' : sending ? '…' : 'say something…'
+              }
+              rows={1}
+              disabled={loadingEntry || sending}
+              style={{
+                flex: 1,
+                resize: 'none',
+                border: 'none',
+                background: 'transparent',
+                fontSize: 15,
+                color: 'var(--text)',
+                outline: 'none',
+                fontFamily: 'inherit',
+                lineHeight: 1.6,
+                overflow: 'hidden',
+                minHeight: 24,
+                maxHeight: 130,
+              }}
+            />
+            {input.trim() && !sending && (
+              <button
+                onClick={sendMessage}
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: '50%',
+                  background: 'var(--accent)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  marginBottom: 1,
+                }}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 14 14"
+                  fill="none"
+                >
+                  <path
+                    d="M7 12V3M3 6.5L7 3L11 6.5"
+                    stroke="white"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
+            )}
+          </div>
+
+          {/* Subrow: mood + open full chat */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginTop: 8,
+              paddingLeft: 2,
+              paddingRight: 2,
+            }}
+          >
+            {!todayMood ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span
+                  style={{ fontSize: 11, color: 'var(--text-3)', marginRight: 2 }}
+                >
+                  how are you?
+                </span>
+                {MOODS.map(({ score, emoji, label }) => (
+                  <button
+                    key={score}
+                    onClick={() => onMoodLog(score)}
+                    title={label}
+                    style={{
+                      fontSize: 18,
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '1px 2px',
+                      lineHeight: 1,
+                      transition: 'transform 0.1s',
+                    }}
+                    onMouseEnter={(e) =>
+                      ((e.currentTarget as HTMLElement).style.transform =
+                        'scale(1.25)')
+                    }
+                    onMouseLeave={(e) =>
+                      ((e.currentTarget as HTMLElement).style.transform =
+                        'scale(1)')
+                    }
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div />
+            )}
+
             <button
               onClick={() => setShowChatPanel(true)}
               style={{
-                fontSize: 12,
+                fontSize: 11,
                 color: 'var(--text-3)',
                 background: 'none',
                 border: 'none',
@@ -442,112 +617,190 @@ export default function HomeContent({
                 textUnderlineOffset: 3,
               }}
             >
-              Keep talking →
+              full history →
             </button>
-          )}
+          </div>
         </div>
-      )}
 
-      {/* Divider */}
-      <div style={{ height: 1, background: 'var(--border)', marginBottom: 24 }} />
-
-      {/* Today's tasks */}
-      <div style={{ marginBottom: 24 }}>
-        <p
+        {/* Today's tasks — collapsible bar */}
+        <div
           style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            color: 'var(--text-3)',
-            marginBottom: 8,
+            borderTop: '1px solid var(--border)',
+            background: 'var(--surface)',
           }}
         >
-          Today
-        </p>
-
-        {pendingTasks.length === 0 && completedTasks.length === 0 && (
-          <p style={{ fontSize: 13, color: 'var(--text-3)', marginBottom: 8 }}>
-            Nothing planned yet.
-          </p>
-        )}
-
-        {pendingTasks.map((task) => (
-          <TaskRow key={task.id} task={task} onToggle={onToggleTask} />
-        ))}
-
-        {completedTasks.length > 0 && (
-          <>
-            {pendingTasks.length > 0 && (
-              <div style={{ height: 8 }} />
-            )}
-            {completedTasks.map((task) => (
-              <TaskRow key={task.id} task={task} onToggle={onToggleTask} />
-            ))}
-          </>
-        )}
-
-        {/* Add task inline */}
-        <form onSubmit={handleAddTask} style={{ marginTop: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 14, color: 'var(--text-3)' }}>+</span>
-            <input
-              type="text"
-              value={newTask}
-              onChange={(e) => setNewTask(e.target.value)}
-              placeholder="add a task"
-              style={{
-                flex: 1,
-                border: 'none',
-                background: 'transparent',
-                fontSize: 14,
-                color: 'var(--text)',
-                outline: 'none',
-                fontFamily: 'inherit',
-                padding: '4px 0',
-              }}
-            />
-          </div>
-        </form>
-      </div>
-
-      {/* Mood check — only if not logged today */}
-      {!todayMood && (
-        <div style={{ marginBottom: 12 }}>
-          <p
+          <button
+            onClick={() => setShowTasks((v) => !v)}
             style={{
-              fontSize: 13,
-              color: 'var(--text-2)',
-              marginBottom: 10,
+              width: '100%',
+              padding: '11px 24px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
             }}
           >
-            How are you?
-          </p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            {MOODS.map(({ score, emoji, label }) => (
-              <button
-                key={score}
-                onClick={() => onMoodLog(score)}
-                title={label}
+            <span
+              style={{
+                fontSize: 12,
+                color: 'var(--text-2)',
+                fontWeight: 500,
+              }}
+            >
+              {pendingTasks.length > 0
+                ? `${pendingTasks.length} left today`
+                : doneTasks.length > 0
+                  ? 'All done today ✓'
+                  : 'Today'}
+            </span>
+            <span
+              style={{
+                fontSize: 11,
+                color: 'var(--text-3)',
+                display: 'inline-block',
+                transform: showTasks ? 'rotate(180deg)' : 'none',
+                transition: 'transform 0.2s',
+              }}
+            >
+              ▾
+            </span>
+          </button>
+
+          {showTasks && (
+            <div style={{ padding: '0 24px 14px' }}>
+              {pendingTasks.map((task) => (
+                <div
+                  key={task.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    padding: '5px 0',
+                  }}
+                >
+                  <button
+                    onClick={() => onToggleTask(task)}
+                    style={{
+                      width: 17,
+                      height: 17,
+                      borderRadius: 4,
+                      border: '1.5px solid var(--border-2)',
+                      background: 'transparent',
+                      flexShrink: 0,
+                      marginTop: 2,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  />
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: 'var(--text)',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {task.title}
+                  </span>
+                </div>
+              ))}
+
+              {doneTasks.length > 0 && pendingTasks.length > 0 && (
+                <div
+                  style={{
+                    height: 1,
+                    background: 'var(--border)',
+                    margin: '8px 0',
+                  }}
+                />
+              )}
+
+              {doneTasks.map((task) => (
+                <div
+                  key={task.id}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 10,
+                    padding: '5px 0',
+                    opacity: 0.4,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 17,
+                      height: 17,
+                      borderRadius: 4,
+                      border: '1.5px solid var(--accent)',
+                      background: 'var(--accent)',
+                      flexShrink: 0,
+                      marginTop: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                      <path
+                        d="M1 3.5L3.2 5.5L8 1"
+                        stroke="white"
+                        strokeWidth="1.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: 'var(--text)',
+                      lineHeight: 1.5,
+                      textDecoration: 'line-through',
+                    }}
+                  >
+                    {task.title}
+                  </span>
+                </div>
+              ))}
+
+              {/* Inline add */}
+              <form
+                onSubmit={handleAddTask}
                 style={{
-                  fontSize: 22,
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  padding: '2px 4px',
-                  borderRadius: 6,
-                  transition: 'transform 0.1s',
-                  lineHeight: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  marginTop: 8,
+                  paddingTop: 6,
+                  borderTop: '1px dashed var(--border)',
                 }}
-                onMouseEnter={(e) => ((e.target as HTMLElement).style.transform = 'scale(1.2)')}
-                onMouseLeave={(e) => ((e.target as HTMLElement).style.transform = 'scale(1)')}
               >
-                {emoji}
-              </button>
-            ))}
-          </div>
+                <span style={{ fontSize: 14, color: 'var(--text-3)' }}>+</span>
+                <input
+                  type="text"
+                  value={newTask}
+                  onChange={(e) => setNewTask(e.target.value)}
+                  placeholder="add a task"
+                  disabled={addingTask}
+                  style={{
+                    flex: 1,
+                    border: 'none',
+                    background: 'transparent',
+                    fontSize: 13,
+                    color: 'var(--text)',
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    padding: '3px 0',
+                  }}
+                />
+              </form>
+            </div>
+          )}
         </div>
-      )}
-    </div>
+      </div>
+    </>
   )
 }

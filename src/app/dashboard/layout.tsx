@@ -103,29 +103,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#F8F7FF',
+          background: 'var(--bg)',
         }}
       >
         <div style={{ textAlign: 'center' }}>
           <div
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: 14,
-              background: '#534AB7',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 14px',
-              fontSize: 20,
-              color: '#fff',
+              fontSize: 22,
+              fontWeight: 600,
+              color: 'var(--text)',
+              letterSpacing: '-0.02em',
+              marginBottom: 16,
             }}
           >
-            ✦
+            Jalayu
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#534AB7' }}>
-            <Loader2 size={14} className="animate-spin" />
-            <span style={{ fontSize: 13, fontWeight: 500 }}>Loading your life…</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-3)', justifyContent: 'center' }}>
+            <Loader2 size={13} className="animate-spin" />
+            <span style={{ fontSize: 12 }}>Getting ready…</span>
           </div>
         </div>
       </div>
@@ -137,7 +132,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       style={{
         display: 'flex',
         height: '100vh',
-        background: '#F8F7FF',
+        background: 'var(--bg)',
         overflow: 'hidden',
       }}
     >
