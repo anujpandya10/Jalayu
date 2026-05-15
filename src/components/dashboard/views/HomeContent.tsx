@@ -229,7 +229,7 @@ export default function HomeContent({
     const actionsPromise = fetch('/api/ai/actions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ message: text, recentMessages: [{ role: 'user', content: text }] }),
     })
       .then((r) => r.json())
       .catch(() => ({ executed: [] }))

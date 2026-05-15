@@ -77,17 +77,89 @@ const TOOLS: Anthropic.Tool[] = [
       required: ['decision'],
     },
   },
+  {
+    name: 'add_insurance_profile',
+    description: 'Save insurance/health coverage details when the user provides them — carrier, plan type, member ID, copays, deductible, etc. Trigger whenever the user is giving their insurance info, even if partial. Use conversation context to determine whose insurance it is (self, spouse, child name).',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        profile_label: { type: 'string', description: "Label shown in dashboard. e.g. 'Mine', 'Spouse', 'Emma (daughter)'. Default 'Mine'." },
+        relationship: { type: 'string', enum: ['self', 'spouse', 'child', 'parent', 'other'], description: 'Whose coverage this is. Default self.' },
+        insurance_carrier: { type: 'string', description: 'Insurance company name, e.g. Blue Cross Blue Shield, Aetna, United, Cigna, Humana, Kaiser' },
+        plan_name: { type: 'string', description: 'Specific plan name if given, e.g. Blue Choice PPO' },
+        plan_type: { type: 'string', description: 'Plan type: PPO, HMO, HDHP, EPO, Medicare, Medicaid, etc.' },
+        member_id: { type: 'string', description: 'Member ID or subscriber ID number' },
+        group_number: { type: 'string', description: 'Group number or group ID' },
+        deductible_dollars: { type: 'number', description: 'Annual deductible amount in dollars (not cents). E.g. 1500 for $1,500' },
+        deductible_met_dollars: { type: 'number', description: 'How much of the deductible has been met so far this year, in dollars' },
+        out_of_pocket_max_dollars: { type: 'number', description: 'Annual out-of-pocket maximum in dollars' },
+        copay_primary_dollars: { type: 'number', description: 'Primary care visit copay in dollars' },
+        copay_specialist_dollars: { type: 'number', description: 'Specialist visit copay in dollars' },
+        copay_er_dollars: { type: 'number', description: 'Emergency room copay in dollars' },
+        insurance_phone: { type: 'string', description: 'Insurance carrier phone number (member services)' },
+        insurance_website: { type: 'string', description: 'Insurance carrier website URL' },
+      },
+      required: ['insurance_carrier'],
+    },
+  },
+  {
+    name: 'update_insurance_profile',
+    description: 'Update specific fields on an existing insurance profile when the user says they want to change or correct their insurance info.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        profile_label: { type: 'string', description: 'Which profile to update — match by label (e.g. Mine, Spouse). If unclear, update the first one.' },
+        insurance_carrier: { type: 'string' },
+        plan_name: { type: 'string' },
+        plan_type: { type: 'string' },
+        member_id: { type: 'string' },
+        group_number: { type: 'string' },
+        deductible_dollars: { type: 'number' },
+        deductible_met_dollars: { type: 'number' },
+        out_of_pocket_max_dollars: { type: 'number' },
+        copay_primary_dollars: { type: 'number' },
+        copay_specialist_dollars: { type: 'number' },
+        copay_er_dollars: { type: 'number' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'add_medication',
+    description: 'Save a medication when user tells you what they take. Use when user says "I take", "my medication is", "I\'m on", "I\'m prescribed".',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'Medication name' },
+        dosage_mg: { type: 'number', description: 'Dosage in mg if mentioned' },
+        frequency: { type: 'string', description: 'How often, e.g. "once daily", "twice a day", "as needed"' },
+        prescriber: { type: 'string', description: 'Doctor who prescribed it, if mentioned' },
+        purpose: { type: 'string', description: 'What it\'s for, if mentioned' },
+      },
+      required: ['name'],
+    },
+  },
 ]
 
 export type ExecutedAction = {
-  type: 'task_added' | 'mood_logged' | 'reminder_added' | 'memory_saved' | 'task_completed' | 'decision_tracked'
+  type: 'task_added' | 'mood_logged' | 'reminder_added' | 'memory_saved' | 'task_completed' | 'decision_tracked' | 'insurance_saved' | 'insurance_updated' | 'medication_saved'
   data: Record<string, unknown>
   message: string
 }
 
+// Convert dollar amount to cents safely
+function toCents(dollars: number | undefined | null): number | null {
+  if (dollars == null) return null
+  return Math.round(dollars * 100)
+}
+
 export async function POST(request: Request) {
   try {
-    const { message } = (await request.json()) as { message: string }
+    const body = await request.json()
+    const { message, recentMessages } = body as {
+      message: string
+      recentMessages?: { role: string; content: string }[]
+    }
     if (!message?.trim()) {
       return new Response(JSON.stringify({ executed: [] }), { headers: { 'Content-Type': 'application/json' } })
     }
@@ -110,13 +182,41 @@ export async function POST(request: Request) {
     const today = now.toISOString().split('T')[0]
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
 
+    // Build messages array with context: last few turns + current message
+    const contextMessages: Anthropic.MessageParam[] = []
+    if (recentMessages && recentMessages.length > 0) {
+      // Include up to 6 recent turns for multi-turn context (e.g. "it's my wife's")
+      const turns = recentMessages.slice(-6)
+      for (const m of turns) {
+        if (m.role === 'user' || m.role === 'assistant') {
+          contextMessages.push({ role: m.role as 'user' | 'assistant', content: m.content.slice(0, 600) })
+        }
+      }
+    }
+    // Always end with current user message
+    if (contextMessages.length === 0 || contextMessages[contextMessages.length - 1].role !== 'user' || contextMessages[contextMessages.length - 1].content !== message) {
+      contextMessages.push({ role: 'user', content: message })
+    }
+
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 512,
+      max_tokens: 1024,
       tools: TOOLS,
       tool_choice: { type: 'auto' },
-      system: `You are an intent parser. Extract ONLY clear, explicit actions from the user's message. Today is ${today}, current time is ${timeStr}. If the message is purely conversational with no action intent, do NOT call any tools. Do not infer — only act on explicit requests.`,
-      messages: [{ role: 'user', content: message }],
+      system: `You are an intent parser for Jalayu. Extract ONLY clear, explicit actions from the user's message and conversation context. Today is ${today}, current time is ${timeStr}.
+
+IMPORTANT for insurance:
+- Trigger add_insurance_profile whenever the user provides insurance data (carrier, plan type, member ID, deductible, copays, etc.) — even partial info.
+- Use the conversation context to determine whose insurance it is if not stated in the current message.
+- Convert all dollar amounts to numbers (e.g. "$1,500" → 1500, "thirty dollars" → 30).
+- If user says "update my deductible" or "correct my copay", use update_insurance_profile.
+
+IMPORTANT for medications:
+- Trigger add_medication when user mentions taking a medication in any form.
+
+For other actions (tasks, mood, reminders, memory), only act on explicit requests.
+If the message is purely conversational with no action intent, do NOT call any tools.`,
+      messages: contextMessages,
     })
 
     const executed: ExecutedAction[] = []
@@ -139,7 +239,6 @@ export async function POST(request: Request) {
         const score = Math.min(5, Math.max(1, Math.round(input.score)))
         const h = now.getHours()
         const timeOfDay = h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'
-        // Update today's mood if exists, else insert
         const { data: existing } = await supabase
           .from('moods').select('id').eq('user_id', user.id)
           .gte('created_at', today + 'T00:00:00').order('created_at', { ascending: false }).limit(1).single()
@@ -208,6 +307,151 @@ export async function POST(request: Request) {
             type: 'decision_tracked',
             data: data as Record<string, unknown>,
             message: `Decision tracked — I'll check back in ${followUpDays} days`,
+          })
+        }
+      }
+
+      if (block.name === 'add_insurance_profile') {
+        const input = block.input as {
+          profile_label?: string
+          relationship?: string
+          insurance_carrier: string
+          plan_name?: string
+          plan_type?: string
+          member_id?: string
+          group_number?: string
+          deductible_dollars?: number
+          deductible_met_dollars?: number
+          out_of_pocket_max_dollars?: number
+          copay_primary_dollars?: number
+          copay_specialist_dollars?: number
+          copay_er_dollars?: number
+          insurance_phone?: string
+          insurance_website?: string
+        }
+        const row = {
+          user_id: user.id,
+          profile_label: input.profile_label || 'Mine',
+          relationship: input.relationship || 'self',
+          insurance_carrier: input.insurance_carrier,
+          plan_name: input.plan_name || null,
+          plan_type: input.plan_type || null,
+          member_id: input.member_id || null,
+          group_number: input.group_number || null,
+          deductible_cents: toCents(input.deductible_dollars),
+          deductible_met_cents: toCents(input.deductible_met_dollars),
+          out_of_pocket_max_cents: toCents(input.out_of_pocket_max_dollars),
+          copay_primary_cents: toCents(input.copay_primary_dollars),
+          copay_specialist_cents: toCents(input.copay_specialist_dollars),
+          copay_er_cents: toCents(input.copay_er_dollars),
+          insurance_phone: input.insurance_phone || null,
+          insurance_website: input.insurance_website || null,
+          updated_at: now.toISOString(),
+        }
+        const { data, error } = await supabase
+          .from('health_profiles')
+          .insert(row)
+          .select()
+          .single()
+        if (!error && data) {
+          const label = input.profile_label || 'Mine'
+          const carrier = input.insurance_carrier
+          const planType = input.plan_type ? ` ${input.plan_type}` : ''
+          executed.push({
+            type: 'insurance_saved',
+            data: data as Record<string, unknown>,
+            message: `Saved ${label} insurance: ${carrier}${planType}`,
+          })
+        }
+      }
+
+      if (block.name === 'update_insurance_profile') {
+        const input = block.input as {
+          profile_label?: string
+          insurance_carrier?: string
+          plan_name?: string
+          plan_type?: string
+          member_id?: string
+          group_number?: string
+          deductible_dollars?: number
+          deductible_met_dollars?: number
+          out_of_pocket_max_dollars?: number
+          copay_primary_dollars?: number
+          copay_specialist_dollars?: number
+          copay_er_dollars?: number
+        }
+        // Find the profile to update
+        const label = input.profile_label || 'Mine'
+        const { data: profiles } = await supabase
+          .from('health_profiles')
+          .select('id, profile_label')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true })
+
+        let profileId: string | null = null
+        if (profiles && profiles.length > 0) {
+          const matched = profiles.find((p: { id: string; profile_label: string | null }) =>
+            p.profile_label?.toLowerCase() === label.toLowerCase()
+          )
+          profileId = matched?.id || profiles[0]?.id || null
+        }
+
+        if (profileId) {
+          const updates: Record<string, unknown> = { updated_at: now.toISOString() }
+          if (input.insurance_carrier) updates.insurance_carrier = input.insurance_carrier
+          if (input.plan_name) updates.plan_name = input.plan_name
+          if (input.plan_type) updates.plan_type = input.plan_type
+          if (input.member_id) updates.member_id = input.member_id
+          if (input.group_number) updates.group_number = input.group_number
+          if (input.deductible_dollars != null) updates.deductible_cents = toCents(input.deductible_dollars)
+          if (input.deductible_met_dollars != null) updates.deductible_met_cents = toCents(input.deductible_met_dollars)
+          if (input.out_of_pocket_max_dollars != null) updates.out_of_pocket_max_cents = toCents(input.out_of_pocket_max_dollars)
+          if (input.copay_primary_dollars != null) updates.copay_primary_cents = toCents(input.copay_primary_dollars)
+          if (input.copay_specialist_dollars != null) updates.copay_specialist_cents = toCents(input.copay_specialist_dollars)
+          if (input.copay_er_dollars != null) updates.copay_er_cents = toCents(input.copay_er_dollars)
+
+          const { data, error } = await supabase
+            .from('health_profiles')
+            .update(updates)
+            .eq('id', profileId)
+            .select()
+            .single()
+          if (!error && data) {
+            executed.push({
+              type: 'insurance_updated',
+              data: data as Record<string, unknown>,
+              message: `Insurance updated`,
+            })
+          }
+        }
+      }
+
+      if (block.name === 'add_medication') {
+        const input = block.input as {
+          name: string
+          dosage_mg?: number
+          frequency?: string
+          prescriber?: string
+          purpose?: string
+        }
+        const { data, error } = await supabase
+          .from('medications')
+          .insert({
+            user_id: user.id,
+            name: input.name,
+            dosage_mg: input.dosage_mg || null,
+            frequency: input.frequency || null,
+            prescriber: input.prescriber || null,
+            purpose: input.purpose || null,
+            is_active: true,
+          })
+          .select()
+          .single()
+        if (!error && data) {
+          executed.push({
+            type: 'medication_saved',
+            data: data as Record<string, unknown>,
+            message: `Saved medication: ${input.name}${input.dosage_mg ? ` ${input.dosage_mg}mg` : ''}`,
           })
         }
       }

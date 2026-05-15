@@ -170,6 +170,16 @@ export default function ChatPanel() {
 
     let accumulated = ''
     try {
+      // Fire action detection in parallel (insurance add/update, medication add, etc.)
+      const recentCtx = [...chatMessages, userMsg]
+        .slice(-8)
+        .map((m) => ({ role: m.role, content: m.content.slice(0, 600) }))
+      fetch('/api/ai/actions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, recentMessages: recentCtx }),
+      }).catch(() => {})
+
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

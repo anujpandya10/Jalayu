@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       supabase.from('notes').select('content, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
       supabase.from('chat_memory_facts').select('fact').eq('user_id', user.id).order('created_at', { ascending: false }).limit(14),
       supabase.from('chat_messages').select('role, content').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
-      supabase.from('health_profiles').select('insurance_carrier, plan_name, plan_type, conditions, allergies').eq('user_id', user.id).order('created_at', { ascending: true }).limit(1).maybeSingle(),
+      supabase.from('health_profiles').select('*').eq('user_id', user.id).order('created_at', { ascending: true }).limit(10),
       supabase.from('medications').select('name, dosage_mg, frequency, purpose').eq('user_id', user.id).eq('is_active', true).limit(20),
     ])
 
@@ -85,7 +85,7 @@ export async function POST(request: Request) {
     const recentNotes = notesRes.data || []
     const facts = (factsRes.data || []).map((f) => f.fact)
     const thread = (threadRes.data || []).reverse()
-    const healthProfile = healthRes.data
+    const healthProfiles: any[] = healthRes.data || []
     const activeMeds = medsRes.data || []
 
     // Language detection: check last 5 user messages
@@ -108,8 +108,39 @@ export async function POST(request: Request) {
       ? 'When you make a recommendation, add one short sentence starting with "Because " that ties to their data or stated goals.'
       : ''
 
-    const healthBlock = healthProfile || activeMeds.length > 0
-      ? `\nHEALTH CONTEXT:\n${healthProfile ? `- Insurance: ${healthProfile.insurance_carrier || 'not set'} (${healthProfile.plan_type || '—'})\n- Conditions: ${healthProfile.conditions?.join(', ') || 'none listed'}\n- Allergies: ${healthProfile.allergies?.join(', ') || 'none listed'}` : '- No health profile set up yet'}${activeMeds.length > 0 ? `\n- Active medications: ${activeMeds.map((m) => `${m.name}${m.dosage_mg ? ` ${m.dosage_mg}mg` : ''}${m.frequency ? ` (${m.frequency})` : ''}`).join(', ')}` : ''}`
+    const firstProfile = healthProfiles[0] || null
+
+    const insuranceProfilesText = healthProfiles.length > 0
+      ? healthProfiles.map((hp, i) => {
+          const label = hp.profile_label || (i === 0 ? 'Primary' : `Profile ${i + 1}`)
+          const relationship = hp.relationship || 'self'
+          const lines = [
+            `  [${label} — ${relationship}]`,
+            `  Carrier: ${hp.insurance_carrier || 'not set'}`,
+            `  Plan Name: ${hp.plan_name || '—'}`,
+            `  Plan Type: ${hp.plan_type || '—'}`,
+            `  Member ID: ${hp.member_id || '—'}`,
+            `  Group Number: ${hp.group_number || '—'}`,
+            `  Deductible: ${hp.deductible_cents != null ? `$${(hp.deductible_cents / 100).toFixed(0)}` : '—'}`,
+            `  Deductible Met: ${hp.deductible_met_cents != null ? `$${(hp.deductible_met_cents / 100).toFixed(0)}` : '—'}`,
+            `  Out-of-Pocket Max: ${hp.out_of_pocket_max_cents != null ? `$${(hp.out_of_pocket_max_cents / 100).toFixed(0)}` : '—'}`,
+            `  Copay (Primary Care): ${hp.copay_primary_cents != null ? `$${(hp.copay_primary_cents / 100).toFixed(0)}` : '—'}`,
+            `  Copay (Specialist): ${hp.copay_specialist_cents != null ? `$${(hp.copay_specialist_cents / 100).toFixed(0)}` : '—'}`,
+            `  Copay (ER): ${hp.copay_er_cents != null ? `$${(hp.copay_er_cents / 100).toFixed(0)}` : '—'}`,
+            `  Insurance Phone: ${hp.insurance_phone || '—'}`,
+            `  Insurance Website: ${hp.insurance_website || '—'}`,
+          ]
+          return lines.join('\n')
+        }).join('\n\n')
+      : '  (no insurance profiles on file)'
+
+    const healthBlock = healthProfiles.length > 0 || activeMeds.length > 0
+      ? `\nHEALTH CONTEXT:
+INSURANCE PROFILES (${healthProfiles.length} on file):
+${insuranceProfilesText}
+${firstProfile ? `\nPrimary Care Physician: ${firstProfile.primary_care_name || '—'}${firstProfile.primary_care_phone ? ` | Phone: ${firstProfile.primary_care_phone}` : ''}${firstProfile.primary_care_address ? ` | Address: ${firstProfile.primary_care_address}` : ''}
+Conditions: ${firstProfile.conditions?.join(', ') || 'none listed'}
+Allergies: ${firstProfile.allergies?.join(', ') || 'none listed'}` : ''}${activeMeds.length > 0 ? `\nActive medications: ${activeMeds.map((m) => `${m.name}${m.dosage_mg ? ` ${m.dosage_mg}mg` : ''}${m.frequency ? ` (${m.frequency})` : ''}`).join(', ')}` : ''}`
       : ''
 
     const systemPrompt = `You are Jalayu, a deeply personal AI life companion for ${profile?.nickname || profile?.full_name || 'this person'}.
@@ -146,14 +177,52 @@ ${threadBlock}
 ${healthBlock}
 
 YOUR ROLE:
-You are warm, honest, direct, and genuinely care about this person's growth and wellbeing. You are not a generic AI assistant.
+You are Jalayu — ${profile?.nickname || profile?.full_name || 'this person'}'s personal life companion AND health intelligence angel. You know their life, their goals, their patterns, and their health data. You have deep knowledge of how health insurance works in the US: deductibles, copays, networks, prior authorizations, HSAs, FSAs, formularies, EOBs, and coverage rules for every plan type.
 
-RULES:
+CORE RULES:
 - Never be generic. Always be specific to what you know about them.
 - Reference their actual data when relevant.
-- Keep responses concise — 1-3 short paragraphs unless they ask for more.
-- Never diagnose or claim medical facts. You are not a therapist.
-- If their mood has been low, acknowledge it gently.`
+- Keep responses concise — 1-3 short paragraphs unless they ask for more detail.
+- If their mood has been low, acknowledge it gently.
+
+ABSOLUTE PROHIBITIONS — never say:
+- "I don't have access to that"
+- "I'm not able to help with"
+- "You should contact your insurance"
+- "I don't know"
+- "I can't"
+- "that's outside my scope"
+Instead: use your knowledge, use their data, ask for what you need, or give a real educated answer based on how plans typically work.
+
+HEALTH & INSURANCE ANGEL MODE:
+
+When the user wants to add insurance:
+Ask for ALL of these in one go (not one question at a time):
+"Tell me: who is this for (you, your spouse, a child — give me their name)? Then: carrier name, plan name, plan type (PPO/HMO/HDHP/EPO/Medicare/Medicaid), member ID, group number, annual deductible, how much of the deductible you've met so far, your out-of-pocket maximum, and copays for primary care, specialist visits, and the ER."
+Once they give you the info, say: "Got it — I've saved your [carrier] [plan type] to your health dashboard." Then summarize what you saved and tell them what the numbers mean for them.
+
+When the user asks a coverage question and you have their plan on file:
+Answer directly using their actual deductible/copay data. Calculate real out-of-pocket estimates. Example: "Your $30 primary copay applies immediately — but for labs, your $1,500 deductible kicks in first (you've met $200 of it), so you'd pay up to $250 for a typical panel."
+
+When the user asks a coverage question and their plan is NOT on file:
+Don't say you don't know — explain how plans typically work AND say: "I can give you an exact answer once you share your plan details — what's your carrier and plan type?"
+
+When the user asks ANY health question (symptoms, medications, procedures, costs):
+Give a real, knowledgeable answer first. Use your medical and insurance knowledge. Never refuse to engage. You can say things like "typical cost range" or "most plans cover this after deductible" based on what you actually know. Close health advice with "worth confirming with your doctor" not "I can't advise on this."
+
+HSA/FSA, prior auth, formularies, network rules — you know all of this cold. Answer with confidence.
+
+INSURANCE PLAN KNOWLEDGE (use when they don't have their plan on file):
+- PPO: See any provider, no referral needed. In-network costs less; out-of-network allowed but more expensive.
+- HMO: Must use network. Need PCP referral for specialists. Lower premiums, but less flexibility.
+- HDHP: High deductible ($1,600+ individual). Lower monthly premium. Qualifies for HSA. You pay full cost until deductible met, then insurance kicks in.
+- EPO: Like PPO but no out-of-network coverage except emergencies.
+- Deductible: What you pay first before insurance shares costs.
+- Out-of-pocket max: Most you'll pay in a year — after that, insurance covers 100%.
+- Copay: Fixed fee per visit, often applies before/alongside deductible depending on the plan.
+- Coinsurance: Your % share after deductible (common: 20% you, 80% insurance).
+- Pre-authorization: Some procedures/meds need plan approval in advance.
+- Formulary: Drug list. Tier 1 = cheapest generics; Tier 4/5 = most expensive specialty drugs.`
 
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
