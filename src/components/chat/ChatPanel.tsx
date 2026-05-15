@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Loader2, Sparkles, Mic, BookmarkPlus, Lightbulb } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, Mic, MicOff, BookmarkPlus, Lightbulb } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import { generateId } from '@/lib/utils'
@@ -10,8 +10,18 @@ import ChatMessage from './ChatMessage'
 
 declare global {
   interface Window {
+    SpeechRecognition?: new () => SpeechRec
     webkitSpeechRecognition?: new () => SpeechRec
   }
+}
+
+interface SpeechResultItem {
+  isFinal: boolean
+  0: { transcript: string }
+}
+
+interface SpeechResultEvent {
+  results: SpeechResultItem[] & { length: number }
 }
 
 interface SpeechRec extends EventTarget {
@@ -20,7 +30,8 @@ interface SpeechRec extends EventTarget {
   lang: string
   start(): void
   stop(): void
-  onresult: ((ev: { results: { 0: { 0: { transcript: string } } } }) => void) | null
+  abort(): void
+  onresult: ((ev: SpeechResultEvent) => void) | null
   onerror: ((ev: { error: string }) => void) | null
   onend: (() => void) | null
 }
@@ -44,6 +55,10 @@ export default function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SpeechRec | null>(null)
+  // Stores the text that was in the box before voice started, so we can append to it
+  const voiceBaseRef = useRef('')
+  // Accumulates final (confirmed) transcript segments during a session
+  const finalTranscriptRef = useRef('')
 
   useEffect(() => {
     try {
@@ -131,26 +146,90 @@ export default function ChatPanel() {
     else toast.error('Could not save')
   }
 
-  const startVoice = () => {
-    const SR = typeof window !== 'undefined' && window.webkitSpeechRecognition
-    if (!SR) {
-      toast.error('Voice not supported in this browser')
+  const stopVoice = () => {
+    recognitionRef.current?.stop()
+    recognitionRef.current = null
+    setListening(false)
+  }
+
+  const startVoice = async () => {
+    // If already listening — stop and let user review
+    if (listening) {
+      stopVoice()
       return
     }
+
+    // Check for API support (standard first, webkit fallback)
+    const SR =
+      typeof window !== 'undefined'
+        ? window.SpeechRecognition || window.webkitSpeechRecognition
+        : null
+
+    if (!SR) {
+      toast.error('Voice input isn\'t supported in this browser. Try Chrome.')
+      return
+    }
+
+    // Request mic permission explicitly — this triggers the browser's native dialog
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // Immediately release — we just needed to prompt for permission
+      stream.getTracks().forEach((t) => t.stop())
+    } catch {
+      toast.error('Microphone access denied. Enable it in your browser settings and try again.')
+      return
+    }
+
     const rec = new SR()
-    rec.continuous = false
-    rec.interimResults = false
+    rec.continuous = true       // keep going until user taps stop
+    rec.interimResults = true   // show live transcript as they speak
     rec.lang = profile?.preferred_language || 'en-US'
+
+    // Save what was already in the box
+    voiceBaseRef.current = input.trim()
+    finalTranscriptRef.current = ''
+
     rec.onresult = (ev) => {
-      const text = ev.results[0][0].transcript
-      setInput((prev) => (prev ? `${prev} ${text}` : text))
+      let finalChunk = ''
+      let interimChunk = ''
+
+      for (let i = 0; i < ev.results.length; i++) {
+        const result = ev.results[i]
+        if (result.isFinal) {
+          finalChunk += result[0].transcript
+        } else {
+          interimChunk += result[0].transcript
+        }
+      }
+
+      finalTranscriptRef.current = finalChunk
+
+      // Show base text + confirmed words + live interim in the box
+      const base = voiceBaseRef.current
+      const combined = [base, finalChunk, interimChunk].filter(Boolean).join(' ')
+      setInput(combined)
+    }
+
+    rec.onerror = (ev) => {
+      if (ev.error === 'not-allowed') {
+        toast.error('Microphone blocked. Check your browser permissions.')
+      } else if (ev.error !== 'no-speech') {
+        toast.error('Voice capture stopped unexpectedly.')
+      }
       setListening(false)
     }
-    rec.onerror = () => {
+
+    rec.onend = () => {
+      // On auto-end (silence): keep the final text, drop any trailing interim
+      const base = voiceBaseRef.current
+      const final = finalTranscriptRef.current
+      const clean = [base, final].filter(Boolean).join(' ').trim()
+      if (clean) setInput(clean)
       setListening(false)
-      toast.error('Voice capture failed')
+      // Focus the textarea so user can review / edit / send
+      setTimeout(() => inputRef.current?.focus(), 50)
     }
-    rec.onend = () => setListening(false)
+
     recognitionRef.current = rec
     setListening(true)
     rec.start()
@@ -221,6 +300,17 @@ export default function ChatPanel() {
   const name = profile?.nickname || profile?.full_name || 'you'
 
   return (
+    <>
+    <style>{`
+      @keyframes micRipple {
+        0%   { transform: scale(1);   opacity: 0.5; }
+        100% { transform: scale(2.2); opacity: 0;   }
+      }
+      @keyframes micDotBlink {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.3; }
+      }
+    `}</style>
     <AnimatePresence>
       {showChatPanel && (
         <>
@@ -439,34 +529,88 @@ export default function ChatPanel() {
                 gap: 8,
                 alignItems: 'flex-end',
                 flexShrink: 0,
+                position: 'relative',
               }}
             >
-              <button
-                type="button"
-                onClick={startVoice}
-                disabled={listening || streaming}
-                title="Speak"
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 10,
-                  border: '1px solid var(--border)',
-                  background: listening ? 'var(--morning)' : 'var(--surface-2)',
+              {/* ── Mic button ── */}
+              <div style={{ position: 'relative', flexShrink: 0 }}>
+                {/* Ripple rings when recording */}
+                {listening && (
+                  <>
+                    <span style={{
+                      position: 'absolute', inset: 0, borderRadius: 10,
+                      background: 'rgba(220,38,38,0.15)',
+                      animation: 'micRipple 1.4s ease-out infinite',
+                      pointerEvents: 'none',
+                    }} />
+                    <span style={{
+                      position: 'absolute', inset: 0, borderRadius: 10,
+                      background: 'rgba(220,38,38,0.1)',
+                      animation: 'micRipple 1.4s ease-out 0.5s infinite',
+                      pointerEvents: 'none',
+                    }} />
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={startVoice}
+                  disabled={streaming}
+                  title={listening ? 'Tap to stop recording' : 'Tap to speak'}
+                  style={{
+                    position: 'relative',
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    border: listening ? '1.5px solid rgba(220,38,38,0.4)' : '1px solid var(--border)',
+                    background: listening ? 'rgba(220,38,38,0.06)' : 'var(--surface-2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: streaming ? 'not-allowed' : 'pointer',
+                    transition: 'border-color 0.2s, background 0.2s',
+                    zIndex: 1,
+                  }}
+                >
+                  {listening ? (
+                    <MicOff size={15} color="#DC2626" />
+                  ) : (
+                    <Mic size={15} color="var(--text-2)" />
+                  )}
+                </button>
+              </div>
+              {/* Recording indicator pill */}
+              {listening && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: 58,
+                  left: 14,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: listening ? 'wait' : 'pointer',
-                  flexShrink: 0,
-                }}
-              >
-                <Mic size={16} color="var(--accent)" />
-              </button>
+                  gap: 6,
+                  background: 'var(--surface)',
+                  border: '1px solid rgba(220,38,38,0.25)',
+                  borderRadius: 99,
+                  padding: '5px 10px',
+                  fontSize: 11,
+                  color: '#DC2626',
+                  fontWeight: 500,
+                  pointerEvents: 'none',
+                  boxShadow: '0 2px 8px rgba(28,25,23,0.08)',
+                }}>
+                  <span style={{
+                    width: 6, height: 6, borderRadius: '50%',
+                    background: '#DC2626',
+                    animation: 'micDotBlink 1.1s ease-in-out infinite',
+                  }} />
+                  Listening… tap mic to stop
+                </div>
+              )}
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={`Ask anything, ${name}…`}
+                placeholder={listening ? 'Listening — speak now…' : `Ask anything, ${name}…`}
                 rows={1}
                 style={{
                   flex: 1,
@@ -515,5 +659,6 @@ export default function ChatPanel() {
         </>
       )}
     </AnimatePresence>
+    </>
   )
 }
