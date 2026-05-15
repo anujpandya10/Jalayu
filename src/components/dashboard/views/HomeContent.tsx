@@ -159,6 +159,14 @@ export default function HomeContent({
     if (reply) replyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   }, [reply])
 
+  // Auto-resize textarea whenever input changes — covers both typing and voice fill
+  useEffect(() => {
+    const el = inputRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  }, [input])
+
   const stopHomeVoice = useCallback(() => {
     homeRecRef.current?.stop()
     homeRecRef.current = null
@@ -459,11 +467,7 @@ export default function HomeContent({
               <textarea
                 ref={inputRef}
                 value={input}
-                onChange={(e) => {
-                  setInput(e.target.value)
-                  e.target.style.height = 'auto'
-                  e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
-                }}
+                onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder={voiceListening ? 'Listening — speak now…' : focus ? 'That lands. / Actually, I need to…' : 'type here…'}
                 rows={1}
