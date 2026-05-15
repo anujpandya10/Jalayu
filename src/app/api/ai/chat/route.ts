@@ -2,7 +2,6 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { detectLanguage, langInstruction } from '@/lib/language'
-import { LIFE_SCENARIO_PROMPT } from '@/lib/life-scenarios'
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -26,9 +25,17 @@ function toneFromProfile(workType: string | null, struggles: string[] | null) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { messages, explainWhy } = body as {
+    const { messages, explainWhy, patterns } = body as {
       messages: { role: string; content: string }[]
       explainWhy?: boolean
+      patterns?: Array<{
+        situation_summary: string | null
+        advice_given: string | null
+        mood_delta: number | null
+        user_came_back: boolean | null
+        tags: string[]
+        life_chapter: string | null
+      }>
     }
 
     if (!messages || !Array.isArray(messages)) {
@@ -144,6 +151,31 @@ Conditions: ${firstProfile.conditions?.join(', ') || 'none listed'}
 Allergies: ${firstProfile.allergies?.join(', ') || 'none listed'}` : ''}${activeMeds.length > 0 ? `\nActive medications: ${activeMeds.map((m) => `${m.name}${m.dosage_mg ? ` ${m.dosage_mg}mg` : ''}${m.frequency ? ` (${m.frequency})` : ''}`).join(', ')}` : ''}`
       : ''
 
+    // Build community patterns block if patterns were provided
+    const positivePatterns = (patterns ?? []).filter(
+      (p) => p.advice_given && (p.mood_delta == null || p.mood_delta > 0 || p.user_came_back),
+    )
+    const communityPatternsBlock =
+      positivePatterns.length > 0
+        ? `\n━━━ WHAT HELPED OTHERS IN SIMILAR SITUATIONS ━━━\n${positivePatterns
+            .map((p) => {
+              const outcomeLines: string[] = []
+              if (p.mood_delta != null && p.mood_delta > 0) {
+                outcomeLines.push(`mood improved +${p.mood_delta}`)
+              }
+              if (p.user_came_back === true) {
+                outcomeLines.push('came back')
+              }
+              const outcomeStr = outcomeLines.length > 0 ? outcomeLines.join(', ') : 'neutral outcome'
+              return `- Situation: ${p.situation_summary ?? '(similar circumstances)'}
+  What worked: ${p.advice_given}
+  Outcome: ${outcomeStr}`
+            })
+            .join('\n')}
+
+Use this as signal — not as a script. If multiple people with similar situations responded well to a specific approach, that's real data, not theory.`
+        : ''
+
     // Extract suggestions already made in this conversation to prevent repetition
     const previousSuggestions = thread
       .filter((m) => m.role === 'assistant')
@@ -188,6 +220,8 @@ NEVER repeat a suggestion, piece of advice, or recommendation you've already mad
 4. CONCISE: 1-4 short paragraphs max unless they ask for detail. If they're venting, don't lecture. If they want a summary, be crisp.
 5. MEMORY: Reference specific things from their data when relevant. If mood has been low 3+ days, notice it. If a task is overdue, mention it by name.
 
+${communityPatternsBlock}
+
 ━━━ ABSOLUTE PROHIBITIONS ━━━
 Never say any of these:
 - "I don't have access to that" → use your knowledge instead
@@ -199,7 +233,10 @@ Never say any of these:
 - "25-minute break" or "Pomodoro" → unless they specifically asked. You've likely said this before.
 
 ━━━ LIFE SCENARIO INTELLIGENCE ━━━
-${LIFE_SCENARIO_PROMPT}
+SCENARIO INTELLIGENCE — UNLIMITED:
+You do not work from a fixed list of scenarios. You detect whatever situation is actually present in what the person says. Common domains include: career/work, financial stress, relationships, family dynamics, health (physical + mental), grief/loss, identity, transitions, purpose/meaning, addiction/habits, immigration/belonging, loneliness, success/failure spirals, caregiving, aging.
+
+But these are examples, not limits. If someone describes something that doesn't fit a neat category, detect it anyway with descriptive tags. The goal is to understand what they're going through, not to label it.
 
 SCENARIO DETECTION: Based on what you know about this person and what they share in conversation, identify which life scenarios they are navigating. A person can be in 5-10 simultaneously. When you detect their scenario:
 - Name it (gently, when appropriate): "It sounds like you're in that season where..."
@@ -277,6 +314,10 @@ HOW TO USE THIS WISDOM:
 - If they don't connect with this angle, drop it and help practically instead.
 - These three books cover: grief, purpose, anxiety, forgiveness, patience, impermanence, love, action, suffering, the self. Draw on whichever fits — never force it.`
 
+    // Fire-and-forget: save the AI response as a new community pattern
+    // We collect the full response text after streaming completes
+    let collectedResponse = ''
+
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1000,
@@ -296,11 +337,31 @@ HOW TO USE THIS WISDOM:
               event.type === 'content_block_delta' &&
               event.delta.type === 'text_delta'
             ) {
+              collectedResponse += event.delta.text
               controller.enqueue(encoder.encode(event.delta.text))
             }
           }
         } finally {
           controller.close()
+          // Fire-and-forget: persist this exchange as a community pattern
+          const lastUserMessage = messages.filter((m) => m.role === 'user').slice(-1)[0]
+          if (lastUserMessage && collectedResponse) {
+            const dayOnPlatform = profile?.created_at
+              ? Math.floor((Date.now() - new Date(profile.created_at).getTime()) / (1000 * 60 * 60 * 24)) + 1
+              : null
+            void supabase
+              .from('community_patterns')
+              .insert({
+                scenario_tags: profile?.detected_scenarios ?? [],
+                situation_summary: null, // anonymized summary set by scenario-detect route
+                advice_given: collectedResponse.slice(0, 1000),
+                life_chapter: null,
+                day_on_platform: dayOnPlatform,
+              })
+              .then(({ error }) => {
+                if (error) console.error('Failed to save community pattern:', error)
+              })
+          }
         }
       },
     })
