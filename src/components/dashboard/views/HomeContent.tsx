@@ -84,6 +84,7 @@ export default function HomeContent({
 
   const [morningNote, setMorningNote] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
+  const [tip, setTip] = useState<string | null>(null)
   const [noteLoading, setNoteLoading] = useState(true)
   const [voiceListening, setVoiceListening] = useState(false)
   const homeRecRef = useRef<HomeSpeechRec | null>(null)
@@ -111,8 +112,8 @@ export default function HomeContent({
   // Load morning note + focus recommendation from cache or API
   useEffect(() => {
     const userId = profile?.id
-    // v2 cache key — includes focus, so busts the old plain-string cache
-    const cacheKey = userId ? `jalayu_morning2_${userId}_${todayStr}` : null
+    // v3 cache key — includes tip field
+    const cacheKey = userId ? `jalayu_morning3_${userId}_${todayStr}` : null
 
     if (cacheKey) {
       try {
@@ -121,6 +122,7 @@ export default function HomeContent({
           const parsed = JSON.parse(cached)
           if (parsed.note) setMorningNote(parsed.note)
           if (parsed.focus) setFocus(parsed.focus)
+          if (parsed.tip) setTip(parsed.tip)
           setNoteLoading(false)
           return
         }
@@ -138,9 +140,10 @@ export default function HomeContent({
         if (cancelled) return
         if (data.note) setMorningNote(data.note)
         if (data.focus) setFocus(data.focus)
+        if (data.tip) setTip(data.tip)
         if (cacheKey && data.note) {
           try {
-            localStorage.setItem(cacheKey, JSON.stringify({ note: data.note, focus: data.focus || '' }))
+            localStorage.setItem(cacheKey, JSON.stringify({ note: data.note, focus: data.focus || '', tip: data.tip || '' }))
           } catch { /* ok */ }
         }
       })
@@ -437,6 +440,26 @@ export default function HomeContent({
             >
               {focus || (pendingTasks.length > 0 ? pendingTasks[0].title : 'Tell me what you want to work on.')}
             </p>
+          </div>
+        )}
+
+        {/* Tip — mindset / wellness nudge */}
+        {!noteLoading && tip && (
+          <div
+            className="letter-fadein"
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 8,
+              marginBottom: 28,
+              padding: '10px 14px',
+              background: 'var(--morning)',
+              borderRadius: 10,
+              border: '1px solid var(--border)',
+            }}
+          >
+            <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>✦</span>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>{tip}</p>
           </div>
         )}
 

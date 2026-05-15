@@ -48,6 +48,7 @@ interface JalayuStore {
   setTasks: (t: Task[]) => void
   addTask: (t: Task) => void
   updateTask: (id: string, updates: Partial<Task>) => void
+  removeTask: (id: string) => void
   setTodayMood: (m: Mood | null) => void
   setNotes: (n: Note[]) => void
   addNote: (n: Note) => void
@@ -107,6 +108,11 @@ export const useStore = create<JalayuStore>((set) => ({
     set((s) => ({
       tasks: s.tasks.map((t) => (t.id === id ? { ...t, ...updates } : t)),
       tasksRecent: s.tasksRecent.map((t) => (t.id === id ? { ...t, ...updates } : t)),
+    })),
+  removeTask: (id) =>
+    set((s) => ({
+      tasks: s.tasks.filter((t) => t.id !== id),
+      tasksRecent: s.tasksRecent.filter((t) => t.id !== id),
     })),
   setTodayMood: (todayMood) => set({ todayMood }),
   setNotes: (notes) => set({ notes }),

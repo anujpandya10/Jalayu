@@ -8,6 +8,8 @@ interface UnifiedCalendarViewProps {
   reminders: Reminder[]
   onAddTask: (title: string, date?: string, eventType?: string) => Promise<void>
   onToggleTask: (task: Task) => Promise<void>
+  onDeleteTask?: (taskId: string) => Promise<void>
+  onEditTask?: (taskId: string, newTitle: string) => Promise<void>
 }
 
 type EventType = 'task' | 'reminder' | 'event' | 'birthday' | 'meeting'
@@ -85,6 +87,8 @@ export default function UnifiedCalendarView({
   reminders,
   onAddTask,
   onToggleTask,
+  onDeleteTask,
+  onEditTask,
 }: UnifiedCalendarViewProps) {
   const today = new Date()
   const todayStr = toLocalDateStr(today)
@@ -97,6 +101,9 @@ export default function UnifiedCalendarView({
   const [addEventType, setAddEventType] = useState<EventType>('task')
   const [addTime, setAddTime] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Build dates map: dateStr -> has events
   const eventDateSet = useMemo(() => {
@@ -353,7 +360,10 @@ export default function UnifiedCalendarView({
             {selectedEvents.map((ev) => {
               const color = EVENT_COLORS[ev.type]
               const icon = getEventIcon(ev.type)
-              const isTask = ev.type === 'task' || (!('remind_at' in ev.raw) && !ev.type)
+              const isEditing = editingId === ev.id
+              const isDeleting = deletingId === ev.id
+              const isTaskType = !('remind_at' in ev.raw)
+
               return (
                 <div
                   key={ev.id}
@@ -364,7 +374,7 @@ export default function UnifiedCalendarView({
                     padding: '8px 10px',
                     background: 'var(--surface-2)',
                     borderRadius: 8,
-                    border: '1px solid var(--border)',
+                    border: isDeleting ? '1px solid rgba(220,38,38,0.3)' : '1px solid var(--border)',
                     opacity: ev.completed ? 0.6 : 1,
                   }}
                 >
@@ -380,7 +390,7 @@ export default function UnifiedCalendarView({
                         background: ev.completed ? color : 'transparent',
                         cursor: 'pointer',
                         flexShrink: 0,
-                        marginTop: 1,
+                        marginTop: isEditing ? 8 : 1,
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
@@ -395,38 +405,118 @@ export default function UnifiedCalendarView({
                   ) : (
                     <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{icon}</span>
                   )}
-                  <div style={{ flex: 1 }}>
-                    <p
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 500,
-                        color: 'var(--text)',
-                        margin: 0,
-                        textDecoration: ev.completed ? 'line-through' : 'none',
-                        lineHeight: 1.4,
-                      }}
-                    >
-                      {ev.title}
-                    </p>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
-                      <span
-                        style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          color,
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {isEditing ? (
+                      <form
+                        onSubmit={async (e) => {
+                          e.preventDefault()
+                          if (editTitle.trim() && onEditTask) {
+                            await onEditTask(ev.id, editTitle.trim())
+                          }
+                          setEditingId(null)
                         }}
+                        style={{ display: 'flex', gap: 6, alignItems: 'center' }}
                       >
-                        {ev.type}
-                      </span>
-                      {ev.sortMin < 1440 && (
-                        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                          {String(Math.floor(ev.sortMin / 60)).padStart(2, '0')}:{String(ev.sortMin % 60).padStart(2, '0')}
-                        </span>
+                        <input
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          autoFocus
+                          onKeyDown={(e) => { if (e.key === 'Escape') setEditingId(null) }}
+                          style={{
+                            flex: 1,
+                            fontSize: 13,
+                            padding: '4px 8px',
+                            border: '1px solid var(--border-2)',
+                            borderRadius: 6,
+                            background: 'var(--surface)',
+                            color: 'var(--text)',
+                            outline: 'none',
+                            fontFamily: 'inherit',
+                          }}
+                        />
+                        <button type="submit" style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Save</button>
+                        <button type="button" onClick={() => setEditingId(null)} style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>Cancel</button>
+                      </form>
+                    ) : isDeleting ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: '#DC2626' }}>Delete "{ev.title}"?</span>
+                        <button
+                          onClick={async () => {
+                            if (onDeleteTask) await onDeleteTask(ev.id)
+                            setDeletingId(null)
+                          }}
+                          style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', background: 'none', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 5, padding: '2px 8px', cursor: 'pointer' }}
+                        >Yes</button>
+                        <button
+                          onClick={() => setDeletingId(null)}
+                          style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}
+                        >No</button>
+                      </div>
+                    ) : (
+                      <>
+                        <p
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: 'var(--text)',
+                            margin: 0,
+                            textDecoration: ev.completed ? 'line-through' : 'none',
+                            lineHeight: 1.4,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {ev.title}
+                        </p>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            {ev.type}
+                          </span>
+                          {ev.sortMin < 1440 && (
+                            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+                              {String(Math.floor(ev.sortMin / 60)).padStart(2, '0')}:{String(ev.sortMin % 60).padStart(2, '0')}
+                            </span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Edit / Delete buttons — only for tasks (not reminders) */}
+                  {!isEditing && !isDeleting && isTaskType && (
+                    <div style={{ display: 'flex', gap: 4, flexShrink: 0, marginTop: 1 }}>
+                      {onEditTask && (
+                        <button
+                          onClick={() => { setEditingId(ev.id); setEditTitle(ev.title); setDeletingId(null) }}
+                          title="Edit"
+                          style={{
+                            width: 24, height: 24, borderRadius: 6,
+                            border: '1px solid var(--border)',
+                            background: 'var(--surface)',
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, color: 'var(--text-3)',
+                          }}
+                        >✎</button>
+                      )}
+                      {onDeleteTask && (
+                        <button
+                          onClick={() => { setDeletingId(ev.id); setEditingId(null) }}
+                          title="Delete"
+                          style={{
+                            width: 24, height: 24, borderRadius: 6,
+                            border: '1px solid var(--border)',
+                            background: 'var(--surface)',
+                            cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: 11, color: 'var(--text-3)',
+                          }}
+                        >✕</button>
                       )}
                     </div>
-                  </div>
+                  )}
                 </div>
               )
             })}

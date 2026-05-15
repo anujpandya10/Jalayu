@@ -50,6 +50,7 @@ export default function DashboardPage() {
     setMoodsRecent,
     addTask,
     updateTask,
+    removeTask,
     addNote,
     setTodayReflection,
     addReminder,
@@ -199,6 +200,33 @@ export default function DashboardPage() {
     [profile, updateTask],
   )
 
+  const handleDeleteTask = useCallback(
+    async (taskId: string) => {
+      const supabase = await getSupabase()
+      const { error } = await supabase.from('tasks').delete().eq('id', taskId)
+      if (!error) {
+        removeTask(taskId)
+        toast.success('Deleted ✦')
+      } else {
+        toast.error('Could not delete. Try again.')
+      }
+    },
+    [removeTask],
+  )
+
+  const handleEditTask = useCallback(
+    async (taskId: string, newTitle: string) => {
+      const supabase = await getSupabase()
+      const { error } = await supabase.from('tasks').update({ title: newTitle }).eq('id', taskId)
+      if (!error) {
+        updateTask(taskId, { title: newTitle })
+      } else {
+        toast.error('Could not update. Try again.')
+      }
+    },
+    [updateTask],
+  )
+
   const handleSaveNote = useCallback(
     async (content: string) => {
       const supabase = await getSupabase()
@@ -321,6 +349,8 @@ export default function DashboardPage() {
             reminders={reminders}
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
+            onDeleteTask={handleDeleteTask}
+            onEditTask={handleEditTask}
           />
         )
       case 'reminders':

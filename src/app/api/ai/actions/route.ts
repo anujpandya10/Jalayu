@@ -7,7 +7,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 const TOOLS: Anthropic.Tool[] = [
   {
     name: 'add_task',
-    description: 'Add a new task or to-do. Use when user says "add task", "I need to", "I have to", "I should", "remind me to do", "put on my list", "don\'t forget to". NOT for calendar events with specific date+time — use add_calendar_event for those.',
+    description: 'Add a simple task or to-do with NO specific date/time. Use ONLY when the user says "add task", "I need to", "I have to", "I should", "remind me to do", "put on my list", "don\'t forget to" — AND they do NOT mention a specific date, time, event, meeting, or appointment. NEVER use this alongside add_calendar_event for the same item.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -224,6 +224,12 @@ TODAY: ${today} (${now.toLocaleDateString('en-US', { weekday: 'long' })}), curre
 
 GOLDEN RULE: Be liberal. If the intent is 65%+ clear, call the tool. A missed action is worse than an extra one. Humans talk naturally — match the intent, not the exact words.
 
+━━━ MUTUAL EXCLUSION RULE (READ FIRST) ━━━
+add_task and add_calendar_event are MUTUALLY EXCLUSIVE for any single item.
+- Message has a date + time + activity → ONLY call add_calendar_event. NEVER also call add_task.
+- Message is a plain to-do with no specific date/time → ONLY call add_task.
+- When in doubt, prefer add_calendar_event (it stores the date, add_task doesn't).
+
 ━━━ CALENDAR EVENTS → add_calendar_event ━━━
 Trigger when user says anything like:
 - "add an event / meeting / appointment to my calendar"
@@ -238,14 +244,15 @@ Trigger when user says anything like:
 Title: use what the user says (location, event name, etc.). If no clear title, use "Event" or infer from context.
 
 ━━━ TASKS → add_task ━━━
-Trigger when user says:
+Trigger ONLY when there is NO date/time and NO event language:
 - "add to my list / to-do", "I need to", "I have to", "I should", "don't forget to"
-- "remind me to DO something" (action-oriented, not time-specific)
+- "remind me to DO something" (action-oriented, zero time specificity)
 - "put X on my task list"
+NEVER use this when the user mentions a date, time, event, appointment, or meeting.
 
 ━━━ REMINDERS → add_reminder ━━━
 Trigger for time-based alerts: "remind me at X", "alert me when", "set a reminder for"
-NOTE: If the user is scheduling an actual event (not just an alert), use add_calendar_event instead or in addition.
+For reminders tied to an event with a date+time, call add_calendar_event instead.
 
 ━━━ MOOD → log_mood ━━━
 Trigger whenever user expresses how they feel, even casually:
