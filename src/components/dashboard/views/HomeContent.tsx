@@ -66,6 +66,7 @@ export default function HomeContent({
   const setShowChatPanel = useStore((s) => s.setShowChatPanel)
 
   const [morningNote, setMorningNote] = useState<string | null>(null)
+  const [focus, setFocus] = useState<string | null>(null)
   const [noteLoading, setNoteLoading] = useState(true)
   const [input, setInput] = useState('')
   const [submitted, setSubmitted] = useState(false)
@@ -86,21 +87,24 @@ export default function HomeContent({
   // Orb state: speaking while morning note loads, listening while user types, idle otherwise
   const orbState: OrbState = noteLoading ? 'speaking' : input.trim() ? 'listening' : 'idle'
 
-  // Load morning note from cache or API
+  // Load morning note + focus recommendation from cache or API
   useEffect(() => {
     const userId = profile?.id
-    const cacheKey = userId ? `jalayu_morning_${userId}_${todayStr}` : null
+    // v2 cache key — includes focus, so busts the old plain-string cache
+    const cacheKey = userId ? `jalayu_morning2_${userId}_${todayStr}` : null
 
     if (cacheKey) {
       try {
         const cached = localStorage.getItem(cacheKey)
         if (cached) {
-          setMorningNote(cached)
+          const parsed = JSON.parse(cached)
+          if (parsed.note) setMorningNote(parsed.note)
+          if (parsed.focus) setFocus(parsed.focus)
           setNoteLoading(false)
           return
         }
       } catch {
-        // localStorage unavailable — proceed to fetch
+        // localStorage unavailable or old format — proceed to fetch
       }
     }
 
@@ -110,11 +114,13 @@ export default function HomeContent({
     fetch('/api/ai/morning')
       .then((r) => r.json())
       .then((data) => {
-        if (!cancelled && data.note) {
-          setMorningNote(data.note)
-          if (cacheKey) {
-            try { localStorage.setItem(cacheKey, data.note) } catch { /* ok */ }
-          }
+        if (cancelled) return
+        if (data.note) setMorningNote(data.note)
+        if (data.focus) setFocus(data.focus)
+        if (cacheKey && data.note) {
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({ note: data.note, focus: data.focus || '' }))
+          } catch { /* ok */ }
         }
       })
       .catch(() => {
@@ -151,11 +157,16 @@ export default function HomeContent({
       .catch(() => ({ executed: [] }))
 
     try {
+      // Prefix the user's response with the focus context so Jalayu knows what it recommended
+      const focusPrefix = focus
+        ? `[Context: Jalayu recommended today's focus as "${focus}". The user's response to this is:] `
+        : ''
+
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: text }],
+          messages: [{ role: 'user', content: focusPrefix + text }],
         }),
       })
 
@@ -267,46 +278,79 @@ export default function HomeContent({
           <span style={{ fontSize: 13, color: 'var(--text-3)' }}>Day {dayNumber}</span>
         </div>
 
-        {/* Morning note */}
-        <div
-          className="letter-fadein"
-          style={{
-            background: 'var(--morning)',
-            borderRadius: 12,
-            padding: '20px 22px',
-            marginBottom: 32,
-          }}
-        >
-          {noteLoading ? (
-            <Dots />
-          ) : (
+        {/* Morning note — context, not the main event */}
+        {(noteLoading || morningNote) && (
+          <div className="letter-fadein" style={{ marginBottom: 24 }}>
+            {noteLoading ? (
+              <Dots />
+            ) : (
+              <p
+                style={{
+                  fontFamily: 'var(--font-lora), Georgia, serif',
+                  fontStyle: 'italic',
+                  fontSize: 15,
+                  lineHeight: 1.85,
+                  color: 'var(--text-2)',
+                  margin: 0,
+                }}
+              >
+                {morningNote}
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Focus card — THE HERO: Jalayu's recommendation */}
+        {!noteLoading && (
+          <div
+            className="letter-fadein"
+            style={{
+              background: 'var(--surface)',
+              border: '1.5px solid var(--border)',
+              borderRadius: 14,
+              padding: '20px 22px',
+              marginBottom: 28,
+            }}
+          >
             <p
               style={{
-                fontFamily: 'var(--font-lora), Georgia, serif',
-                fontStyle: 'italic',
-                fontSize: 17,
-                lineHeight: 1.9,
-                color: 'var(--text)',
-                margin: 0,
+                fontSize: 10,
+                fontWeight: 600,
+                color: 'var(--text-3)',
+                textTransform: 'uppercase',
+                letterSpacing: '0.09em',
+                margin: '0 0 10px',
               }}
             >
-              {morningNote}
+              Today&apos;s focus
             </p>
-          )}
-        </div>
+            <p
+              style={{
+                fontSize: 18,
+                fontWeight: 500,
+                color: 'var(--text)',
+                lineHeight: 1.45,
+                margin: 0,
+                letterSpacing: '-0.01em',
+              }}
+            >
+              {focus || (pendingTasks.length > 0 ? pendingTasks[0].title : 'Tell me what you want to work on.')}
+            </p>
+          </div>
+        )}
 
-        {/* Question + input or submitted answer */}
+        {/* Input: reaction to focus, not a blank prompt */}
         {!submitted ? (
           <div className="letter-fadein" style={{ marginBottom: 36 }}>
             <p
               style={{
                 fontSize: 13,
                 color: 'var(--text-3)',
-                margin: '0 0 14px',
+                margin: '0 0 12px',
                 letterSpacing: '0.01em',
               }}
             >
-              What does today need to be about?
+              {focus ? 'Does that land, or is something else pulling at you?' : 'What\'s pulling at you most right now?'}
             </p>
 
             <div
@@ -324,7 +368,7 @@ export default function HomeContent({
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder="type here…"
+                placeholder={focus ? 'That lands. / Actually, I need to…' : 'type here…'}
                 rows={1}
                 autoFocus
                 style={{
@@ -374,7 +418,7 @@ export default function HomeContent({
                 letterSpacing: '0.01em',
               }}
             >
-              What does today need to be about?
+              {focus ? 'Does that land, or is something else pulling at you?' : 'What\'s pulling at you most right now?'}
             </p>
             <p
               style={{
