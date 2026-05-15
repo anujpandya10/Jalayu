@@ -83,6 +83,7 @@ export default function HomeContent({
   const [morningNote, setMorningNote] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
   const [tip, setTip] = useState<string | null>(null)
+  const [chapter, setChapter] = useState<string | null>(null)
   const [noteLoading, setNoteLoading] = useState(true)
   const [voiceListening, setVoiceListening] = useState(false)
   const homeRecRef = useRef<HomeSpeechRec | null>(null)
@@ -145,6 +146,7 @@ export default function HomeContent({
           if (parsed.note) setMorningNote(parsed.note)
           if (parsed.focus) setFocus(parsed.focus)
           if (parsed.tip) setTip(parsed.tip)
+          if (parsed.chapter) setChapter(parsed.chapter)
           setNoteLoading(false)
           return
         }
@@ -161,9 +163,10 @@ export default function HomeContent({
         if (data.note) setMorningNote(data.note)
         if (data.focus) setFocus(data.focus)
         if (data.tip) setTip(data.tip)
+        if (data.chapter) setChapter(data.chapter)
         if (cacheKey && data.note) {
           try {
-            localStorage.setItem(cacheKey, JSON.stringify({ note: data.note, focus: data.focus || '', tip: data.tip || '' }))
+            localStorage.setItem(cacheKey, JSON.stringify({ note: data.note, focus: data.focus || '', tip: data.tip || '', chapter: data.chapter || '' }))
           } catch { /* ok */ }
         }
       })
@@ -327,6 +330,11 @@ export default function HomeContent({
               {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '2px 0 0' }}>Day {dayNumber}</p>
+            {!noteLoading && chapter && (
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '3px 0 0', fontStyle: 'italic', opacity: 0.85 }}>
+                {chapter}
+              </p>
+            )}
           </div>
           {(profile?.streak_count ?? 0) > 0 && (
             <div style={{

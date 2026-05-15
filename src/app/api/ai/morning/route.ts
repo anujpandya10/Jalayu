@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
 import { langInstruction } from '@/lib/language'
+import { LIFE_SCENARIO_PROMPT } from '@/lib/life-scenarios'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -73,7 +74,11 @@ export async function GET() {
 
     const langLine = langInstruction(profile.preferred_language)
 
-    const prompt = `You are Jalayu. Return a JSON object with exactly three fields.
+    const prompt = `You are Jalayu. Return a JSON object with exactly four fields.
+
+LIFE SCENARIO CONTEXT — you understand all of these:
+${LIFE_SCENARIO_PROMPT.slice(0, 800)}
+
 
 ${langLine}
 
@@ -92,10 +97,11 @@ RETURN THIS JSON (no markdown, no explanation, just the raw object):
 {
   "note": "A warm, specific 1–2 sentence morning note. Reference something real from their data — not a generic greeting. Tone: like a close friend who's been paying attention, not a coach. No 'great job', 'you've got this', or similar. Max 45 words.",
   "focus": "ONE specific recommendation for today. Pick the most important task — prioritize overdue tasks, high-priority tasks, and tasks tied to their goal. Format: '[Exact task name or goal area]. [One reason why now — specific, not generic].' Max 30 words. Be direct.",
-  "tip": "A short mindset or wellness nudge based on their data. If mood was low yesterday, acknowledge it gently and suggest something restorative. If they've been productive, encourage protecting energy. If it's early in their journey, be encouraging about small steps. Max 20 words. Do NOT use filler phrases like 'remember to breathe' or 'you've got this'."
+  "tip": "A short mindset or wellness nudge based on their data. If mood was low yesterday, acknowledge it gently and suggest something restorative. If they've been productive, encourage protecting energy. Max 20 words. Do NOT use filler phrases like 'remember to breathe' or 'you've got this'.",
+  "chapter": "One short phrase naming the life chapter this person is in right now, inferred from their goal, struggles, and journey day. Examples: 'rebuilding from a setback', 'building something from nothing', 'figuring out the next move', 'finding your footing', 'grinding through the hard middle', 'starting over', 'growing into a new role'. Max 6 words. No quotes in your answer."
 }
 
-If they have no tasks: note reflects their fresh start; focus = 'Tell me what you want to work on today.'; tip = a short encouraging nudge for day 1.
+If they have no tasks: note reflects their fresh start; focus = 'Tell me what you want to work on today.'; tip and chapter reflect a beginning.
 Do not invent tasks they haven't listed. Only reference real data.`
 
     const message = await anthropic.messages.create({
@@ -110,6 +116,7 @@ Do not invent tasks they haven't listed. Only reference real data.`
     let note = ''
     let focus = ''
     let tip = ''
+    let chapter = ''
     try {
       // Strip any markdown code fences if the model added them
       const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim()
@@ -117,15 +124,17 @@ Do not invent tasks they haven't listed. Only reference real data.`
       note = (parsed.note || '').trim()
       focus = (parsed.focus || '').trim()
       tip = (parsed.tip || '').trim()
+      chapter = (parsed.chapter || '').trim()
     } catch {
       // Fallback: treat the whole thing as the note
       note = raw.slice(0, 200)
       focus = allTasks.length > 0 ? allTasks[0].title : 'Tell me what you want to focus on today.'
       tip = ''
+      chapter = ''
     }
 
     return new Response(
-      JSON.stringify({ note, focus, tip, userId: user.id, date: today }),
+      JSON.stringify({ note, focus, tip, chapter, userId: user.id, date: today }),
       { headers: { 'Content-Type': 'application/json' } },
     )
   } catch (err) {
