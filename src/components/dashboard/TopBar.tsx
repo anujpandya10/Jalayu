@@ -23,10 +23,10 @@ export default function TopBar() {
   return (
     <div
       style={{
-        background: 'var(--bg)',
+        background: 'var(--surface)',
         borderBottom: '1px solid var(--border)',
-        padding: '0 16px',
-        height: 52,
+        padding: '0 20px',
+        height: 56,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -37,7 +37,7 @@ export default function TopBar() {
       }}
     >
       {/* Brand logo */}
-      <JalayuLogo size={22} />
+      <JalayuLogo size={28} />
 
       {/* Right: hamburger menu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
