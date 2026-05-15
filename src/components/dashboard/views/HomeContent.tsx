@@ -328,6 +328,7 @@ export default function HomeContent({
   onMoodLog,
   onAddTask,
   onToggleTask,
+  onAction,
 }: {
   journeyView?: string
   profile: Profile | null
@@ -339,6 +340,7 @@ export default function HomeContent({
   onMoodLog: (score: number) => void
   onAddTask: (title: string) => Promise<void>
   onToggleTask: (task: Task) => Promise<void>
+  onAction?: (actions: Array<{ type: string; data: Record<string, unknown>; message: string }>) => void
 }) {
   const setShowChatPanel = useStore((s) => s.setShowChatPanel)
 
@@ -454,6 +456,13 @@ export default function HomeContent({
       { role: 'assistant', content: '', streaming: true },
     ])
 
+    // Fire action detection in parallel (don't await — let it race with the chat stream)
+    const actionsPromise = fetch('/api/ai/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    }).then((r) => r.json()).catch(() => ({ executed: [] }))
+
     try {
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
@@ -509,6 +518,13 @@ export default function HomeContent({
         return copy
       })
       setOrbState('idle')
+
+      // Handle any executed actions
+      actionsPromise.then((result: { executed: Array<{ type: string; data: Record<string, unknown>; message: string }> }) => {
+        if (result.executed?.length) {
+          onAction?.(result.executed)
+        }
+      })
 
       // Persist the exchange (fire and forget)
       if (text && reply) {
@@ -763,43 +779,32 @@ export default function HomeContent({
               paddingRight: 2,
             }}
           >
-            {!todayMood ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span
-                  style={{ fontSize: 11, color: 'var(--text-3)', marginRight: 2 }}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, color: 'var(--text-3)', marginRight: 2 }}>
+                {todayMood ? `mood: ${['😔','😕','😐','🙂','😊'][todayMood.score - 1]} ·` : 'how are you?'}
+              </span>
+              {MOODS.map(({ score, emoji, label }) => (
+                <button
+                  key={score}
+                  onClick={() => onMoodLog(score)}
+                  title={label}
+                  style={{
+                    fontSize: 18,
+                    background: 'none',
+                    border: 'none',
+                    cursor: 'pointer',
+                    padding: '1px 2px',
+                    lineHeight: 1,
+                    transition: 'transform 0.15s, opacity 0.15s',
+                    opacity: todayMood && todayMood.score !== score ? 0.4 : 1,
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.25)'; (e.currentTarget as HTMLElement).style.opacity = '1' }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)'; (e.currentTarget as HTMLElement).style.opacity = todayMood && todayMood.score !== score ? '0.4' : '1' }}
                 >
-                  how are you?
-                </span>
-                {MOODS.map(({ score, emoji, label }) => (
-                  <button
-                    key={score}
-                    onClick={() => onMoodLog(score)}
-                    title={label}
-                    style={{
-                      fontSize: 18,
-                      background: 'none',
-                      border: 'none',
-                      cursor: 'pointer',
-                      padding: '1px 2px',
-                      lineHeight: 1,
-                      transition: 'transform 0.1s',
-                    }}
-                    onMouseEnter={(e) =>
-                      ((e.currentTarget as HTMLElement).style.transform =
-                        'scale(1.25)')
-                    }
-                    onMouseLeave={(e) =>
-                      ((e.currentTarget as HTMLElement).style.transform =
-                        'scale(1)')
-                    }
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div />
-            )}
+                  {emoji}
+                </button>
+              ))}
+            </div>
 
             <button
               onClick={() => setShowChatPanel(true)}

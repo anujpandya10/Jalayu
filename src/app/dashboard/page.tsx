@@ -18,7 +18,7 @@ import WellnessView from '@/components/dashboard/views/WellnessView'
 import PeopleView from '@/components/dashboard/views/PeopleView'
 import WidgetsView from '@/components/dashboard/views/WidgetsView'
 import MeetingsView from '@/components/dashboard/views/MeetingsView'
-import type { Task, Mood, Note, Reflection } from '@/lib/types'
+import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
 
 async function getSupabase() {
   const { createClient } = await import('@/lib/supabase')
@@ -59,28 +59,66 @@ export default function DashboardPage() {
       } = await supabase.auth.getUser()
       if (!user) return
       const h = new Date().getHours()
-      const { data, error } = await supabase
-        .from('moods')
-        .insert({
-          user_id: user.id,
-          score,
-          time_of_day: h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening',
-          energy_level: score,
-        })
-        .select()
-        .single()
+      let data: Mood | null = null
+      let error: unknown = null
+      const currentMood = useStore.getState().todayMood
+      if (currentMood?.id) {
+        // UPDATE existing today's mood
+        const res = await supabase.from('moods').update({ score }).eq('id', currentMood.id).select().single()
+        data = res.data as Mood | null
+        error = res.error
+      } else {
+        // INSERT new mood
+        const res = await supabase
+          .from('moods')
+          .insert({
+            user_id: user.id,
+            score,
+            time_of_day: h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening',
+            energy_level: score,
+          })
+          .select()
+          .single()
+        data = res.data as Mood | null
+        error = res.error
+      }
       if (!error && data) {
-        const mood = data as Mood
-        setTodayMood(mood)
-        setMoodsRecent([mood, ...useStore.getState().moodsRecent.filter((m) => m.id !== mood.id)].slice(0, 60))
-        await supabase
-          .from('profiles')
-          .update({ growth_score: (profile?.growth_score || 0) + 2 })
-          .eq('id', user.id)
+        setTodayMood(data)
+        setMoodsRecent([data, ...useStore.getState().moodsRecent.filter((m) => m.id !== data!.id)].slice(0, 60))
         toast.success('Mood logged ✦')
       }
     },
-    [profile, setTodayMood, setMoodsRecent],
+    [setTodayMood, setMoodsRecent],
+  )
+
+  const handleAction = useCallback(
+    (actions: Array<{ type: string; data: Record<string, unknown>; message: string }>) => {
+      for (const action of actions) {
+        if (action.type === 'task_added') {
+          addTask(action.data as unknown as Task)
+          toast.success('Task added ✦')
+        }
+        if (action.type === 'mood_logged') {
+          const mood = action.data as unknown as Mood
+          setTodayMood(mood)
+          setMoodsRecent([mood, ...useStore.getState().moodsRecent.filter((m) => m.id !== mood.id)].slice(0, 60))
+        }
+        if (action.type === 'reminder_added') {
+          addReminder(action.data as unknown as Reminder)
+          toast.success('Reminder set ✦')
+        }
+        if (action.type === 'memory_saved') {
+          addNote(action.data as unknown as Note)
+          toast.success('Saved to memory ✦')
+        }
+        if (action.type === 'task_completed') {
+          const task = action.data as unknown as Task
+          updateTask(task.id, { completed: true, completed_at: task.completed_at ?? null })
+          toast.success('Task done! ✦')
+        }
+      }
+    },
+    [addTask, setTodayMood, setMoodsRecent, addReminder, addNote, updateTask],
   )
 
   const handleAddTask = useCallback(
@@ -252,6 +290,7 @@ export default function DashboardPage() {
               onMoodLog={handleMoodLog}
               onAddTask={handleAddTask}
               onToggleTask={handleToggleTask}
+              onAction={handleAction}
             />
           </>
         )
