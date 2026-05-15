@@ -9,6 +9,16 @@ interface RecordBody {
   notes?: string
 }
 
+interface RecordPatchBody {
+  id: string
+  title?: string
+  record_type?: string
+  record_date?: string | null
+  file_url?: string | null
+  file_name?: string | null
+  notes?: string | null
+}
+
 interface RecordDeleteBody {
   id: string
 }
@@ -65,6 +75,37 @@ export async function POST(request: Request) {
     return Response.json({ data })
   } catch (err) {
     console.error('Medical records POST error:', err)
+    return Response.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const body: RecordPatchBody = await request.json()
+    const { id, ...updates } = body
+
+    if (!id) return Response.json({ error: 'id is required' }, { status: 400 })
+
+    const { data, error } = await supabase
+      .from('medical_records')
+      .update(updates)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('Medical records PATCH error:', error)
+      return Response.json({ error: 'Failed to update medical record' }, { status: 500 })
+    }
+
+    return Response.json({ data })
+  } catch (err) {
+    console.error('Medical records PATCH error:', err)
     return Response.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

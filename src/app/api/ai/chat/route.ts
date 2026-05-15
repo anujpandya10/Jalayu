@@ -75,7 +75,7 @@ export async function POST(request: Request) {
       supabase.from('notes').select('content, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(5),
       supabase.from('chat_memory_facts').select('fact').eq('user_id', user.id).order('created_at', { ascending: false }).limit(14),
       supabase.from('chat_messages').select('role, content').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
-      supabase.from('health_profiles').select('insurance_carrier, plan_name, plan_type, conditions, allergies').eq('user_id', user.id).single(),
+      supabase.from('health_profiles').select('insurance_carrier, plan_name, plan_type, conditions, allergies').eq('user_id', user.id).order('created_at', { ascending: true }).limit(1).maybeSingle(),
       supabase.from('medications').select('name, dosage_mg, frequency, purpose').eq('user_id', user.id).eq('is_active', true).limit(20),
     ])
 

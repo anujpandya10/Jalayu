@@ -4,7 +4,7 @@ import { useState } from 'react'
 import type { HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
 
 interface HealthViewProps {
-  healthProfile: HealthProfile | null
+  healthProfiles: HealthProfile[]
   medications: Medication[]
   appointments: HealthAppointment[]
   records: MedicalRecord[]
@@ -12,8 +12,8 @@ interface HealthViewProps {
 
 type Tab = 'overview' | 'medications' | 'appointments' | 'records' | 'coverage'
 
-function formatCents(cents: number | null): string {
-  if (cents === null || cents === undefined) return '$0'
+function formatCents(cents: number | null | undefined): string {
+  if (cents == null) return '$0'
   return '$' + (cents / 100).toFixed(0)
 }
 
@@ -77,6 +77,7 @@ function InlineInput({
   onChange,
   type = 'text',
   required,
+  placeholder,
 }: {
   label: string
   name: string
@@ -84,6 +85,7 @@ function InlineInput({
   onChange: (v: string) => void
   type?: string
   required?: boolean
+  placeholder?: string
 }) {
   return (
     <div style={{ marginBottom: 10 }}>
@@ -94,6 +96,7 @@ function InlineInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         required={required}
+        placeholder={placeholder}
         style={{
           width: '100%',
           fontSize: 13,
@@ -110,6 +113,47 @@ function InlineInput({
   )
 }
 
+function SaveBtn({ loading }: { loading?: boolean }) {
+  return (
+    <button
+      type="submit"
+      disabled={loading}
+      style={{
+        fontSize: 13,
+        fontWeight: 600,
+        color: '#fff',
+        background: loading ? 'var(--text-3)' : 'var(--accent)',
+        border: 'none',
+        borderRadius: 8,
+        padding: '8px 16px',
+        cursor: loading ? 'not-allowed' : 'pointer',
+      }}
+    >
+      {loading ? 'Saving…' : 'Save'}
+    </button>
+  )
+}
+
+function CancelBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      style={{
+        fontSize: 13,
+        color: 'var(--text-2)',
+        background: 'none',
+        border: '1px solid var(--border)',
+        borderRadius: 8,
+        padding: '8px 16px',
+        cursor: 'pointer',
+      }}
+    >
+      Cancel
+    </button>
+  )
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function useToast() {
   const [toast, setToast] = useState<string | null>(null)
@@ -120,87 +164,243 @@ function useToast() {
   return { toast, showToast }
 }
 
+// ── Insurance Card (Overview) ─────────────────────────────────────────────────
+const BLANK_INS = {
+  profile_label: 'Mine',
+  relationship: 'self',
+  insurance_carrier: '',
+  plan_name: '',
+  plan_type: '',
+  member_id: '',
+  group_number: '',
+  deductible_cents: '',
+  deductible_met_cents: '',
+  copay_primary_cents: '',
+  copay_specialist_cents: '',
+  copay_er_cents: '',
+  insurance_phone: '',
+  insurance_website: '',
+}
+
+type InsFormState = typeof BLANK_INS
+
+function toInsBody(f: InsFormState) {
+  return {
+    profile_label: f.profile_label || 'Mine',
+    relationship: f.relationship || 'self',
+    insurance_carrier: f.insurance_carrier || null,
+    plan_name: f.plan_name || null,
+    plan_type: f.plan_type || null,
+    member_id: f.member_id || null,
+    group_number: f.group_number || null,
+    deductible_cents: f.deductible_cents ? Math.round(parseFloat(f.deductible_cents) * 100) : null,
+    deductible_met_cents: f.deductible_met_cents ? Math.round(parseFloat(f.deductible_met_cents) * 100) : null,
+    copay_primary_cents: f.copay_primary_cents ? Math.round(parseFloat(f.copay_primary_cents) * 100) : null,
+    copay_specialist_cents: f.copay_specialist_cents ? Math.round(parseFloat(f.copay_specialist_cents) * 100) : null,
+    copay_er_cents: f.copay_er_cents ? Math.round(parseFloat(f.copay_er_cents) * 100) : null,
+    insurance_phone: f.insurance_phone || null,
+    insurance_website: f.insurance_website || null,
+  }
+}
+
+function profileToForm(p: HealthProfile): InsFormState {
+  return {
+    profile_label: p.profile_label ?? 'Mine',
+    relationship: p.relationship ?? 'self',
+    insurance_carrier: p.insurance_carrier ?? '',
+    plan_name: p.plan_name ?? '',
+    plan_type: p.plan_type ?? '',
+    member_id: p.member_id ?? '',
+    group_number: p.group_number ?? '',
+    deductible_cents: p.deductible_cents != null ? String(p.deductible_cents / 100) : '',
+    deductible_met_cents: p.deductible_met_cents != null ? String(p.deductible_met_cents / 100) : '',
+    copay_primary_cents: p.copay_primary_cents != null ? String(p.copay_primary_cents / 100) : '',
+    copay_specialist_cents: p.copay_specialist_cents != null ? String(p.copay_specialist_cents / 100) : '',
+    copay_er_cents: p.copay_er_cents != null ? String(p.copay_er_cents / 100) : '',
+    insurance_phone: p.insurance_phone ?? '',
+    insurance_website: p.insurance_website ?? '',
+  }
+}
+
+function InsuranceForm({
+  initial,
+  onSave,
+  onCancel,
+  submitLabel,
+}: {
+  initial: InsFormState
+  onSave: (f: InsFormState) => Promise<void>
+  onCancel: () => void
+  submitLabel?: string
+}) {
+  const [form, setForm] = useState<InsFormState>(initial)
+  const [saving, setSaving] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await onSave(form)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const set = (k: keyof InsFormState) => (v: string) => setForm((f) => ({ ...f, [k]: v }))
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div style={{ display: 'flex', gap: 10, marginBottom: 0 }}>
+        <div style={{ flex: 1 }}>
+          <InlineInput label="Label (Mine / Spouse / Child name)" name="profile_label" value={form.profile_label} onChange={set('profile_label')} placeholder="Mine" />
+        </div>
+        <div style={{ flex: 1 }}>
+          <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 3 }}>Relationship</label>
+          <select
+            value={form.relationship}
+            onChange={(e) => setForm((f) => ({ ...f, relationship: e.target.value }))}
+            style={{ width: '100%', fontSize: 13, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box', marginBottom: 10 }}
+          >
+            <option value="self">Self</option>
+            <option value="spouse">Spouse</option>
+            <option value="child">Child</option>
+            <option value="parent">Parent</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+      </div>
+      <InlineInput label="Insurance carrier" name="insurance_carrier" value={form.insurance_carrier} onChange={set('insurance_carrier')} placeholder="e.g. Blue Cross Blue Shield" />
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}><InlineInput label="Plan name" name="plan_name" value={form.plan_name} onChange={set('plan_name')} placeholder="e.g. Blue Choice PPO" /></div>
+        <div style={{ flex: 1 }}><InlineInput label="Plan type" name="plan_type" value={form.plan_type} onChange={set('plan_type')} placeholder="HMO / PPO / HDHP" /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}><InlineInput label="Member ID" name="member_id" value={form.member_id} onChange={set('member_id')} /></div>
+        <div style={{ flex: 1 }}><InlineInput label="Group #" name="group_number" value={form.group_number} onChange={set('group_number')} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}><InlineInput label="Deductible ($)" name="deductible_cents" type="number" value={form.deductible_cents} onChange={set('deductible_cents')} /></div>
+        <div style={{ flex: 1 }}><InlineInput label="Deductible met ($)" name="deductible_met_cents" type="number" value={form.deductible_met_cents} onChange={set('deductible_met_cents')} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}><InlineInput label="Copay primary ($)" name="copay_primary_cents" type="number" value={form.copay_primary_cents} onChange={set('copay_primary_cents')} /></div>
+        <div style={{ flex: 1 }}><InlineInput label="Copay specialist ($)" name="copay_specialist_cents" type="number" value={form.copay_specialist_cents} onChange={set('copay_specialist_cents')} /></div>
+        <div style={{ flex: 1 }}><InlineInput label="Copay ER ($)" name="copay_er_cents" type="number" value={form.copay_er_cents} onChange={set('copay_er_cents')} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <div style={{ flex: 1 }}><InlineInput label="Insurance phone" name="insurance_phone" value={form.insurance_phone} onChange={set('insurance_phone')} /></div>
+        <div style={{ flex: 1 }}><InlineInput label="Insurance website" name="insurance_website" value={form.insurance_website} onChange={set('insurance_website')} /></div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+        <SaveBtn loading={saving} />
+        <CancelBtn onClick={onCancel} />
+      </div>
+    </form>
+  )
+}
+
 // ── Tab: Overview ─────────────────────────────────────────────────────────────
 function OverviewTab({
-  profile,
+  profiles,
+  onProfileAdd,
   onProfileUpdate,
+  onProfileDelete,
   showToast,
 }: {
-  profile: HealthProfile | null
+  profiles: HealthProfile[]
+  onProfileAdd: (p: HealthProfile) => void
   onProfileUpdate: (p: HealthProfile) => void
+  onProfileDelete: (id: string) => void
   showToast: (m: string) => void
 }) {
-  const [editInsurance, setEditInsurance] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [showAddForm, setShowAddForm] = useState(false)
   const [editPcp, setEditPcp] = useState(false)
   const [editHistory, setEditHistory] = useState(false)
 
-  // Insurance form state
-  const [insForm, setInsForm] = useState({
-    insurance_carrier: profile?.insurance_carrier ?? '',
-    plan_type: profile?.plan_type ?? '',
-    member_id: profile?.member_id ?? '',
-    deductible_cents: profile?.deductible_cents != null ? String(profile.deductible_cents / 100) : '',
-    deductible_met_cents: profile?.deductible_met_cents != null ? String(profile.deductible_met_cents / 100) : '',
-    copay_primary_cents: profile?.copay_primary_cents != null ? String(profile.copay_primary_cents / 100) : '',
-    copay_specialist_cents:
-      profile?.copay_specialist_cents != null ? String(profile.copay_specialist_cents / 100) : '',
-    copay_er_cents: profile?.copay_er_cents != null ? String(profile.copay_er_cents / 100) : '',
-  })
+  // PCP/history from first (self) profile
+  const baseProfile = profiles.find((p) => p.relationship === 'self') ?? profiles[0] ?? null
 
-  // PCP form state
   const [pcpForm, setPcpForm] = useState({
-    primary_care_name: profile?.primary_care_name ?? '',
-    primary_care_phone: profile?.primary_care_phone ?? '',
-    primary_care_address: profile?.primary_care_address ?? '',
+    primary_care_name: baseProfile?.primary_care_name ?? '',
+    primary_care_phone: baseProfile?.primary_care_phone ?? '',
+    primary_care_address: baseProfile?.primary_care_address ?? '',
   })
-
-  // History form state
   const [histForm, setHistForm] = useState({
-    conditions: profile?.conditions?.join(', ') ?? '',
-    allergies: profile?.allergies?.join(', ') ?? '',
-    blood_type: profile?.blood_type ?? '',
+    conditions: baseProfile?.conditions?.join(', ') ?? '',
+    allergies: baseProfile?.allergies?.join(', ') ?? '',
+    blood_type: baseProfile?.blood_type ?? '',
   })
 
-  async function submitInsurance(e: React.FormEvent) {
-    e.preventDefault()
-    const body = {
-      insurance_carrier: insForm.insurance_carrier,
-      plan_type: insForm.plan_type,
-      member_id: insForm.member_id,
-      deductible_cents: insForm.deductible_cents ? Math.round(parseFloat(insForm.deductible_cents) * 100) : null,
-      deductible_met_cents: insForm.deductible_met_cents
-        ? Math.round(parseFloat(insForm.deductible_met_cents) * 100)
-        : null,
-      copay_primary_cents: insForm.copay_primary_cents
-        ? Math.round(parseFloat(insForm.copay_primary_cents) * 100)
-        : null,
-      copay_specialist_cents: insForm.copay_specialist_cents
-        ? Math.round(parseFloat(insForm.copay_specialist_cents) * 100)
-        : null,
-      copay_er_cents: insForm.copay_er_cents ? Math.round(parseFloat(insForm.copay_er_cents) * 100) : null,
-    }
-    try {
-      const res = await fetch('/api/health/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-      const data = await res.json()
-      if (data.profile) onProfileUpdate(data.profile)
-      setEditInsurance(false)
-      showToast('Insurance updated')
-    } catch {
+  async function handleAddInsurance(f: InsFormState) {
+    const res = await fetch('/api/health/profile', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(toInsBody(f)),
+    })
+    const data = await res.json()
+    if (data.data) {
+      onProfileAdd(data.data)
+      setShowAddForm(false)
+      showToast('Insurance added')
+    } else {
       showToast('Failed to save')
+    }
+  }
+
+  async function handleUpdateInsurance(id: string, f: InsFormState) {
+    const res = await fetch('/api/health/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, ...toInsBody(f) }),
+    })
+    const data = await res.json()
+    if (data.data) {
+      onProfileUpdate(data.data)
+      setEditingId(null)
+      showToast('Insurance updated')
+    } else {
+      showToast('Failed to save')
+    }
+  }
+
+  async function handleDeleteInsurance(id: string) {
+    if (!confirm('Delete this insurance profile?')) return
+    const res = await fetch('/api/health/profile', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    })
+    if (res.ok) {
+      onProfileDelete(id)
+      showToast('Deleted')
+    } else {
+      showToast('Failed to delete')
     }
   }
 
   async function submitPcp(e: React.FormEvent) {
     e.preventDefault()
-    try {
-      const res = await fetch('/api/health/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(pcpForm) })
+    if (!baseProfile) {
+      // Create a new self profile with PCP data
+      const res = await fetch('/api/health/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...pcpForm, profile_label: 'Mine', relationship: 'self' }),
+      })
       const data = await res.json()
-      if (data.profile) onProfileUpdate(data.profile)
-      setEditPcp(false)
-      showToast('Provider updated')
-    } catch {
-      showToast('Failed to save')
+      if (data.data) { onProfileAdd(data.data); setEditPcp(false); showToast('Provider saved') }
+      else showToast('Failed to save')
+      return
     }
+    const res = await fetch('/api/health/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: baseProfile.id, ...pcpForm }),
+    })
+    const data = await res.json()
+    if (data.data) { onProfileUpdate(data.data); setEditPcp(false); showToast('Provider updated') }
+    else showToast('Failed to save')
   }
 
   async function submitHistory(e: React.FormEvent) {
@@ -210,72 +410,128 @@ function OverviewTab({
       allergies: histForm.allergies ? histForm.allergies.split(',').map((s) => s.trim()).filter(Boolean) : [],
       blood_type: histForm.blood_type,
     }
-    try {
-      const res = await fetch('/api/health/profile', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    if (!baseProfile) {
+      const res = await fetch('/api/health/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...body, profile_label: 'Mine', relationship: 'self' }),
+      })
       const data = await res.json()
-      if (data.profile) onProfileUpdate(data.profile)
-      setEditHistory(false)
-      showToast('Health history updated')
-    } catch {
-      showToast('Failed to save')
+      if (data.data) { onProfileAdd(data.data); setEditHistory(false); showToast('Health history saved') }
+      else showToast('Failed to save')
+      return
     }
-  }
-
-  if (!profile) {
-    return (
-      <SectionCard style={{ textAlign: 'center', padding: 32 }}>
-        <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>No health profile yet</p>
-        <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>
-          Set up your insurance, primary care provider, and health history to get started.
-        </p>
-      </SectionCard>
-    )
+    const res = await fetch('/api/health/profile', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: baseProfile.id, ...body }),
+    })
+    const data = await res.json()
+    if (data.data) { onProfileUpdate(data.data); setEditHistory(false); showToast('Health history updated') }
+    else showToast('Failed to save')
   }
 
   return (
     <>
-      {/* Insurance Card */}
-      <SectionCard>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Insurance</span>
+      {/* Insurance profiles */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: 0 }}>
+          Insurance Profiles
+        </p>
+        {!showAddForm && (
           <button
-            onClick={() => setEditInsurance(!editInsurance)}
-            style={{ fontSize: 12, color: 'var(--text-2)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+            onClick={() => setShowAddForm(true)}
+            style={{ fontSize: 12, color: 'var(--accent)', background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', fontWeight: 600 }}
           >
-            {editInsurance ? 'Cancel' : 'Edit'}
+            + Add
           </button>
-        </div>
-        {editInsurance ? (
-          <form onSubmit={submitInsurance}>
-            <InlineInput label="Carrier" name="insurance_carrier" value={insForm.insurance_carrier} onChange={(v) => setInsForm((f) => ({ ...f, insurance_carrier: v }))} />
-            <InlineInput label="Plan type (HMO/PPO/etc)" name="plan_type" value={insForm.plan_type} onChange={(v) => setInsForm((f) => ({ ...f, plan_type: v }))} />
-            <InlineInput label="Member ID" name="member_id" value={insForm.member_id} onChange={(v) => setInsForm((f) => ({ ...f, member_id: v }))} />
-            <InlineInput label="Deductible ($)" name="deductible_cents" value={insForm.deductible_cents} onChange={(v) => setInsForm((f) => ({ ...f, deductible_cents: v }))} type="number" />
-            <InlineInput label="Deductible met ($)" name="deductible_met_cents" value={insForm.deductible_met_cents} onChange={(v) => setInsForm((f) => ({ ...f, deductible_met_cents: v }))} type="number" />
-            <InlineInput label="Copay primary ($)" name="copay_primary_cents" value={insForm.copay_primary_cents} onChange={(v) => setInsForm((f) => ({ ...f, copay_primary_cents: v }))} type="number" />
-            <InlineInput label="Copay specialist ($)" name="copay_specialist_cents" value={insForm.copay_specialist_cents} onChange={(v) => setInsForm((f) => ({ ...f, copay_specialist_cents: v }))} type="number" />
-            <InlineInput label="Copay ER ($)" name="copay_er_cents" value={insForm.copay_er_cents} onChange={(v) => setInsForm((f) => ({ ...f, copay_er_cents: v }))} type="number" />
-            <button type="submit" style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Save</button>
-          </form>
-        ) : (
-          <>
-            <FieldRow label="Carrier" value={profile.insurance_carrier} />
-            <FieldRow label="Plan" value={profile.plan_type} />
-            <FieldRow label="Member ID" value={maskMemberId(profile.member_id)} />
-            <FieldRow label="Deductible" value={`${formatCents(profile.deductible_met_cents)} / ${formatCents(profile.deductible_cents)}`} />
-            <FieldRow label="Copay Primary" value={formatCents(profile.copay_primary_cents)} />
-            <FieldRow label="Copay Specialist" value={formatCents(profile.copay_specialist_cents)} />
-            <FieldRow label="Copay ER" value={formatCents(profile.copay_er_cents)} />
-          </>
         )}
-      </SectionCard>
+      </div>
 
-      {/* Primary Care Card */}
-      <SectionCard>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+      {profiles.length === 0 && !showAddForm && (
+        <SectionCard style={{ textAlign: 'center', padding: 28 }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>No insurance profiles yet</p>
+          <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.6 }}>
+            Add your own, your spouse&apos;s, or your children&apos;s insurance.
+          </p>
+          <button
+            onClick={() => setShowAddForm(true)}
+            style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}
+          >
+            + Add insurance
+          </button>
+        </SectionCard>
+      )}
+
+      {profiles.map((prof) => (
+        <SectionCard key={prof.id}>
+          {editingId === prof.id ? (
+            <>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Edit insurance</p>
+              <InsuranceForm
+                initial={profileToForm(prof)}
+                onSave={(f) => handleUpdateInsurance(prof.id, f)}
+                onCancel={() => setEditingId(null)}
+              />
+            </>
+          ) : (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                    {prof.profile_label || 'Mine'}
+                  </span>
+                  {prof.relationship && prof.relationship !== 'self' && (
+                    <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 6 }}>({prof.relationship})</span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={() => setEditingId(prof.id)}
+                    style={{ fontSize: 12, color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDeleteInsurance(prof.id)}
+                    style={{ fontSize: 12, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <FieldRow label="Carrier" value={prof.insurance_carrier} />
+              {prof.plan_name && <FieldRow label="Plan" value={prof.plan_name} />}
+              <FieldRow label="Type" value={prof.plan_type} />
+              <FieldRow label="Member ID" value={maskMemberId(prof.member_id)} />
+              {prof.group_number && <FieldRow label="Group #" value={prof.group_number} />}
+              <FieldRow label="Deductible" value={`${formatCents(prof.deductible_met_cents)} / ${formatCents(prof.deductible_cents)}`} />
+              <FieldRow label="Copay Primary" value={formatCents(prof.copay_primary_cents)} />
+              <FieldRow label="Copay Specialist" value={formatCents(prof.copay_specialist_cents)} />
+              <FieldRow label="Copay ER" value={formatCents(prof.copay_er_cents)} />
+              {prof.insurance_phone && <FieldRow label="Phone" value={prof.insurance_phone} />}
+            </>
+          )}
+        </SectionCard>
+      ))}
+
+      {showAddForm && (
+        <SectionCard style={{ background: 'var(--morning)' }}>
+          <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Add insurance profile</p>
+          <InsuranceForm
+            initial={{ ...BLANK_INS }}
+            onSave={handleAddInsurance}
+            onCancel={() => setShowAddForm(false)}
+          />
+        </SectionCard>
+      )}
+
+      {/* Primary Care */}
+      <SectionCard style={{ marginTop: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Primary Care</span>
           <button
-            onClick={() => setEditPcp(!editPcp)}
+            onClick={() => { setPcpForm({ primary_care_name: baseProfile?.primary_care_name ?? '', primary_care_phone: baseProfile?.primary_care_phone ?? '', primary_care_address: baseProfile?.primary_care_address ?? '' }); setEditPcp(!editPcp) }}
             style={{ fontSize: 12, color: 'var(--text-2)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
           >
             {editPcp ? 'Cancel' : 'Edit'}
@@ -286,23 +542,23 @@ function OverviewTab({
             <InlineInput label="Provider name" name="primary_care_name" value={pcpForm.primary_care_name} onChange={(v) => setPcpForm((f) => ({ ...f, primary_care_name: v }))} />
             <InlineInput label="Phone" name="primary_care_phone" value={pcpForm.primary_care_phone} onChange={(v) => setPcpForm((f) => ({ ...f, primary_care_phone: v }))} />
             <InlineInput label="Address" name="primary_care_address" value={pcpForm.primary_care_address} onChange={(v) => setPcpForm((f) => ({ ...f, primary_care_address: v }))} />
-            <button type="submit" style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Save</button>
+            <div style={{ display: 'flex', gap: 8 }}><SaveBtn /><CancelBtn onClick={() => setEditPcp(false)} /></div>
           </form>
         ) : (
           <>
-            <FieldRow label="Provider" value={profile.primary_care_name} />
-            <FieldRow label="Phone" value={profile.primary_care_phone} />
-            <FieldRow label="Address" value={profile.primary_care_address} />
+            <FieldRow label="Provider" value={baseProfile?.primary_care_name} />
+            <FieldRow label="Phone" value={baseProfile?.primary_care_phone} />
+            <FieldRow label="Address" value={baseProfile?.primary_care_address} />
           </>
         )}
       </SectionCard>
 
-      {/* Health History Card */}
+      {/* Health History */}
       <SectionCard>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Health History</span>
           <button
-            onClick={() => setEditHistory(!editHistory)}
+            onClick={() => { setHistForm({ conditions: baseProfile?.conditions?.join(', ') ?? '', allergies: baseProfile?.allergies?.join(', ') ?? '', blood_type: baseProfile?.blood_type ?? '' }); setEditHistory(!editHistory) }}
             style={{ fontSize: 12, color: 'var(--text-2)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
           >
             {editHistory ? 'Cancel' : 'Edit'}
@@ -313,13 +569,13 @@ function OverviewTab({
             <InlineInput label="Conditions (comma separated)" name="conditions" value={histForm.conditions} onChange={(v) => setHistForm((f) => ({ ...f, conditions: v }))} />
             <InlineInput label="Allergies (comma separated)" name="allergies" value={histForm.allergies} onChange={(v) => setHistForm((f) => ({ ...f, allergies: v }))} />
             <InlineInput label="Blood type" name="blood_type" value={histForm.blood_type} onChange={(v) => setHistForm((f) => ({ ...f, blood_type: v }))} />
-            <button type="submit" style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Save</button>
+            <div style={{ display: 'flex', gap: 8 }}><SaveBtn /><CancelBtn onClick={() => setEditHistory(false)} /></div>
           </form>
         ) : (
           <>
-            <FieldRow label="Conditions" value={profile.conditions?.join(', ') || '—'} />
-            <FieldRow label="Allergies" value={profile.allergies?.join(', ') || '—'} />
-            <FieldRow label="Blood type" value={profile.blood_type} />
+            <FieldRow label="Conditions" value={baseProfile?.conditions?.join(', ') || '—'} />
+            <FieldRow label="Allergies" value={baseProfile?.allergies?.join(', ') || '—'} />
+            <FieldRow label="Blood type" value={baseProfile?.blood_type} />
           </>
         )}
       </SectionCard>
@@ -331,42 +587,72 @@ function OverviewTab({
 function MedicationsTab({
   medications,
   onAdd,
+  onUpdate,
   onDelete,
   showToast,
 }: {
   medications: Medication[]
   onAdd: (m: Medication) => void
+  onUpdate: (m: Medication) => void
   onDelete: (id: string) => void
   showToast: (m: string) => void
 }) {
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [addForm, setAddForm] = useState({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
+  const [editForm, setEditForm] = useState({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
     const body = {
-      name: form.name,
-      dosage_mg: form.dosage_mg ? parseFloat(form.dosage_mg) : null,
-      frequency: form.frequency || null,
-      prescriber: form.prescriber || null,
-      purpose: form.purpose || null,
-      notes: form.notes || null,
+      name: addForm.name,
+      dosage_mg: addForm.dosage_mg ? parseFloat(addForm.dosage_mg) : null,
+      frequency: addForm.frequency || null,
+      prescriber: addForm.prescriber || null,
+      purpose: addForm.purpose || null,
+      notes: addForm.notes || null,
     }
     try {
       const res = await fetch('/api/health/medications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
-      if (data.medication) onAdd(data.medication)
-      setForm({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
-      setShowForm(false)
+      if (data.data) onAdd(data.data)
+      setAddForm({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
+      setShowAddForm(false)
       showToast('Medication added')
     } catch {
       showToast('Failed to add')
     }
   }
 
+  async function handleUpdate(e: React.FormEvent, id: string) {
+    e.preventDefault()
+    const body = {
+      id,
+      name: editForm.name,
+      dosage_mg: editForm.dosage_mg ? parseFloat(editForm.dosage_mg) : null,
+      frequency: editForm.frequency || null,
+      prescriber: editForm.prescriber || null,
+      purpose: editForm.purpose || null,
+      notes: editForm.notes || null,
+    }
+    try {
+      const res = await fetch('/api/health/medications', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const data = await res.json()
+      if (data.data) onUpdate(data.data)
+      setEditingId(null)
+      showToast('Updated')
+    } catch {
+      showToast('Failed to update')
+    }
+  }
+
   async function handleDelete(id: string) {
     try {
-      await fetch(`/api/health/medications/${id}`, { method: 'DELETE' })
+      await fetch('/api/health/medications', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
       onDelete(id)
       showToast('Removed')
     } catch {
@@ -381,74 +667,106 @@ function MedicationsTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ medication_id: medId, taken_at: new Date().toISOString() }),
       })
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
     showToast('Dose logged')
   }
 
+  function startEdit(med: Medication) {
+    setEditForm({
+      name: med.name,
+      dosage_mg: med.dosage_mg != null ? String(med.dosage_mg) : '',
+      frequency: med.frequency ?? '',
+      prescriber: med.prescriber ?? '',
+      purpose: med.purpose ?? '',
+      notes: med.notes ?? '',
+    })
+    setEditingId(med.id)
+  }
+
+  const setA = (k: keyof typeof addForm) => (v: string) => setAddForm((f) => ({ ...f, [k]: v }))
+  const setE = (k: keyof typeof editForm) => (v: string) => setEditForm((f) => ({ ...f, [k]: v }))
+
   return (
     <>
-      {medications.length === 0 && (
+      {medications.length === 0 && !showAddForm && (
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px' }}>No medications tracked yet.</p>
       )}
 
       {medications.map((med) => (
         <SectionCard key={med.id}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
-                  {med.name}{med.dosage_mg ? ` ${med.dosage_mg}mg` : ''}
-                </span>
-                <Badge label={med.is_active ? 'Active' : 'Inactive'} color={med.is_active ? '#15803D' : undefined} />
+          {editingId === med.id ? (
+            <>
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Edit medication</p>
+              <form onSubmit={(e) => handleUpdate(e, med.id)}>
+                <InlineInput label="Name *" name="name" value={editForm.name} onChange={setE('name')} required />
+                <InlineInput label="Dosage (mg)" name="dosage_mg" type="number" value={editForm.dosage_mg} onChange={setE('dosage_mg')} />
+                <InlineInput label="Frequency" name="frequency" value={editForm.frequency} onChange={setE('frequency')} />
+                <InlineInput label="Prescriber" name="prescriber" value={editForm.prescriber} onChange={setE('prescriber')} />
+                <InlineInput label="Purpose" name="purpose" value={editForm.purpose} onChange={setE('purpose')} />
+                <InlineInput label="Notes" name="notes" value={editForm.notes} onChange={setE('notes')} />
+                <div style={{ display: 'flex', gap: 8 }}><SaveBtn /><CancelBtn onClick={() => setEditingId(null)} /></div>
+              </form>
+            </>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>
+                    {med.name}{med.dosage_mg ? ` ${med.dosage_mg}mg` : ''}
+                  </span>
+                  <Badge label={med.is_active ? 'Active' : 'Inactive'} color={med.is_active ? '#15803D' : undefined} />
+                </div>
+                {med.frequency && (
+                  <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>
+                    {med.frequency}{med.prescriber ? ` · ${med.prescriber}` : ''}
+                  </p>
+                )}
+                {med.purpose && <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>{med.purpose}</p>}
               </div>
-              {med.frequency && (
-                <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>
-                  {med.frequency}{med.prescriber ? ` · ${med.prescriber}` : ''}
-                </p>
-              )}
-              {med.purpose && (
-                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>{med.purpose}</p>
-              )}
+              <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <button
+                  onClick={() => handleLogDose(med.id)}
+                  style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                >
+                  Log dose
+                </button>
+                <button
+                  onClick={() => startEdit(med)}
+                  style={{ fontSize: 11, color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(med.id)}
+                  style={{ fontSize: 11, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                >
+                  Delete
+                </button>
+              </div>
             </div>
-            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              <button
-                onClick={() => handleLogDose(med.id)}
-                style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
-              >
-                Log dose
-              </button>
-              <button
-                onClick={() => handleDelete(med.id)}
-                style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
-              >
-                ×
-              </button>
-            </div>
-          </div>
+          )}
         </SectionCard>
       ))}
 
-      {showForm ? (
+      {showAddForm ? (
         <SectionCard style={{ background: 'var(--morning)' }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Add medication</p>
           <form onSubmit={handleAdd}>
-            <InlineInput label="Name *" name="name" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} required />
-            <InlineInput label="Dosage (mg)" name="dosage_mg" value={form.dosage_mg} onChange={(v) => setForm((f) => ({ ...f, dosage_mg: v }))} type="number" />
-            <InlineInput label="Frequency" name="frequency" value={form.frequency} onChange={(v) => setForm((f) => ({ ...f, frequency: v }))} />
-            <InlineInput label="Prescriber" name="prescriber" value={form.prescriber} onChange={(v) => setForm((f) => ({ ...f, prescriber: v }))} />
-            <InlineInput label="Purpose" name="purpose" value={form.purpose} onChange={(v) => setForm((f) => ({ ...f, purpose: v }))} />
-            <InlineInput label="Notes" name="notes" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} />
+            <InlineInput label="Name *" name="name" value={addForm.name} onChange={setA('name')} required />
+            <InlineInput label="Dosage (mg)" name="dosage_mg" type="number" value={addForm.dosage_mg} onChange={setA('dosage_mg')} />
+            <InlineInput label="Frequency" name="frequency" value={addForm.frequency} onChange={setA('frequency')} placeholder="e.g. Once daily" />
+            <InlineInput label="Prescriber" name="prescriber" value={addForm.prescriber} onChange={setA('prescriber')} />
+            <InlineInput label="Purpose" name="purpose" value={addForm.purpose} onChange={setA('purpose')} />
+            <InlineInput label="Notes" name="notes" value={addForm.notes} onChange={setA('notes')} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="submit" style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Add</button>
-              <button type="button" onClick={() => setShowForm(false)} style={{ fontSize: 13, color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Cancel</button>
+              <CancelBtn onClick={() => setShowAddForm(false)} />
             </div>
           </form>
         </SectionCard>
       ) : (
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => setShowAddForm(true)}
           style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', cursor: 'pointer', width: '100%' }}
         >
           + Add medication
@@ -462,17 +780,22 @@ function MedicationsTab({
 function AppointmentsTab({
   appointments,
   onAdd,
+  onUpdate,
   onDelete,
   showToast,
 }: {
   appointments: HealthAppointment[]
   onAdd: (a: HealthAppointment) => void
+  onUpdate: (a: HealthAppointment) => void
   onDelete: (id: string) => void
   showToast: (m: string) => void
 }) {
-  const [showForm, setShowForm] = useState(false)
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [showPast, setShowPast] = useState(false)
-  const [form, setForm] = useState({ title: '', provider_name: '', appointment_date: '', location: '', reason: '', notes: '' })
+  const blankForm = { title: '', provider_name: '', appointment_date: '', location: '', reason: '', notes: '' }
+  const [addForm, setAddForm] = useState(blankForm)
+  const [editForm, setEditForm] = useState(blankForm)
 
   const now = new Date()
   const upcoming = appointments.filter((a) => new Date(a.appointment_date) >= now).sort((a, b) => new Date(a.appointment_date).getTime() - new Date(b.appointment_date).getTime())
@@ -480,29 +803,61 @@ function AppointmentsTab({
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
-    const body = {
-      title: form.title,
-      provider_name: form.provider_name || null,
-      appointment_date: form.appointment_date,
-      location: form.location || null,
-      reason: form.reason || null,
-      notes: form.notes || null,
-    }
     try {
-      const res = await fetch('/api/health/appointments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await fetch('/api/health/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: addForm.title,
+          provider_name: addForm.provider_name || null,
+          appointment_date: addForm.appointment_date,
+          location: addForm.location || null,
+          reason: addForm.reason || null,
+          notes: addForm.notes || null,
+        }),
+      })
       const data = await res.json()
-      if (data.appointment) onAdd(data.appointment)
-      setForm({ title: '', provider_name: '', appointment_date: '', location: '', reason: '', notes: '' })
-      setShowForm(false)
+      if (data.data) onAdd(data.data)
+      setAddForm(blankForm)
+      setShowAddForm(false)
       showToast('Appointment added')
     } catch {
       showToast('Failed to add')
     }
   }
 
+  async function handleUpdate(e: React.FormEvent, id: string) {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/health/appointments', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          title: editForm.title,
+          provider_name: editForm.provider_name || null,
+          appointment_date: editForm.appointment_date,
+          location: editForm.location || null,
+          reason: editForm.reason || null,
+          notes: editForm.notes || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.data) onUpdate(data.data)
+      setEditingId(null)
+      showToast('Updated')
+    } catch {
+      showToast('Failed to update')
+    }
+  }
+
   async function handleDelete(id: string) {
     try {
-      await fetch(`/api/health/appointments/${id}`, { method: 'DELETE' })
+      await fetch('/api/health/appointments', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
       onDelete(id)
       showToast('Removed')
     } catch {
@@ -510,37 +865,77 @@ function AppointmentsTab({
     }
   }
 
-  function AppointmentRow({ appt }: { appt: HealthAppointment }) {
+  function startEdit(appt: HealthAppointment) {
+    // Format date for datetime-local input
+    const dateStr = appt.appointment_date.slice(0, 16) // 'YYYY-MM-DDTHH:MM'
+    setEditForm({
+      title: appt.title,
+      provider_name: appt.provider_name ?? '',
+      appointment_date: dateStr,
+      location: appt.location ?? '',
+      reason: appt.reason ?? '',
+      notes: appt.notes ?? '',
+    })
+    setEditingId(appt.id)
+  }
+
+  const setA = (k: keyof typeof blankForm) => (v: string) => setAddForm((f) => ({ ...f, [k]: v }))
+  const setE = (k: keyof typeof blankForm) => (v: string) => setEditForm((f) => ({ ...f, [k]: v }))
+
+  function ApptRow({ appt }: { appt: HealthAppointment }) {
     const d = new Date(appt.appointment_date)
     const dateStr = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
     return (
       <SectionCard>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>{appt.title}</p>
-            <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>{dateStr} at {timeStr}</p>
-            {appt.provider_name && <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>{appt.provider_name}</p>}
-            {appt.location && <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 2px' }}>{appt.location}</p>}
-            {appt.reason && <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>{appt.reason}</p>}
+        {editingId === appt.id ? (
+          <>
+            <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Edit appointment</p>
+            <form onSubmit={(e) => handleUpdate(e, appt.id)}>
+              <InlineInput label="Title *" name="title" value={editForm.title} onChange={setE('title')} required />
+              <InlineInput label="Provider" name="provider_name" value={editForm.provider_name} onChange={setE('provider_name')} />
+              <InlineInput label="Date & Time *" name="appointment_date" type="datetime-local" value={editForm.appointment_date} onChange={setE('appointment_date')} required />
+              <InlineInput label="Location" name="location" value={editForm.location} onChange={setE('location')} />
+              <InlineInput label="Reason" name="reason" value={editForm.reason} onChange={setE('reason')} />
+              <InlineInput label="Notes" name="notes" value={editForm.notes} onChange={setE('notes')} />
+              <div style={{ display: 'flex', gap: 8 }}><SaveBtn /><CancelBtn onClick={() => setEditingId(null)} /></div>
+            </form>
+          </>
+        ) : (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>{appt.title}</p>
+              <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>{dateStr} at {timeStr}</p>
+              {appt.provider_name && <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>{appt.provider_name}</p>}
+              {appt.location && <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 2px' }}>{appt.location}</p>}
+              {appt.reason && <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>{appt.reason}</p>}
+            </div>
+            <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+              <button
+                onClick={() => startEdit(appt)}
+                style={{ fontSize: 11, color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDelete(appt.id)}
+                style={{ fontSize: 11, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+              >
+                Delete
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => handleDelete(appt.id)}
-            style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', flexShrink: 0 }}
-          >
-            ×
-          </button>
-        </div>
+        )}
       </SectionCard>
     )
   }
 
   return (
     <>
-      {upcoming.length === 0 && (
+      {upcoming.length === 0 && !showAddForm && (
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px' }}>No upcoming appointments.</p>
       )}
-      {upcoming.map((a) => <AppointmentRow key={a.id} appt={a} />)}
+      {upcoming.map((a) => <ApptRow key={a.id} appt={a} />)}
 
       {past.length > 0 && (
         <div style={{ marginBottom: 10 }}>
@@ -550,29 +945,29 @@ function AppointmentsTab({
           >
             {showPast ? '▲' : '▼'} Past ({past.length})
           </button>
-          {showPast && past.map((a) => <AppointmentRow key={a.id} appt={a} />)}
+          {showPast && past.map((a) => <ApptRow key={a.id} appt={a} />)}
         </div>
       )}
 
-      {showForm ? (
+      {showAddForm ? (
         <SectionCard style={{ background: 'var(--morning)' }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Add appointment</p>
           <form onSubmit={handleAdd}>
-            <InlineInput label="Title *" name="title" value={form.title} onChange={(v) => setForm((f) => ({ ...f, title: v }))} required />
-            <InlineInput label="Provider" name="provider_name" value={form.provider_name} onChange={(v) => setForm((f) => ({ ...f, provider_name: v }))} />
-            <InlineInput label="Date & Time *" name="appointment_date" value={form.appointment_date} onChange={(v) => setForm((f) => ({ ...f, appointment_date: v }))} type="datetime-local" required />
-            <InlineInput label="Location" name="location" value={form.location} onChange={(v) => setForm((f) => ({ ...f, location: v }))} />
-            <InlineInput label="Reason" name="reason" value={form.reason} onChange={(v) => setForm((f) => ({ ...f, reason: v }))} />
-            <InlineInput label="Notes" name="notes" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} />
+            <InlineInput label="Title *" name="title" value={addForm.title} onChange={setA('title')} required />
+            <InlineInput label="Provider" name="provider_name" value={addForm.provider_name} onChange={setA('provider_name')} />
+            <InlineInput label="Date & Time *" name="appointment_date" type="datetime-local" value={addForm.appointment_date} onChange={setA('appointment_date')} required />
+            <InlineInput label="Location" name="location" value={addForm.location} onChange={setA('location')} />
+            <InlineInput label="Reason" name="reason" value={addForm.reason} onChange={setA('reason')} />
+            <InlineInput label="Notes" name="notes" value={addForm.notes} onChange={setA('notes')} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="submit" style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Add</button>
-              <button type="button" onClick={() => setShowForm(false)} style={{ fontSize: 13, color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Cancel</button>
+              <CancelBtn onClick={() => setShowAddForm(false)} />
             </div>
           </form>
         </SectionCard>
       ) : (
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => setShowAddForm(true)}
           style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', cursor: 'pointer', width: '100%' }}
         >
           + Add appointment
@@ -586,57 +981,124 @@ function AppointmentsTab({
 const RECORD_TYPES = ['lab', 'imaging', 'prescription', 'visit_summary', 'other'] as const
 type RecordType = typeof RECORD_TYPES[number]
 
-const RECORD_TYPE_COLORS: Record<RecordType, string> = {
+const RECORD_TYPE_COLORS: Record<RecordType, string | undefined> = {
   lab: '#1D4ED8',
   imaging: '#7C3AED',
   prescription: '#15803D',
   visit_summary: '#92400E',
-  other: undefined as unknown as string,
+  other: undefined,
 }
 
 function RecordsTab({
   records,
   onAdd,
+  onUpdate,
   onDelete,
   showToast,
 }: {
   records: MedicalRecord[]
   onAdd: (r: MedicalRecord) => void
+  onUpdate: (r: MedicalRecord) => void
   onDelete: (id: string) => void
   showToast: (m: string) => void
 }) {
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ title: '', record_type: 'lab', record_date: '', file_url: '', notes: '' })
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const blankForm = { title: '', record_type: 'lab', record_date: '', file_url: '', notes: '' }
+  const [addForm, setAddForm] = useState(blankForm)
+  const [editForm, setEditForm] = useState(blankForm)
+
+  const setA = (k: keyof typeof blankForm) => (v: string) => setAddForm((f) => ({ ...f, [k]: v }))
+  const setE = (k: keyof typeof blankForm) => (v: string) => setEditForm((f) => ({ ...f, [k]: v }))
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
-    const body = {
-      title: form.title,
-      record_type: form.record_type,
-      record_date: form.record_date || null,
-      file_url: form.file_url || null,
-      notes: form.notes || null,
-    }
     try {
-      const res = await fetch('/api/health/records', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await fetch('/api/health/records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: addForm.title,
+          record_type: addForm.record_type,
+          record_date: addForm.record_date || null,
+          file_url: addForm.file_url || null,
+          notes: addForm.notes || null,
+        }),
+      })
       const data = await res.json()
-      if (data.record) onAdd(data.record)
-      setForm({ title: '', record_type: 'lab', record_date: '', file_url: '', notes: '' })
-      setShowForm(false)
+      if (data.data) onAdd(data.data)
+      setAddForm(blankForm)
+      setShowAddForm(false)
       showToast('Record added')
     } catch {
       showToast('Failed to add')
     }
   }
 
+  async function handleUpdate(e: React.FormEvent, id: string) {
+    e.preventDefault()
+    try {
+      const res = await fetch('/api/health/records', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          title: editForm.title,
+          record_type: editForm.record_type,
+          record_date: editForm.record_date || null,
+          file_url: editForm.file_url || null,
+          notes: editForm.notes || null,
+        }),
+      })
+      const data = await res.json()
+      if (data.data) onUpdate(data.data)
+      setEditingId(null)
+      showToast('Updated')
+    } catch {
+      showToast('Failed to update')
+    }
+  }
+
   async function handleDelete(id: string) {
     try {
-      await fetch(`/api/health/records/${id}`, { method: 'DELETE' })
+      await fetch('/api/health/records', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
       onDelete(id)
       showToast('Removed')
     } catch {
       showToast('Failed to remove')
     }
+  }
+
+  function startEdit(rec: MedicalRecord) {
+    setEditForm({
+      title: rec.title,
+      record_type: rec.record_type,
+      record_date: rec.record_date ?? '',
+      file_url: rec.file_url ?? '',
+      notes: rec.notes ?? '',
+    })
+    setEditingId(rec.id)
+  }
+
+  function TypeSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+    return (
+      <div style={{ marginBottom: 10 }}>
+        <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 3 }}>Type</label>
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          style={{ width: '100%', fontSize: 13, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)', color: 'var(--text)', outline: 'none' }}
+        >
+          {RECORD_TYPES.map((t) => (
+            <option key={t} value={t}>{t.replace('_', ' ')}</option>
+          ))}
+        </select>
+      </div>
+    )
   }
 
   const grouped = RECORD_TYPES.reduce<Record<RecordType, MedicalRecord[]>>((acc, type) => {
@@ -646,7 +1108,7 @@ function RecordsTab({
 
   return (
     <>
-      {records.length === 0 && (
+      {records.length === 0 && !showAddForm && (
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px' }}>No records yet.</p>
       )}
 
@@ -661,58 +1123,69 @@ function RecordsTab({
             </p>
             {group.map((rec) => (
               <SectionCard key={rec.id}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{rec.title}</span>
-                      <Badge label={type.replace('_', ' ')} color={color} />
+                {editingId === rec.id ? (
+                  <>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Edit record</p>
+                    <form onSubmit={(e) => handleUpdate(e, rec.id)}>
+                      <InlineInput label="Title *" name="title" value={editForm.title} onChange={setE('title')} required />
+                      <TypeSelect value={editForm.record_type} onChange={setE('record_type')} />
+                      <InlineInput label="Date" name="record_date" type="date" value={editForm.record_date} onChange={setE('record_date')} />
+                      <InlineInput label="File URL" name="file_url" value={editForm.file_url} onChange={setE('file_url')} />
+                      <InlineInput label="Notes" name="notes" value={editForm.notes} onChange={setE('notes')} />
+                      <div style={{ display: 'flex', gap: 8 }}><SaveBtn /><CancelBtn onClick={() => setEditingId(null)} /></div>
+                    </form>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{rec.title}</span>
+                        <Badge label={type.replace('_', ' ')} color={color} />
+                      </div>
+                      {rec.record_date && <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>{new Date(rec.record_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
+                      {rec.notes && <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 2px' }}>{rec.notes}</p>}
+                      {rec.file_name && <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>📎 {rec.file_name}</p>}
                     </div>
-                    {rec.record_date && <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 2px' }}>{new Date(rec.record_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>}
-                    {rec.notes && <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 2px' }}>{rec.notes}</p>}
-                    {rec.file_name && <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>📎 {rec.file_name}</p>}
+                    <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                      <button
+                        onClick={() => startEdit(rec)}
+                        style={{ fontSize: 11, color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDelete(rec.id)}
+                        style={{ fontSize: 11, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => handleDelete(rec.id)}
-                    style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer', flexShrink: 0 }}
-                  >
-                    ×
-                  </button>
-                </div>
+                )}
               </SectionCard>
             ))}
           </div>
         )
       })}
 
-      {showForm ? (
+      {showAddForm ? (
         <SectionCard style={{ background: 'var(--morning)' }}>
           <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px' }}>Add record</p>
           <form onSubmit={handleAdd}>
-            <InlineInput label="Title *" name="title" value={form.title} onChange={(v) => setForm((f) => ({ ...f, title: v }))} required />
-            <div style={{ marginBottom: 10 }}>
-              <label style={{ fontSize: 11, color: 'var(--text-3)', display: 'block', marginBottom: 3 }}>Type</label>
-              <select
-                value={form.record_type}
-                onChange={(e) => setForm((f) => ({ ...f, record_type: e.target.value }))}
-                style={{ width: '100%', fontSize: 13, padding: '7px 10px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--bg)', color: 'var(--text)', outline: 'none' }}
-              >
-                {RECORD_TYPES.map((t) => (
-                  <option key={t} value={t}>{t.replace('_', ' ')}</option>
-                ))}
-              </select>
-            </div>
-            <InlineInput label="Date" name="record_date" value={form.record_date} onChange={(v) => setForm((f) => ({ ...f, record_date: v }))} type="date" />
-            <InlineInput label="File URL" name="file_url" value={form.file_url} onChange={(v) => setForm((f) => ({ ...f, file_url: v }))} />
-            <InlineInput label="Notes" name="notes" value={form.notes} onChange={(v) => setForm((f) => ({ ...f, notes: v }))} />
+            <InlineInput label="Title *" name="title" value={addForm.title} onChange={setA('title')} required />
+            <TypeSelect value={addForm.record_type} onChange={setA('record_type')} />
+            <InlineInput label="Date" name="record_date" type="date" value={addForm.record_date} onChange={setA('record_date')} />
+            <InlineInput label="File URL" name="file_url" value={addForm.file_url} onChange={setA('file_url')} />
+            <InlineInput label="Notes" name="notes" value={addForm.notes} onChange={setA('notes')} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="submit" style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Add</button>
-              <button type="button" onClick={() => setShowForm(false)} style={{ fontSize: 13, color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 16px', cursor: 'pointer' }}>Cancel</button>
+              <CancelBtn onClick={() => setShowAddForm(false)} />
             </div>
           </form>
         </SectionCard>
       ) : (
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => setShowAddForm(true)}
           style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 8, padding: '9px 16px', cursor: 'pointer', width: '100%' }}
         >
           + Add record
@@ -764,60 +1237,34 @@ function CoverageTab({ showToast }: { showToast: (m: string) => void }) {
           <input
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
-            placeholder="Ask about your coverage..."
+            placeholder="e.g. Is therapy covered? What's my specialist copay?"
             disabled={loading}
-            style={{
-              flex: 1,
-              fontSize: 13,
-              padding: '9px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: 8,
-              background: 'var(--surface)',
-              color: 'var(--text)',
-              outline: 'none',
-            }}
+            style={{ flex: 1, fontSize: 13, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)', color: 'var(--text)', outline: 'none' }}
           />
           <button
             type="submit"
             disabled={loading || !question.trim()}
-            style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: '#fff',
-              background: loading ? 'var(--text-3)' : 'var(--accent)',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 16px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              flexShrink: 0,
-            }}
+            style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: loading ? 'var(--text-3)' : 'var(--accent)', border: 'none', borderRadius: 8, padding: '9px 16px', cursor: loading ? 'not-allowed' : 'pointer', flexShrink: 0 }}
           >
-            {loading ? '...' : 'Ask'}
+            {loading ? '…' : 'Ask'}
           </button>
         </form>
       </SectionCard>
 
       {loading && (
         <SectionCard>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Thinking...</p>
+          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Thinking…</p>
         </SectionCard>
       )}
 
       {history.map((qa, i) => (
         <div key={i} style={{ marginBottom: 14 }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>Q: {qa.question}</p>
-          <div
-            style={{
-              background: 'var(--morning)',
-              border: '1px solid var(--border)',
-              borderRadius: 12,
-              padding: '14px 16px',
-            }}
-          >
-            <p style={{ fontSize: 14, color: 'var(--text)', margin: 0, lineHeight: 1.7, fontFamily: 'Lora, Georgia, serif' }}>
+          <SectionCard style={{ background: 'var(--morning)' }}>
+            <p style={{ fontSize: 14, color: 'var(--text)', margin: 0, lineHeight: 1.7, fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic' }}>
               {qa.answer}
             </p>
-          </div>
+          </SectionCard>
         </div>
       ))}
     </>
@@ -826,13 +1273,13 @@ function CoverageTab({ showToast }: { showToast: (m: string) => void }) {
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function HealthView({
-  healthProfile: initialProfile,
+  healthProfiles: initialProfiles,
   medications: initialMedications,
   appointments: initialAppointments,
   records: initialRecords,
 }: HealthViewProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const [profile, setProfile] = useState<HealthProfile | null>(initialProfile)
+  const [profiles, setProfiles] = useState<HealthProfile[]>(initialProfiles)
   const [medications, setMedications] = useState<Medication[]>(initialMedications)
   const [appointments, setAppointments] = useState<HealthAppointment[]>(initialAppointments)
   const [records, setRecords] = useState<MedicalRecord[]>(initialRecords)
@@ -848,7 +1295,6 @@ export default function HealthView({
 
   return (
     <div style={{ padding: '16px 14px', maxWidth: 640, margin: '0 auto' }}>
-      {/* Header */}
       <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Health</h2>
       <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 16px' }}>
         Insurance, medications, appointments, and records
@@ -891,12 +1337,19 @@ export default function HealthView({
 
       {/* Tab content */}
       {activeTab === 'overview' && (
-        <OverviewTab profile={profile} onProfileUpdate={setProfile} showToast={showToast} />
+        <OverviewTab
+          profiles={profiles}
+          onProfileAdd={(p) => setProfiles((prev) => [...prev, p])}
+          onProfileUpdate={(p) => setProfiles((prev) => prev.map((x) => (x.id === p.id ? p : x)))}
+          onProfileDelete={(id) => setProfiles((prev) => prev.filter((x) => x.id !== id))}
+          showToast={showToast}
+        />
       )}
       {activeTab === 'medications' && (
         <MedicationsTab
           medications={medications}
           onAdd={(m) => setMedications((prev) => [...prev, m])}
+          onUpdate={(m) => setMedications((prev) => prev.map((x) => (x.id === m.id ? m : x)))}
           onDelete={(id) => setMedications((prev) => prev.filter((m) => m.id !== id))}
           showToast={showToast}
         />
@@ -905,6 +1358,7 @@ export default function HealthView({
         <AppointmentsTab
           appointments={appointments}
           onAdd={(a) => setAppointments((prev) => [...prev, a])}
+          onUpdate={(a) => setAppointments((prev) => prev.map((x) => (x.id === a.id ? a : x)))}
           onDelete={(id) => setAppointments((prev) => prev.filter((a) => a.id !== id))}
           showToast={showToast}
         />
@@ -913,6 +1367,7 @@ export default function HealthView({
         <RecordsTab
           records={records}
           onAdd={(r) => setRecords((prev) => [...prev, r])}
+          onUpdate={(r) => setRecords((prev) => prev.map((x) => (x.id === r.id ? r : x)))}
           onDelete={(id) => setRecords((prev) => prev.filter((r) => r.id !== id))}
           showToast={showToast}
         />

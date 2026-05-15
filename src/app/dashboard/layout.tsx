@@ -10,6 +10,7 @@ import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
 import PwaRegister from '@/components/PwaRegister'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
+// HealthProfile used for array cast below
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -26,7 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setMoodsRecent,
     setTasksRecent,
     setReflectionsRecent,
-    setHealthProfile,
+    setHealthProfiles,
     setMedications,
     setHealthAppointments,
     setMedicalRecords,
@@ -58,7 +59,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(60),
         supabase.from('tasks').select('*').eq('user_id', user.id).gte('created_at', fourteenDaysAgo).order('created_at', { ascending: false }).limit(80),
         supabase.from('reflections').select('*').eq('user_id', user.id).gte('date', sixtyDaysAgoDate).order('date', { ascending: false }).limit(40),
-        supabase.from('health_profiles').select('*').eq('user_id', user.id).single(),
+        supabase.from('health_profiles').select('*').eq('user_id', user.id).order('created_at', { ascending: true }),
         supabase.from('medications').select('*').eq('user_id', user.id).order('is_active', { ascending: false }).order('created_at', { ascending: false }),
         supabase.from('health_appointments').select('*').eq('user_id', user.id).order('appointment_date', { ascending: false }).limit(30),
         supabase.from('medical_records').select('*').eq('user_id', user.id).order('record_date', { ascending: false }).limit(50),
@@ -90,7 +91,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (moodsRecentRes.data) setMoodsRecent(moodsRecentRes.data as Mood[])
       if (tasksRecentRes.data) setTasksRecent(tasksRecentRes.data as Task[])
       if (reflectionsRecentRes.data) setReflectionsRecent(reflectionsRecentRes.data as Reflection[])
-      if (healthProfileRes.data) setHealthProfile(healthProfileRes.data as HealthProfile)
+      if (healthProfileRes.data) setHealthProfiles(healthProfileRes.data as HealthProfile[])
       if (medsRes.data) setMedications(medsRes.data as Medication[])
       if (apptRes.data) setHealthAppointments(apptRes.data as HealthAppointment[])
       if (recordsRes.data) setMedicalRecords(recordsRes.data as MedicalRecord[])
@@ -100,7 +101,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       setLoading(false)
       setInitialized(true)
     }
-  }, [router, setProfile, setTasks, setTodayMood, setNotes, setTodayReflection, setInsights, setJourneyView, setLoading, setReminders, setMoodsRecent, setTasksRecent, setReflectionsRecent, setHealthProfile, setMedications, setHealthAppointments, setMedicalRecords])
+  }, [router, setProfile, setTasks, setTodayMood, setNotes, setTodayReflection, setInsights, setJourneyView, setLoading, setReminders, setMoodsRecent, setTasksRecent, setReflectionsRecent, setHealthProfiles, setMedications, setHealthAppointments, setMedicalRecords])
 
   useEffect(() => {
     loadData()

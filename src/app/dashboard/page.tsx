@@ -42,7 +42,7 @@ export default function DashboardPage() {
     tasksRecent,
     reflectionsRecent,
     insights,
-    healthProfile,
+    healthProfiles,
     medications,
     healthAppointments,
     medicalRecords,
@@ -366,7 +366,7 @@ export default function DashboardPage() {
       case 'health':
         return (
           <HealthView
-            healthProfile={healthProfile}
+            healthProfiles={healthProfiles}
             medications={medications}
             appointments={healthAppointments}
             records={medicalRecords}

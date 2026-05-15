@@ -31,7 +31,7 @@ interface JalayuStore {
   tasksRecent: Task[]
   reflectionsRecent: Reflection[]
   // Health
-  healthProfile: HealthProfile | null
+  healthProfiles: HealthProfile[]
   medications: Medication[]
   healthAppointments: HealthAppointment[]
   medicalRecords: MedicalRecord[]
@@ -60,7 +60,7 @@ interface JalayuStore {
   setTasksRecent: (t: Task[]) => void
   setReflectionsRecent: (r: Reflection[]) => void
   // Health actions
-  setHealthProfile: (h: HealthProfile | null) => void
+  setHealthProfiles: (h: HealthProfile[]) => void
   setMedications: (m: Medication[]) => void
   setHealthAppointments: (a: HealthAppointment[]) => void
   setMedicalRecords: (r: MedicalRecord[]) => void
@@ -86,7 +86,7 @@ export const useStore = create<JalayuStore>((set) => ({
   moodsRecent: [],
   tasksRecent: [],
   reflectionsRecent: [],
-  healthProfile: null,
+  healthProfiles: [],
   medications: [],
   healthAppointments: [],
   medicalRecords: [],
@@ -122,7 +122,7 @@ export const useStore = create<JalayuStore>((set) => ({
   setMoodsRecent: (moodsRecent) => set({ moodsRecent }),
   setTasksRecent: (tasksRecent) => set({ tasksRecent }),
   setReflectionsRecent: (reflectionsRecent) => set({ reflectionsRecent }),
-  setHealthProfile: (healthProfile) => set({ healthProfile }),
+  setHealthProfiles: (healthProfiles) => set({ healthProfiles }),
   setMedications: (medications) => set({ medications }),
   setHealthAppointments: (healthAppointments) => set({ healthAppointments }),
   setMedicalRecords: (medicalRecords) => set({ medicalRecords }),

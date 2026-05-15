@@ -122,6 +122,9 @@ export interface HealthProfile {
   user_id: string
   created_at: string
   updated_at: string
+  // Profile identity
+  profile_label: string | null    // 'Mine', 'Spouse', 'Child - Emma', etc.
+  relationship: string | null     // 'self' | 'spouse' | 'child' | 'parent' | 'other'
   // Insurance
   insurance_carrier: string | null
   plan_name: string | null
