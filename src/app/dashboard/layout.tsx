@@ -6,7 +6,6 @@ import { Loader2 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { todayString, getDayNumber, getJourneyView } from '@/lib/utils'
 import TopBar from '@/components/dashboard/TopBar'
-import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
 import PwaRegister from '@/components/PwaRegister'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
@@ -169,40 +168,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           style={{
             flex: 1,
             overflowY: 'auto',
-            paddingBottom: 72,
+            paddingBottom: 16,
           }}
         >
           <PwaRegister />
           {children}
         </main>
 
-        {/* Bottom nav — mobile only */}
-        <div
-          className="dashboard-bottomnav"
-          style={{
-            position: 'fixed',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            zIndex: 30,
-          }}
-        >
-          <BottomNav />
-        </div>
       </div>
 
       {/* Chat panel slides in from right on both layouts */}
       <ChatPanel />
-
-      <style>{`
-        @media (min-width: 768px) {
-          .dashboard-bottomnav { display: none !important; }
-          main { padding-bottom: 0 !important; }
-        }
-        @media (max-width: 767px) {
-          .dashboard-bottomnav { display: block !important; }
-        }
-      `}</style>
     </div>
   )
 }
