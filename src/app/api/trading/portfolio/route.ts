@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { getQuote } from '@/lib/yahoo-finance'
+import { getAllAssets } from '@/lib/market-data'
+import { SEED_CAPITAL } from '@/lib/trading-config'
 
 interface PositionRow {
   symbol: string
@@ -20,7 +21,6 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Auto-create portfolio if missing
   let { data: portfolio, error: pfError } = await supabase
     .from('paper_portfolio')
     .select('*')
@@ -30,7 +30,7 @@ export async function GET() {
   if (pfError || !portfolio) {
     const { data: created, error: createError } = await supabase
       .from('paper_portfolio')
-      .insert({ user_id: user.id, cash: 500.00 })
+      .insert({ user_id: user.id, cash: SEED_CAPITAL })
       .select()
       .single()
     if (createError) {
@@ -45,58 +45,50 @@ export async function GET() {
     .eq('user_id', user.id)
 
   const positions = (positionsRaw ?? []) as PositionRow[]
-  const cash: number = portfolio.cash
+  const cash: number = Number(portfolio.cash)
 
-  const enrichedPositions = await Promise.all(
-    positions.map(async (pos) => {
-      try {
-        const quote = await getQuote(pos.symbol)
-        const currentPrice = quote.price
-        const isShort = pos.direction === 'SHORT'
-        const value = currentPrice * pos.shares
-        const cost = pos.avg_buy_price * pos.shares
-        // For SHORT: profit = price fell below entry
-        const pnl = isShort
-          ? (pos.avg_buy_price - currentPrice) * pos.shares
-          : value - cost
-        const pnlPct = cost !== 0 ? (pnl / cost) * 100 : 0
-        return {
-          symbol: pos.symbol,
-          name: pos.name ?? quote.name,
-          shares: pos.shares,
-          avgBuyPrice: pos.avg_buy_price,
-          currentPrice,
-          value,
-          pnl,
-          pnlPct,
-          assetType: pos.asset_type ?? 'stock',
-          direction: pos.direction ?? 'LONG',
-          takeProfitPrice: pos.take_profit_price ?? null,
-          stopLossPrice: pos.stop_loss_price ?? null,
-        }
-      } catch {
-        return {
-          symbol: pos.symbol,
-          name: pos.name ?? pos.symbol,
-          shares: pos.shares,
-          avgBuyPrice: pos.avg_buy_price,
-          currentPrice: pos.avg_buy_price,
-          value: pos.avg_buy_price * pos.shares,
-          pnl: 0,
-          pnlPct: 0,
-          assetType: pos.asset_type ?? 'stock',
-          direction: pos.direction ?? 'LONG',
-          takeProfitPrice: pos.take_profit_price ?? null,
-          stopLossPrice: pos.stop_loss_price ?? null,
-        }
-      }
-    }),
-  )
+  // Same price source as /api/trading/tick (CoinGecko + Frankfurter + Yahoo)
+  const assets = await getAllAssets()
+  const priceMap = new Map(assets.map((a) => [a.symbol, a.price]))
+  const nameMap = new Map(assets.map((a) => [a.symbol, a.name]))
 
-  const positionsValue = enrichedPositions.reduce((sum, p) => sum + p.value, 0)
-  const totalValue = cash + positionsValue
-  const totalPnL = totalValue - 500
-  const totalPnLPct = (totalPnL / 500) * 100
+  let positionsEquity = 0
+
+  const enrichedPositions = positions.map((pos) => {
+    const shares = Number(pos.shares)
+    const avgBuyPrice = Number(pos.avg_buy_price)
+    const cost = avgBuyPrice * shares
+    const currentPrice = priceMap.get(pos.symbol) ?? avgBuyPrice
+    const isShort = pos.direction === 'SHORT'
+
+    const pnl = isShort
+      ? (avgBuyPrice - currentPrice) * shares
+      : (currentPrice - avgBuyPrice) * shares
+    const pnlPct = cost !== 0 ? (pnl / cost) * 100 : 0
+
+    // Long: market value of shares. Short: collateral + unrealized P&L
+    const equity = isShort ? cost + pnl : currentPrice * shares
+    positionsEquity += equity
+
+    return {
+      symbol: pos.symbol,
+      name: pos.name ?? nameMap.get(pos.symbol) ?? pos.symbol,
+      shares,
+      avgBuyPrice,
+      currentPrice,
+      value: equity,
+      pnl,
+      pnlPct,
+      assetType: pos.asset_type ?? 'crypto',
+      direction: pos.direction ?? 'LONG',
+      takeProfitPrice: pos.take_profit_price ?? null,
+      stopLossPrice: pos.stop_loss_price ?? null,
+    }
+  })
+
+  const totalValue = cash + positionsEquity
+  const totalPnL = totalValue - SEED_CAPITAL
+  const totalPnLPct = (totalPnL / SEED_CAPITAL) * 100
 
   return NextResponse.json({
     cash,
@@ -104,5 +96,6 @@ export async function GET() {
     totalValue,
     totalPnL,
     totalPnLPct,
+    seedCapital: SEED_CAPITAL,
   })
 }

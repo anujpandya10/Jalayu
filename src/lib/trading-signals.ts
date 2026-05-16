@@ -1,4 +1,5 @@
 import type { AssetData } from './market-data'
+import { MIN_LONG_SCORE, MIN_SHORT_SCORE } from './trading-config'
 
 export interface Signal {
   asset: AssetData
@@ -16,8 +17,8 @@ export interface Signal {
  * Negative score → SHORT signal (short the pump, profit when it dumps)
  *
  * Score clamped to [-10, +10].
- * BUY_LONG threshold: >= 1.5
- * SELL_SHORT threshold: <= -3
+ * BUY_LONG threshold: >= MIN_LONG_SCORE (default 2.5)
+ * SELL_SHORT threshold: <= MIN_SHORT_SCORE (default -4)
  */
 export function scoreAsset(asset: AssetData): Signal {
   const { change24h, change7d, isPumpCandidate } = asset
@@ -38,7 +39,7 @@ export function scoreAsset(asset: AssetData): Signal {
     return {
       asset, score,
       direction: score > 0 ? 'LONG' : 'SHORT',
-      action: score >= 1.0 ? 'BUY_LONG' : score <= -1.5 ? 'SELL_SHORT' : 'HOLD',
+      action: score >= MIN_LONG_SCORE ? 'BUY_LONG' : score <= MIN_SHORT_SCORE ? 'SELL_SHORT' : 'HOLD',
       reason: reasons.join(', ') || 'forex neutral',
       urgency: 'low' as const,
     }
@@ -78,11 +79,8 @@ export function scoreAsset(asset: AssetData): Signal {
     score = 2
     urgency = 'low'
     reasons.push(`Pullback ${change24h.toFixed(1)}%, potential uptrend`)
-  } else if (change24h < -1) {
-    score = 1.5
-    urgency = 'low'
-    reasons.push(`Minor dip ${change24h.toFixed(1)}%`)
   }
+  // Weak -1% dips intentionally skipped — 24h data is too slow for 8s micro-scalps
 
   // Pump candidate bonus — stocks being artificially pumped
   if (isPumpCandidate) {
@@ -99,7 +97,8 @@ export function scoreAsset(asset: AssetData): Signal {
 
   score = Math.max(-10, Math.min(10, score))
 
-  const action: Signal['action'] = score >= 1.5 ? 'BUY_LONG' : score <= -3 ? 'SELL_SHORT' : 'HOLD'
+  const action: Signal['action'] =
+    score >= MIN_LONG_SCORE ? 'BUY_LONG' : score <= MIN_SHORT_SCORE ? 'SELL_SHORT' : 'HOLD'
   const direction: Signal['direction'] = score > 0 ? 'LONG' : 'SHORT'
 
   return {

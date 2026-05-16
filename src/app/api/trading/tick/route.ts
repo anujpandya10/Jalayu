@@ -4,31 +4,35 @@ import { getAllAssets } from '@/lib/market-data'
 import { rankLongs, rankShorts } from '@/lib/trading-signals'
 import { getCurrentPhase } from '@/lib/trading-phase'
 import type { PhaseInfo } from '@/lib/trading-phase'
+import {
+  ROUND_TRIP_FEE_PCT,
+  LONG_TP_PCT,
+  LONG_SL_PCT,
+  SHORT_TP_PCT,
+  SHORT_SL_PCT,
+  FOREX_TP_PCT,
+  FOREX_SL_PCT,
+  POSITION_SIZE_PCT,
+  MIN_TRADE_USD,
+  TIME_EXIT_SECS,
+  STALE_EXIT_SECS,
+} from '@/lib/trading-config'
 
-// ── Strategy constants ──────────────────────────────────────────────────────
-const LONG_TP_PCT       = 0.0012  // +0.12% — take tiny profits quickly
-const LONG_SL_PCT       = 0.003   // -0.3%  — cut fast
-const SHORT_TP_PCT      = 0.0015  // price drops 0.15% → cover short = profit
-const SHORT_SL_PCT      = 0.003   // price rises 0.3% → stop loss on short
-const POSITION_SIZE_PCT = 0.18    // 18% of cash per position
-const MIN_TRADE_USD     = 3
-const TIME_EXIT_SECS    = 45      // force exit after 45s if any profit
-const STALE_EXIT_SECS   = 120     // force exit after 2min regardless
+/** Apply simulated round-trip fees to closed-trade P&L */
+function applyFees(notional: number, rawPnl: number): number {
+  const fee = notional * ROUND_TRIP_FEE_PCT
+  return parseFloat((rawPnl - fee).toFixed(4))
+}
 
-// Forex-specific thresholds (tighter — forex moves in tiny increments)
-const FOREX_TP_PCT  = 0.0008  // +0.08%
-const FOREX_SL_PCT  = 0.002   // -0.2%
-
-// Phase-based position limits
+// Phase-based position limits (fewer concurrent = less fee churn)
 function getPositionLimits(phase: PhaseInfo) {
   if (phase.phase === 'STOCK_MARKET') {
-    return { maxLongs: 3, maxShorts: 3, maxStocks: 4, maxForex: 2, maxCrypto: 3 }
+    return { maxLongs: 2, maxShorts: 2, maxStocks: 2, maxForex: 1, maxCrypto: 2 }
   }
   if (phase.phase === 'PREMARKET') {
-    return { maxLongs: 3, maxShorts: 2, maxStocks: 0, maxForex: 2, maxCrypto: 4 }
+    return { maxLongs: 2, maxShorts: 1, maxStocks: 0, maxForex: 1, maxCrypto: 2 }
   }
-  // Night / after hours
-  return { maxLongs: 3, maxShorts: 3, maxStocks: 0, maxForex: 3, maxCrypto: 4 }
+  return { maxLongs: 2, maxShorts: 2, maxStocks: 0, maxForex: 2, maxCrypto: 2 }
 }
 
 export interface TickEvent {
@@ -162,9 +166,9 @@ export async function POST() {
       } else if (heldSecs >= TIME_EXIT_SECS && pnlPct > 0.0001) {
         shouldExit = true
         exitReason = `Time exit — held ${Math.round(heldSecs)}s, +$${pnl.toFixed(3)} profit, rotating`
-      } else if (heldSecs >= STALE_EXIT_SECS) {
+      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < 0) {
         shouldExit = true
-        exitReason = `Stale exit — held ${Math.round(heldSecs)}s, freeing cash`
+        exitReason = `Stale cut — held ${Math.round(heldSecs)}s, loss ${(pnlPct * 100).toFixed(2)}%`
       }
     } else {
       // SHORT: profit = price fell below entry
@@ -182,16 +186,19 @@ export async function POST() {
       } else if (heldSecs >= TIME_EXIT_SECS && pnlPct > 0.0001) {
         shouldExit = true
         exitReason = `SHORT time exit — held ${Math.round(heldSecs)}s, profit +$${pnl.toFixed(3)}`
-      } else if (heldSecs >= STALE_EXIT_SECS) {
+      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < 0) {
         shouldExit = true
-        exitReason = `SHORT stale exit — held ${Math.round(heldSecs)}s, covering`
+        exitReason = `SHORT stale cut — held ${Math.round(heldSecs)}s, loss ${(-pnlPct * 100).toFixed(2)}%`
       }
     }
 
     if (shouldExit) {
       const total = parseFloat((current * shares).toFixed(2))
-      const pnlFinal = parseFloat(pnl.toFixed(4))
-      const pnlPctFinal = parseFloat((pnlPct * 100).toFixed(2))
+      const notional = avgCost * shares
+      const pnlFinal = applyFees(notional, pnl)
+      const pnlPctFinal = notional > 0
+        ? parseFloat(((pnlFinal / notional) * 100).toFixed(2))
+        : 0
 
       // Insert trade record (try with direction, fall back without)
       const tradePayload = {
@@ -308,6 +315,7 @@ export async function POST() {
         symbol: sig.asset.symbol, name: sig.asset.name,
         shares, avg_buy_price: price,
         direction: 'LONG',
+        asset_type: sig.asset.assetType,
       }
 
       const { error: pe1 } = await supabase.from('paper_positions').insert(posPayload)
@@ -367,6 +375,7 @@ export async function POST() {
         symbol: sig.asset.symbol, name: sig.asset.name,
         shares, avg_buy_price: price,
         direction: 'SHORT',
+        asset_type: sig.asset.assetType,
       }
 
       const { error: pe1 } = await supabase.from('paper_positions').insert(posPayload)
