@@ -30,8 +30,8 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
     <>
       <style>{`
         @keyframes jalDotBreath {
-          0%, 100% { opacity: 0.22; r: ${3.6 * s}; }
-          50%       { opacity: 0.45; r: ${5.2 * s}; }
+          0%, 100% { opacity: 0.28; r: ${3.6 * s}; }
+          50%       { opacity: 0.58; r: ${5.2 * s}; }
         }
         @keyframes jalRingGlow {
           0%, 100% { opacity: 0.55; }
@@ -136,31 +136,43 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
             style={{ animation: 'jalRingGlow 4s ease-in-out infinite' }}
           />
 
-          {/* ─ Planet dot ─ */}
-          {/* Breathing glow */}
-          <circle
-            cx="25.6" cy="9.6"
-            r="3.6"
-            fill={AMBER}
-            transform="rotate(-20 14 14)"
-            style={{
-              animation: 'jalDotBreath 3.5s ease-in-out infinite',
-            }}
-          />
-          {/* Solid dot */}
-          <circle
-            cx="25.6" cy="9.6"
-            r="2.2"
-            fill={AMBER_LIGHT}
-            transform="rotate(-20 14 14)"
-          />
-          {/* Dot specular */}
-          <circle
-            cx="24.9" cy="9.1"
-            r="0.7"
-            fill="rgba(255,255,255,0.55)"
-            transform="rotate(-20 14 14)"
-          />
+          {/* ─ Planet — orbits the ring continuously ─ */}
+          {/*
+            The ring splits at (2.78, 9.30) and (25.22, 18.70).
+            We trace the full ellipse clockwise in two arcs:
+              1st arc (sweep=1): front of ring (below orb)
+              2nd arc (sweep=1): back of ring (above orb)
+            animateMotion offsets the group from its origin (0,0)
+            so the planet follows the exact same path as the ring.
+          */}
+          <g>
+            {/* Breathing glow halo */}
+            <circle
+              cx="0" cy="0" r="3.6"
+              fill={AMBER}
+              style={{ animation: 'jalDotBreath 3.5s ease-in-out infinite' }}
+            />
+            {/* Solid planet body */}
+            <circle cx="0" cy="0" r="2.2" fill={AMBER_LIGHT} />
+            {/* Specular highlight */}
+            <circle cx="-0.7" cy="-0.5" r="0.7" fill="rgba(255,255,255,0.55)" />
+
+            {/* Orbital motion — full revolution in 8 s */}
+            <animateMotion
+              dur="8s"
+              repeatCount="indefinite"
+              rotate="0"
+              path="M 2.78 9.30 A 13 4.6 -20 0 1 25.22 18.70 A 13 4.6 -20 0 1 2.78 9.30"
+            />
+            {/* Depth cue: dim to 30 % when passing behind the orb (back half) */}
+            <animate
+              attributeName="opacity"
+              values="1;1;0.3;0.3;1"
+              keyTimes="0;0.47;0.5;0.97;1"
+              dur="8s"
+              repeatCount="indefinite"
+            />
+          </g>
         </svg>
 
         {/* ─── Wordmark ─── */}
