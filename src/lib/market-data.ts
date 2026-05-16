@@ -106,7 +106,55 @@ export function isPremarket(): boolean {
   return total >= 8 * 60 && total < 13 * 60 + 30
 }
 
-// ── CoinGecko — one API call returns ALL crypto prices + changes ──────────────
+// ── Binance — fallback crypto source (no key, generous rate limits) ───────────
+// Maps our symbols to Binance USDT pairs
+const BINANCE_SYMBOL_MAP: Record<string, string> = {
+  BTC: 'BTCUSDT', ETH: 'ETHUSDT', SOL: 'SOLUSDT', BNB: 'BNBUSDT',
+  XRP: 'XRPUSDT', ADA: 'ADAUSDT', DOGE: 'DOGEUSDT', AVAX: 'AVAXUSDT',
+  DOT: 'DOTUSDT', LINK: 'LINKUSDT', LTC: 'LTCUSDT', UNI: 'UNIUSDT',
+  XLM: 'XLMUSDT', ATOM: 'ATOMUSDT', NEAR: 'NEARUSDT', MATIC: 'MATICUSDT',
+  SHIB: 'SHIBUSDT', TRX: 'TRXUSDT', SUI: 'SUIUSDT', PEPE: 'PEPEUSDT',
+}
+
+async function fetchCryptoPricesBinance(): Promise<AssetData[]> {
+  try {
+    const binancePairs = CRYPTO_LIST.map((c) => BINANCE_SYMBOL_MAP[c.symbol]).filter(Boolean)
+    const symbolsParam = JSON.stringify(binancePairs)
+    const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolsParam)}`
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) {
+      console.error('[market-data] Binance fallback HTTP', res.status)
+      return []
+    }
+    const tickers = await res.json() as Array<{
+      symbol: string; lastPrice: string; priceChangePercent: string
+    }>
+    const tickerMap = new Map(tickers.map((t) => [t.symbol, t]))
+    return CRYPTO_LIST.flatMap(({ symbol, name }) => {
+      const binanceSym = BINANCE_SYMBOL_MAP[symbol]
+      const t = binanceSym ? tickerMap.get(binanceSym) : undefined
+      if (!t) return []
+      const price = parseFloat(t.lastPrice)
+      if (!price) return []
+      return [{
+        symbol, name,
+        price,
+        change24h: parseFloat(t.priceChangePercent),
+        change7d: 0,
+        assetType: 'crypto' as const,
+        isPumpCandidate: false,
+      }]
+    })
+  } catch (err) {
+    console.error('[market-data] Binance fallback failed:', err)
+    return []
+  }
+}
+
+// ── CoinGecko — primary crypto source; falls back to Binance on failure ────────
 async function fetchCryptoPrices(): Promise<AssetData[]> {
   const ids = CRYPTO_LIST.map((c) => c.id).join(',')
   const url =
@@ -119,13 +167,13 @@ async function fetchCryptoPrices(): Promise<AssetData[]> {
       cache: 'no-store',
     })
     if (!res.ok) {
-      console.error('[market-data] CoinGecko HTTP', res.status)
-      return []
+      console.warn('[market-data] CoinGecko HTTP', res.status, '— falling back to Binance')
+      return fetchCryptoPricesBinance()
     }
     const json = await res.json() as Record<string, {
       usd?: number; usd_24h_change?: number; usd_7d_change?: number
     }>
-    return CRYPTO_LIST.flatMap(({ id, symbol, name }) => {
+    const results = CRYPTO_LIST.flatMap(({ id, symbol, name }) => {
       const d = json[id]
       if (!d?.usd) return []
       return [{
@@ -137,9 +185,15 @@ async function fetchCryptoPrices(): Promise<AssetData[]> {
         isPumpCandidate: false,
       }]
     })
+    // If CoinGecko returned an empty body (rate-limited but 200 OK), fall back
+    if (results.length < 5) {
+      console.warn('[market-data] CoinGecko returned only', results.length, 'coins — falling back to Binance')
+      return fetchCryptoPricesBinance()
+    }
+    return results
   } catch (err) {
-    console.error('[market-data] CoinGecko fetch failed:', err)
-    return []
+    console.error('[market-data] CoinGecko fetch failed:', err, '— falling back to Binance')
+    return fetchCryptoPricesBinance()
   }
 }
 
