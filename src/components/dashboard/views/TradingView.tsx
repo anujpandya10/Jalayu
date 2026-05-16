@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface Position {
   symbol: string
@@ -13,9 +13,7 @@ interface Position {
   value: number
   pnl: number
   pnlPct: number
-  assetType: string
-  takeProfitPrice: number | null
-  stopLossPrice: number | null
+  assetType?: string
 }
 
 interface Portfolio {
@@ -40,20 +38,6 @@ interface Trade {
   created_at: string
 }
 
-interface WatchlistItem {
-  id: string
-  symbol: string
-  name: string | null
-}
-
-interface QuoteData {
-  price: number
-  change: number
-  changePct: number
-  sparkline: number[]
-  name: string
-}
-
 interface NewsItem {
   title: string
   link: string
@@ -61,937 +45,484 @@ interface NewsItem {
   source: string
 }
 
-interface SignalSummary {
+interface TickEvent {
+  type: 'BUY' | 'SELL' | 'SCAN' | 'SKIP'
   symbol: string
   name: string
   price: number
-  score: number
+  shares?: number
+  total?: number
+  pnl?: number
   reason: string
+  ts: number
 }
 
-interface TradingStatus {
-  lastRunAt: string | null
-  totalTradesRun: number
-  assetsScanned: number
-  marketOpen: boolean
-  topBuys: SignalSummary[]
-  topSells: SignalSummary[]
+interface ActivityItem {
+  id: number
+  event: TickEvent
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(n: number, decimals = 2): string {
-  return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
-}
+let actId = 0
+function nextId() { return ++actId }
 
 function fmtMoney(n: number): string {
-  return '$' + fmt(n)
+  return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
-
-function fmtPct(n: number): string {
-  return (n >= 0 ? '+' : '') + fmt(n) + '%'
-}
-
 function fmtPrice(n: number): string {
   if (n < 0.01) return '$' + n.toFixed(6)
   if (n < 1) return '$' + n.toFixed(4)
   return fmtMoney(n)
 }
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const m = Math.floor(diff / 60000)
-  if (m < 1) return 'just now'
-  if (m < 60) return `${m}m ago`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}h ago`
-  return `${Math.floor(h / 24)}d ago`
+function fmtPct(n: number): string {
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+}
+function timeAgo(ts: number): string {
+  const s = Math.floor((Date.now() - ts) / 1000)
+  if (s < 5) return 'just now'
+  if (s < 60) return `${s}s ago`
+  return `${Math.floor(s / 60)}m ago`
 }
 
-function minutesUntilNextRun(lastRunAt: string | null): string {
-  if (!lastRunAt) return '~5 min'
-  const elapsed = (Date.now() - new Date(lastRunAt).getTime()) / 60000
-  const remaining = Math.max(0, 5 - elapsed)
-  if (remaining < 1) return '< 1 min'
-  return `~${Math.ceil(remaining)} min`
-}
+// ─── Subcomponents ─────────────────────────────────────────────────────────────
 
-function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
-  if (data.length < 2) return <span style={{ color: 'var(--text-3)', fontSize: 11 }}>—</span>
-  const min = Math.min(...data)
-  const max = Math.max(...data)
-  const range = max - min || 1
-  const w = 60
-  const h = 24
-  const pts = data
-    .map((v, i) => {
-      const x = (i / (data.length - 1)) * w
-      const y = h - ((v - min) / range) * (h - 4) - 2
-      return `${x},${y}`
-    })
-    .join(' ')
-  const color = positive ? '#2D6A2D' : '#8B1A1A'
+function PulseDot({ active }: { active: boolean }) {
   return (
-    <svg width={w} height={h} style={{ display: 'block' }}>
-      <polyline fill="none" stroke={color} strokeWidth={1.5} points={pts} />
-    </svg>
-  )
-}
-
-function PnLBadge({ value, pct }: { value: number; pct: number }) {
-  const pos = value >= 0
-  const color = pos ? '#2D6A2D' : '#8B1A1A'
-  const bg = pos ? '#2D6A2D18' : '#8B1A1A18'
-  return (
-    <span
-      style={{
-        display: 'inline-flex',
-        gap: 4,
-        fontSize: 11,
-        fontWeight: 600,
-        color,
-        background: bg,
-        borderRadius: 6,
-        padding: '2px 7px',
-        whiteSpace: 'nowrap',
-      }}
-    >
-      {pos ? '+' : ''}{fmtMoney(value)} ({fmtPct(pct)})
+    <span style={{ position: 'relative', display: 'inline-flex', width: 10, height: 10, flexShrink: 0 }}>
+      <span style={{
+        position: 'absolute', inset: 0, borderRadius: '50%',
+        background: active ? '#2D6A2D' : '#aaa',
+        animation: active ? 'pingDot 1.4s ease-in-out infinite' : 'none',
+        opacity: 0.5,
+      }} />
+      <span style={{
+        position: 'relative', display: 'inline-flex', width: 10, height: 10,
+        borderRadius: '50%', background: active ? '#2D6A2D' : '#aaa',
+      }} />
     </span>
   )
 }
 
-function Skeleton({ width = '100%', height = 16 }: { width?: string | number; height?: number }) {
-  return (
-    <div
-      style={{
-        width,
-        height,
-        background: 'linear-gradient(90deg, var(--border) 25%, var(--morning) 50%, var(--border) 75%)',
-        backgroundSize: '200% 100%',
-        borderRadius: 6,
-        animation: 'shimmer 1.4s ease infinite',
-      }}
-    />
-  )
-}
+function ActivityFeed({ items, scanning }: { items: ActivityItem[]; scanning: boolean }) {
+  const feedRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (feedRef.current) feedRef.current.scrollTop = 0
+  }, [items.length])
 
-// ─── Live Status Bar ──────────────────────────────────────────────────────────
-
-function LiveStatusBar({
-  status,
-  onForceRun,
-  forceRunLoading,
-}: {
-  status: TradingStatus | null
-  onForceRun: () => void
-  forceRunLoading: boolean
-}) {
   return (
-    <div
-      style={{
-        background: 'var(--surface)',
-        border: '1px solid var(--border)',
-        borderRadius: 12,
-        padding: '12px 18px',
-        marginBottom: 16,
-        display: 'flex',
-        flexWrap: 'wrap',
-        gap: 16,
-        alignItems: 'center',
-        justifyContent: 'space-between',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-        {/* Pulsing green dot */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span
-            style={{
-              display: 'inline-block',
-              width: 10,
-              height: 10,
-              background: '#2D6A2D',
-              borderRadius: '50%',
-              animation: 'pulse-dot 1.8s ease-in-out infinite',
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ fontWeight: 700, fontSize: 13, color: '#2D6A2D', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-            Auto-Trader Live
-          </span>
+    <div style={{
+      background: '#0F1117',
+      borderRadius: 12,
+      padding: '12px 14px',
+      fontFamily: 'monospace',
+      fontSize: 12,
+      color: '#e2e8f0',
+      height: 220,
+      overflowY: 'auto',
+      marginBottom: 20,
+    }} ref={feedRef}>
+      {/* scanning line */}
+      {scanning && (
+        <div style={{ color: '#94a3b8', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◌</span>
+          <span>Scanning markets…</span>
         </div>
+      )}
+      {items.length === 0 && !scanning && (
+        <div style={{ color: '#64748b' }}>Waiting for first scan…</div>
+      )}
+      {items.map(({ id, event }) => {
+        let color = '#94a3b8'
+        let prefix = '·'
+        let line = event.reason
 
-        {status ? (
-          <>
-            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>
-              Scanning <strong>{status.assetsScanned}</strong> assets
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>·</span>
-            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>
-              Last run:{' '}
-              <strong>{status.lastRunAt ? timeAgo(status.lastRunAt) : 'Initializing…'}</strong>
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>·</span>
-            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>
-              Next run: <strong>{minutesUntilNextRun(status.lastRunAt)}</strong>
-            </span>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>·</span>
-            <span style={{ fontSize: 12, color: 'var(--text-2)' }}>
-              {status.marketOpen
-                ? <span style={{ color: '#2D6A2D', fontWeight: 600 }}>US market open</span>
-                : <span style={{ color: 'var(--text-3)' }}>US market closed (crypto only)</span>
-              }
-            </span>
-          </>
-        ) : (
-          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Loading status…</span>
-        )}
-      </div>
+        if (event.type === 'BUY') {
+          color = '#86efac'
+          prefix = '▲ BUY'
+          line = `${event.symbol} ${event.shares?.toFixed(6)} @ ${fmtPrice(event.price)} = ${fmtMoney(event.total ?? 0)} — ${event.reason}`
+        } else if (event.type === 'SELL') {
+          const pnlPos = (event.pnl ?? 0) >= 0
+          color = pnlPos ? '#fcd34d' : '#f87171'
+          prefix = pnlPos ? '▼ SELL ✓' : '▼ SELL ✗'
+          const pnlStr = (event.pnl ?? 0) >= 0
+            ? `+${fmtMoney(event.pnl ?? 0)} profit`
+            : `-${fmtMoney(Math.abs(event.pnl ?? 0))} loss`
+          line = `${event.symbol} — ${pnlStr} — ${event.reason}`
+        } else if (event.type === 'SCAN') {
+          color = '#60a5fa'
+          prefix = '⟳ SCAN'
+        } else {
+          color = '#475569'
+          prefix = '— HOLD'
+        }
 
-      <button
-        onClick={onForceRun}
-        disabled={forceRunLoading}
-        style={{
-          background: 'none',
-          border: '1px solid var(--border)',
-          borderRadius: 8,
-          padding: '5px 12px',
-          fontSize: 12,
-          fontWeight: 600,
-          color: '#C4834A',
-          cursor: forceRunLoading ? 'not-allowed' : 'pointer',
-          opacity: forceRunLoading ? 0.5 : 1,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        {forceRunLoading ? '⟳ Running…' : '⟳ Force run'}
-      </button>
-    </div>
-  )
-}
-
-// ─── Signals Panel ────────────────────────────────────────────────────────────
-
-function SignalsPanel({ status }: { status: TradingStatus | null }) {
-  if (!status) return null
-
-  const cardStyle: React.CSSProperties = {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 14,
-    padding: '18px 20px',
-  }
-
-  const labelStyle: React.CSSProperties = {
-    fontSize: 11,
-    fontWeight: 700,
-    color: 'var(--text-3)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    marginBottom: 12,
-  }
-
-  function SignalRow({ s, isBuy }: { s: SignalSummary; isBuy: boolean }) {
-    return (
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '8px 0',
-          borderBottom: '1px solid var(--border)',
-        }}
-      >
-        <div style={{ flex: '0 0 70px' }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{s.symbol}</div>
-          <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {s.name}
+        return (
+          <div key={id} style={{ color, marginBottom: 4, lineHeight: 1.5 }}>
+            <span style={{ color: '#475569', marginRight: 6 }}>{timeAgo(event.ts)}</span>
+            <span style={{ fontWeight: 700, marginRight: 6 }}>{prefix}</span>
+            <span>{line}</span>
           </div>
-        </div>
-        <div style={{ flex: '0 0 70px', textAlign: 'right' }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)' }}>{fmtPrice(s.price)}</div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>{s.reason}</div>
-        </div>
-        <div>
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: isBuy ? '#2D6A2D' : '#8B1A1A',
-              background: isBuy ? '#2D6A2D18' : '#8B1A1A18',
-              borderRadius: 6,
-              padding: '2px 7px',
-            }}
-          >
-            {isBuy ? '+' : ''}{s.score.toFixed(1)}
-          </span>
-        </div>
-      </div>
-    )
-  }
+        )
+      })}
+    </div>
+  )
+}
 
+function PositionRow({ pos }: { pos: Position }) {
+  const up = pos.pnl >= 0
+  const pctFromTP = pos.avgBuyPrice > 0
+    ? ((pos.currentPrice - pos.avgBuyPrice * 1.005) / (pos.avgBuyPrice * 0.005)) * 100
+    : 0
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 20 }}>
-      <div style={cardStyle}>
-        <div style={labelStyle}>Top Opportunities</div>
-        {status.topBuys.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '12px 0' }}>No strong buy signals right now</div>
-        ) : (
-          status.topBuys.map((s) => <SignalRow key={s.symbol} s={s} isBuy={true} />)
-        )}
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '90px 1fr 90px 90px 100px',
+      gap: 8,
+      padding: '10px 0',
+      borderBottom: '1px solid var(--border)',
+      alignItems: 'center',
+    }}>
+      <div>
+        <div style={{ fontWeight: 700, fontSize: 13 }}>{pos.symbol}</div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{pos.name}</div>
       </div>
-      <div style={cardStyle}>
-        <div style={labelStyle}>Watching to Exit</div>
-        {status.topSells.length === 0 ? (
-          <div style={{ fontSize: 12, color: 'var(--text-3)', textAlign: 'center', padding: '12px 0' }}>No overbought signals right now</div>
-        ) : (
-          status.topSells.map((s) => <SignalRow key={s.symbol} s={s} isBuy={false} />)
-        )}
+      <div>
+        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
+          entry {fmtPrice(pos.avgBuyPrice)} → <span style={{ fontWeight: 600, color: up ? '#2D6A2D' : '#8B1A1A' }}>{fmtPrice(pos.currentPrice)}</span>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
+          TP {fmtPrice(pos.avgBuyPrice * 1.005)} · SL {fmtPrice(pos.avgBuyPrice * 0.992)}
+        </div>
+        {/* progress bar toward TP */}
+        <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginTop: 4, maxWidth: 120 }}>
+          <div style={{
+            height: '100%', borderRadius: 2,
+            width: `${Math.min(100, Math.max(0, pctFromTP))}%`,
+            background: up ? '#2D6A2D' : '#8B1A1A',
+          }} />
+        </div>
+      </div>
+      <div style={{ textAlign: 'right', fontSize: 12, fontWeight: 600 }}>{fmtMoney(pos.value)}</div>
+      <div style={{ textAlign: 'right' }}>
+        <span style={{
+          fontSize: 11, fontWeight: 700,
+          color: up ? '#2D6A2D' : '#8B1A1A',
+          background: up ? '#2D6A2D18' : '#8B1A1A18',
+          borderRadius: 6, padding: '2px 7px',
+        }}>
+          {up ? '+' : ''}{fmtPct(pos.pnlPct)}
+        </span>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <span style={{ fontSize: 11, color: up ? '#2D6A2D' : '#8B1A1A', fontWeight: 600 }}>
+          {up ? '+' : ''}{fmtMoney(pos.pnl)}
+        </span>
       </div>
     </div>
   )
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
+// ─── Main ──────────────────────────────────────────────────────────────────────
+
+const TICK_INTERVAL = 20000 // 20 seconds
 
 export default function TradingView() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>([])
-  const [quotes, setQuotes] = useState<Map<string, QuoteData>>(new Map())
   const [news, setNews] = useState<NewsItem[]>([])
-  const [tradingStatus, setTradingStatus] = useState<TradingStatus | null>(null)
   const [loading, setLoading] = useState(true)
-  const [forceRunLoading, setForceRunLoading] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
-  const [sellingSymbol, setSellingSymbol] = useState<string | null>(null)
-  const [addWatchSymbol, setAddWatchSymbol] = useState('')
-  const [addWatchOpen, setAddWatchOpen] = useState(false)
-  const [addWatchLoading, setAddWatchLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [activity, setActivity] = useState<ActivityItem[]>([])
+  const [lastScan, setLastScan] = useState<number | null>(null)
+  const [countdown, setCountdown] = useState(TICK_INTERVAL / 1000)
+  const [totalTrades, setTotalTrades] = useState(0)
+  const [assetsScanned, setAssetsScanned] = useState(0)
 
-  const fetchPortfolio = useCallback(async () => {
+  const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const cdRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const addActivity = useCallback((events: TickEvent[]) => {
+    const items: ActivityItem[] = events.map((e) => ({ id: nextId(), event: e }))
+    setActivity((prev) => [...items, ...prev].slice(0, 200))
+  }, [])
+
+  const loadPortfolio = useCallback(async () => {
     const res = await fetch('/api/trading/portfolio')
-    if (!res.ok) throw new Error('Failed to load portfolio')
-    return res.json() as Promise<Portfolio>
+    if (res.ok) setPortfolio(await res.json())
   }, [])
 
-  const fetchTrades = useCallback(async () => {
+  const loadTrades = useCallback(async () => {
     const res = await fetch('/api/trading/history')
-    if (!res.ok) return []
-    return res.json() as Promise<Trade[]>
+    if (res.ok) setTrades(await res.json())
   }, [])
 
-  const fetchWatchlist = useCallback(async () => {
-    const res = await fetch('/api/trading/watchlist')
-    if (!res.ok) return []
-    return res.json() as Promise<WatchlistItem[]>
-  }, [])
-
-  const fetchQuotes = useCallback(async (symbols: string[]) => {
-    const results = await Promise.allSettled(
-      symbols.map((s) =>
-        fetch(`/api/trading/quote?symbol=${s}`)
-          .then((r) => r.json())
-          .then((d: QuoteData & { symbol: string }) => ({ symbol: s, data: d })),
-      ),
-    )
-    const map = new Map<string, QuoteData>()
-    for (const r of results) {
-      if (r.status === 'fulfilled' && r.value.data?.price) {
-        map.set(r.value.symbol, r.value.data)
-      }
-    }
-    return map
-  }, [])
-
-  const fetchNews = useCallback(async () => {
+  const loadNews = useCallback(async () => {
     const res = await fetch('/api/trading/news')
-    if (!res.ok) return []
-    return res.json() as Promise<NewsItem[]>
+    if (res.ok) setNews(await res.json())
   }, [])
 
-  const fetchStatus = useCallback(async () => {
-    const res = await fetch('/api/trading/status')
-    if (!res.ok) return null
-    return res.json() as Promise<TradingStatus>
-  }, [])
+  const runTick = useCallback(async () => {
+    if (scanning) return
+    setScanning(true)
+    setCountdown(TICK_INTERVAL / 1000)
 
-  const loadAll = useCallback(async () => {
     try {
-      setError(null)
-      const [pf, tr, wl, nw, st] = await Promise.all([
-        fetchPortfolio(),
-        fetchTrades(),
-        fetchWatchlist(),
-        fetchNews(),
-        fetchStatus(),
-      ])
-      setPortfolio(pf)
-      setTrades(tr)
-      setWatchlist(wl)
-      setNews(nw)
-      if (st) setTradingStatus(st)
+      const res = await fetch('/api/trading/tick', { method: 'POST' })
+      if (!res.ok) return
+      const data = await res.json() as { events: TickEvent[]; cash: number; assetsScanned: number }
 
-      // Fetch quotes for watchlist
-      const symbols = wl.map((w) => w.symbol)
-      if (symbols.length > 0) {
-        const q = await fetchQuotes(symbols)
-        setQuotes(q)
-      }
+      addActivity(data.events)
+      setAssetsScanned(data.assetsScanned)
+      setLastScan(Date.now())
 
-      setLastUpdated(new Date())
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load trading data')
-    } finally {
-      setLoading(false)
-    }
-  }, [fetchPortfolio, fetchTrades, fetchWatchlist, fetchNews, fetchStatus, fetchQuotes])
-
-  const refreshData = useCallback(async () => {
-    try {
-      const [pf, st, wlSymbols] = await Promise.all([
-        fetchPortfolio(),
-        fetchStatus(),
-        Promise.resolve(watchlist.map((w) => w.symbol)),
-      ])
-      setPortfolio(pf)
-      if (st) setTradingStatus(st)
-      if (wlSymbols.length > 0) {
-        const q = await fetchQuotes(wlSymbols)
-        setQuotes(q)
-      }
-      setLastUpdated(new Date())
-    } catch {
-      // silent refresh failure
-    }
-  }, [fetchPortfolio, fetchStatus, fetchQuotes, watchlist])
-
-  useEffect(() => {
-    loadAll()
-  }, [loadAll])
-
-  useEffect(() => {
-    intervalRef.current = setInterval(refreshData, 30000)
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current)
-    }
-  }, [refreshData])
-
-  const forceRun = async () => {
-    setForceRunLoading(true)
-    try {
-      await fetch('/api/trading/auto', { method: 'POST' })
-      await refreshData()
-      const tr = await fetchTrades()
-      setTrades(tr)
-    } finally {
-      setForceRunLoading(false)
-    }
-  }
-
-  const sellAll = async (symbol: string, shares: number) => {
-    setSellingSymbol(symbol)
-    try {
-      await fetch('/api/trading/trade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, action: 'SELL', shares }),
-      })
-      await loadAll()
-    } finally {
-      setSellingSymbol(null)
-    }
-  }
-
-  const addToWatchlist = async () => {
-    if (!addWatchSymbol.trim()) return
-    setAddWatchLoading(true)
-    try {
-      const res = await fetch('/api/trading/watchlist', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: addWatchSymbol.trim().toUpperCase() }),
-      })
-      if (res.ok) {
-        setAddWatchOpen(false)
-        setAddWatchSymbol('')
-        const wl = await fetchWatchlist()
-        setWatchlist(wl)
-        const q = await fetchQuotes(wl.map((w) => w.symbol))
-        setQuotes(q)
+      const hadTrades = data.events.some((e) => e.type === 'BUY' || e.type === 'SELL')
+      if (hadTrades) {
+        setTotalTrades((n) => n + data.events.filter((e) => e.type === 'BUY' || e.type === 'SELL').length)
+        await Promise.all([loadPortfolio(), loadTrades()])
       } else {
-        const d = await res.json()
-        setError((d as { error?: string }).error ?? 'Failed to add symbol')
+        // Still update cash from response
+        setPortfolio((prev) => prev ? { ...prev, cash: data.cash } : prev)
       }
-    } finally {
-      setAddWatchLoading(false)
+    } catch { /* silent */ } finally {
+      setScanning(false)
     }
-  }
+  }, [scanning, addActivity, loadPortfolio, loadTrades])
 
-  const removeFromWatchlist = async (symbol: string) => {
-    await fetch('/api/trading/watchlist', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol }),
-    })
-    setWatchlist((prev) => prev.filter((w) => w.symbol !== symbol))
-  }
+  // Initial load
+  useEffect(() => {
+    Promise.all([loadPortfolio(), loadTrades(), loadNews()])
+      .finally(() => setLoading(false))
+  }, [loadPortfolio, loadTrades, loadNews])
 
-  // ── Styles ──────────────────────────────────────────────────────────────────
+  // Run tick immediately, then every 20s
+  useEffect(() => {
+    // small delay on first run so initial load finishes first
+    const initial = setTimeout(() => { runTick() }, 1500)
 
-  const cardStyle: React.CSSProperties = {
-    background: 'var(--surface)',
-    border: '1px solid var(--border)',
-    borderRadius: 14,
-    padding: '18px 20px',
-  }
+    tickRef.current = setInterval(() => { runTick() }, TICK_INTERVAL)
 
-  const labelStyle: React.CSSProperties = {
-    fontSize: 11,
-    fontWeight: 600,
-    color: 'var(--text-3)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
-    marginBottom: 4,
-  }
+    // Countdown timer
+    cdRef.current = setInterval(() => {
+      setCountdown((n) => Math.max(0, n - 1))
+    }, 1000)
+
+    return () => {
+      clearTimeout(initial)
+      if (tickRef.current) clearInterval(tickRef.current)
+      if (cdRef.current) clearInterval(cdRef.current)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalPnL = portfolio?.totalPnL ?? 0
+  const totalPnLPct = portfolio?.totalPnLPct ?? 0
 
   if (loading) {
     return (
-      <div style={{ padding: '24px 20px', maxWidth: 1100, margin: '0 auto' }}>
-        <style>{`@keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }`}</style>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Skeleton height={52} />
-          <Skeleton height={80} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <Skeleton height={200} />
-            <Skeleton height={200} />
-          </div>
-          <Skeleton height={300} />
-        </div>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 20px' }}>
+        <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading trading engine…</div>
       </div>
     )
   }
 
   return (
-    <div style={{ padding: '24px 20px 48px', maxWidth: 1100, margin: '0 auto' }}>
+    <>
       <style>{`
-        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes pulse-dot {
-          0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 #2D6A2D55; }
-          50% { opacity: 0.85; transform: scale(1.15); box-shadow: 0 0 0 5px #2D6A2D00; }
+        @keyframes pingDot {
+          0%, 100% { transform: scale(1); opacity: 0.5; }
+          50% { transform: scale(2.5); opacity: 0; }
         }
-        .trade-row:hover { background: var(--morning) !important; }
-        .wl-row:hover { background: var(--morning) !important; }
-        .pos-row:hover { background: var(--morning) !important; }
-        .news-item:hover { background: var(--morning) !important; cursor: pointer; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes fadeSlide {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .trade-row { animation: fadeSlide 0.3s ease forwards; }
       `}</style>
 
-      {error && (
-        <div
-          style={{
-            background: '#8B1A1A12',
-            border: '1px solid #8B1A1A33',
-            borderRadius: 10,
-            padding: '10px 14px',
-            color: '#8B1A1A',
-            fontSize: 13,
-            marginBottom: 16,
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
-        >
-          <span>{error}</span>
-          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8B1A1A', fontSize: 16 }}>×</button>
-        </div>
-      )}
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '24px 20px 80px' }}>
 
-      {/* ── Live Status Bar ── */}
-      <LiveStatusBar
-        status={tradingStatus}
-        onForceRun={forceRun}
-        forceRunLoading={forceRunLoading}
-      />
-
-      {/* ── Section A: Portfolio Header ── */}
-      <div style={{ ...cardStyle, marginBottom: 20 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, alignItems: 'flex-end', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, alignItems: 'flex-end' }}>
-            <div>
-              <div style={labelStyle}>Net Worth</div>
-              <div style={{ fontSize: 28, fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.5px' }}>
-                {portfolio ? fmtMoney(portfolio.totalValue) : '—'}
-              </div>
-              {portfolio && (
-                <div style={{ fontSize: 13, fontWeight: 600, color: portfolio.totalPnL >= 0 ? '#2D6A2D' : '#8B1A1A', marginTop: 2 }}>
-                  {portfolio.totalPnL >= 0 ? '+' : ''}{fmtMoney(portfolio.totalPnL)} ({fmtPct(portfolio.totalPnLPct)})
-                </div>
-              )}
-            </div>
-            <div>
-              <div style={labelStyle}>Cash</div>
-              <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--text)' }}>
-                {portfolio ? fmtMoney(portfolio.cash) : '—'}
-              </div>
-            </div>
-            {tradingStatus && (
-              <div>
-                <div style={labelStyle}>Total Algo Trades</div>
-                <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>
-                  {tradingStatus.totalTradesRun}
-                </div>
-              </div>
-            )}
-            {lastUpdated && (
-              <div style={{ fontSize: 11, color: 'var(--text-3)', alignSelf: 'flex-end', paddingBottom: 2 }}>
-                UI refreshed {timeAgo(lastUpdated.toISOString())}
-              </div>
+        {/* ── STATUS BAR ── */}
+        <div style={{
+          background: '#0F1117',
+          borderRadius: 12,
+          padding: '12px 18px',
+          marginBottom: 16,
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: 14,
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <PulseDot active={true} />
+            <span style={{ fontWeight: 800, fontSize: 13, color: '#86efac', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+              Auto-Trader Live
+            </span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              {scanning ? '⟳ Scanning…' : `${assetsScanned} assets scanned`}
+            </span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              Next scan: <strong style={{ color: '#e2e8f0' }}>{countdown}s</strong>
+            </span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }}>
+              Trades this session: <strong style={{ color: '#fcd34d' }}>{totalTrades}</strong>
+            </span>
+            {lastScan && (
+              <>
+                <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
+                <span style={{ fontSize: 12, color: '#64748b' }}>Last: {timeAgo(lastScan)}</span>
+              </>
             )}
           </div>
+          <button
+            onClick={() => { runTick() }}
+            disabled={scanning}
+            style={{
+              background: 'none', border: '1px solid #334155', borderRadius: 8,
+              padding: '5px 12px', fontSize: 12, fontWeight: 600, color: '#C4834A',
+              cursor: scanning ? 'not-allowed' : 'pointer', opacity: scanning ? 0.5 : 1,
+            }}
+          >
+            {scanning ? '⟳ Running…' : '⟳ Force scan'}
+          </button>
         </div>
-      </div>
 
-      {/* ── Section B: Algorithm Signals ── */}
-      <SignalsPanel status={tradingStatus} />
+        {/* ── LIVE ACTIVITY FEED ── */}
+        <ActivityFeed items={activity} scanning={scanning} />
 
-      {/* ── Section C: Positions + Watchlist ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16, marginBottom: 20 }}>
-        {/* Positions */}
-        <div style={cardStyle}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>Open Positions</div>
-          {(!portfolio || portfolio.positions.length === 0) ? (
-            <div style={{ color: 'var(--text-3)', fontSize: 13, padding: '20px 0', textAlign: 'center' }}>
-              No open positions — algo will enter when signals fire.
+        {/* ── PORTFOLIO HEADER ── */}
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 14, padding: '20px 24px', marginBottom: 20,
+          display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start',
+        }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Net Worth</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
+              {fmtMoney(portfolio?.totalValue ?? 500)}
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {portfolio.positions.map((pos) => {
-                const arrow = pos.currentPrice > pos.avgBuyPrice ? '▲' : '▼'
-                const arrowColor = pos.pnl >= 0 ? '#2D6A2D' : '#8B1A1A'
+            <div style={{ fontSize: 13, fontWeight: 600, color: totalPnL >= 0 ? '#2D6A2D' : '#8B1A1A', marginTop: 2 }}>
+              {totalPnL >= 0 ? '+' : '-'}{fmtMoney(totalPnL)} ({fmtPct(totalPnLPct)})
+            </div>
+          </div>
+          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Cash Available</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{fmtMoney(portfolio?.cash ?? 500)}</div>
+          </div>
+          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Open Positions</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{portfolio?.positions.length ?? 0}</div>
+          </div>
+          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Total Trades</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{trades.length}</div>
+          </div>
+        </div>
+
+        {/* ── POSITIONS + TRADE HISTORY ── */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginBottom: 20 }}>
+
+          {/* Open Positions */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
+              Open Positions
+            </div>
+            {/* Column headers */}
+            {(portfolio?.positions.length ?? 0) > 0 && (
+              <div style={{
+                display: 'grid', gridTemplateColumns: '90px 1fr 90px 90px 100px',
+                gap: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)', marginBottom: 2,
+              }}>
+                {['Asset', 'Price / Targets', 'Value', 'Change', 'P&L'].map((h) => (
+                  <div key={h} style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase' }}>{h}</div>
+                ))}
+              </div>
+            )}
+            {(portfolio?.positions.length ?? 0) === 0 ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: 13, padding: '24px 0' }}>
+                No open positions — algo will enter when signals fire
+              </div>
+            ) : (
+              portfolio!.positions.map((pos) => <PositionRow key={pos.symbol} pos={pos} />)
+            )}
+          </div>
+
+          {/* Trade History */}
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px', maxHeight: 500, overflowY: 'auto' }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
+              Trade History
+            </div>
+            {trades.length === 0 ? (
+              <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: 13, padding: '24px 0' }}>No trades yet</div>
+            ) : (
+              trades.map((t) => {
+                const isBuy = t.action === 'BUY'
+                const pnlPos = (t.pnl ?? 0) >= 0
                 return (
-                  <div
-                    key={pos.symbol}
-                    className="pos-row"
-                    style={{
-                      padding: '12px 0',
-                      borderBottom: '1px solid var(--border)',
-                      transition: 'background 0.1s',
-                      borderRadius: 6,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                      <div>
-                        <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text)' }}>{pos.symbol}</span>
-                        {pos.assetType === 'crypto' && (
-                          <span style={{ fontSize: 10, color: '#C4834A', background: '#C4834A18', borderRadius: 4, padding: '1px 5px', marginLeft: 6 }}>CRYPTO</span>
-                        )}
-                      </div>
-                      <div style={{ flex: 1 }} />
-                      <PnLBadge value={pos.pnl} pct={pos.pnlPct} />
+                  <div key={t.id} className="trade-row" style={{
+                    display: 'grid', gridTemplateColumns: '50px 70px 1fr 70px',
+                    gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', alignItems: 'start',
+                  }}>
+                    <span style={{
+                      fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 5,
+                      background: isBuy ? '#2D6A2D18' : pnlPos ? '#2D6A2D18' : '#8B1A1A18',
+                      color: isBuy ? '#2D6A2D' : pnlPos ? '#2D6A2D' : '#8B1A1A',
+                    }}>
+                      {isBuy ? 'BUY' : 'SELL'}
+                    </span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 12 }}>{t.symbol}</div>
+                      {t.auto && <span style={{ fontSize: 9, color: '#C4834A', fontWeight: 700 }}>⚡ algo</span>}
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 12, color: 'var(--text-2)', marginBottom: 6 }}>
-                      <span>{fmt(pos.shares, 6)} shares</span>
-                      <span>Entry: {fmtPrice(pos.avgBuyPrice)}</span>
-                      <span style={{ color: arrowColor, fontWeight: 600 }}>
-                        {arrow} {fmtPrice(pos.currentPrice)}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                      {pos.takeProfitPrice && (
-                        <span style={{ fontSize: 11, color: '#2D6A2D', fontWeight: 600 }}>
-                          TP: {fmtPrice(pos.takeProfitPrice)}
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.4 }}>
+                      {fmtPrice(t.price)} × {Number(t.shares).toFixed(4)} = {fmtMoney(t.total)}
+                      {t.pnl != null && (
+                        <span style={{ marginLeft: 6, fontWeight: 600, color: pnlPos ? '#2D6A2D' : '#8B1A1A' }}>
+                          {pnlPos ? '+' : '-'}{fmtMoney(Math.abs(t.pnl))}
                         </span>
                       )}
-                      {pos.stopLossPrice && (
-                        <span style={{ fontSize: 11, color: '#8B1A1A', fontWeight: 600 }}>
-                          SL: {fmtPrice(pos.stopLossPrice)}
-                        </span>
-                      )}
-                      <div style={{ flex: 1 }} />
-                      <button
-                        onClick={() => sellAll(pos.symbol, pos.shares)}
-                        disabled={sellingSymbol === pos.symbol}
-                        style={{
-                          background: 'none',
-                          border: '1px solid var(--border)',
-                          borderRadius: 6,
-                          padding: '3px 10px',
-                          fontSize: 11,
-                          fontWeight: 600,
-                          color: 'var(--text-2)',
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {sellingSymbol === pos.symbol ? '…' : 'CLOSE'}
-                      </button>
+                      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{t.reason}</div>
+                    </div>
+                    <div style={{ fontSize: 10, color: 'var(--text-3)', textAlign: 'right' }}>
+                      {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
                 )
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Watchlist */}
-        <div style={cardStyle}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Watchlist</span>
-            <button
-              onClick={() => setAddWatchOpen(true)}
-              style={{
-                background: 'none',
-                border: '1px solid var(--border)',
-                borderRadius: 8,
-                padding: '4px 10px',
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#C4834A',
-                cursor: 'pointer',
-              }}
-            >
-              + Add symbol
-            </button>
+              })
+            )}
           </div>
-
-          {addWatchOpen && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input
-                value={addWatchSymbol}
-                onChange={(e) => setAddWatchSymbol(e.target.value.toUpperCase())}
-                onKeyDown={(e) => e.key === 'Enter' && addToWatchlist()}
-                placeholder="e.g. GOOG"
-                style={{
-                  flex: 1,
-                  border: '1px solid var(--border)',
-                  borderRadius: 8,
-                  padding: '6px 10px',
-                  fontSize: 13,
-                  background: 'var(--surface-2)',
-                  color: 'var(--text)',
-                  outline: 'none',
-                }}
-                autoFocus
-              />
-              <button
-                onClick={addToWatchlist}
-                disabled={addWatchLoading}
-                style={{
-                  background: '#C4834A',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '6px 12px',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                }}
-              >
-                {addWatchLoading ? '…' : 'Add'}
-              </button>
-              <button
-                onClick={() => { setAddWatchOpen(false); setAddWatchSymbol('') }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 16 }}
-              >
-                ×
-              </button>
-            </div>
-          )}
-
-          {watchlist.length === 0 ? (
-            <div style={{ color: 'var(--text-3)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>Watchlist empty</div>
-          ) : (
-            <div>
-              {watchlist.map((item) => {
-                const q = quotes.get(item.symbol)
-                return (
-                  <div key={item.symbol}>
-                    <div
-                      className="wl-row"
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 10,
-                        padding: '8px 4px',
-                        borderBottom: '1px solid var(--border)',
-                        transition: 'background 0.1s',
-                        borderRadius: 6,
-                      }}
-                    >
-                      <div style={{ flex: '0 0 52px' }}>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>{item.symbol}</div>
-                        {q && (
-                          <div style={{ fontSize: 10, color: q.changePct >= 0 ? '#2D6A2D' : '#8B1A1A', fontWeight: 600 }}>
-                            {q.changePct >= 0 ? '+' : ''}{fmt(q.changePct)}%
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {q ? <Sparkline data={q.sparkline} positive={q.changePct >= 0} /> : <Skeleton width={60} height={24} />}
-                      </div>
-                      <div style={{ flex: '0 0 70px', textAlign: 'right' }}>
-                        {q ? (
-                          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{fmtPrice(q.price)}</div>
-                        ) : (
-                          <Skeleton width={50} height={14} />
-                        )}
-                      </div>
-                      <button
-                        onClick={() => removeFromWatchlist(item.symbol)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-3)', fontSize: 13, padding: '0 2px', flexShrink: 0 }}
-                        title="Remove"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ── Section D: History + News ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
-        {/* Trade History */}
-        <div style={cardStyle}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>Trade History</div>
-          {trades.length === 0 ? (
-            <div style={{ color: 'var(--text-3)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No trades yet.</div>
-          ) : (
-            <div style={{ overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <thead>
-                  <tr>
-                    {['Time', 'Symbol', 'B/S', 'Shares', 'Price', 'Total', 'P&L', 'Reason'].map((h) => (
-                      <th
-                        key={h}
-                        style={{
-                          textAlign: 'left',
-                          padding: '0 6px 8px',
-                          fontSize: 10,
-                          fontWeight: 600,
-                          color: 'var(--text-3)',
-                          textTransform: 'uppercase',
-                          letterSpacing: '0.05em',
-                          borderBottom: '1px solid var(--border)',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {trades.slice(0, 50).map((t) => {
-                    const isBuy = t.action === 'BUY'
-                    const isProfit = t.pnl != null && t.pnl >= 0
-                    const isLoss = t.pnl != null && t.pnl < 0
-                    const rowBg = isBuy ? '#C4834A08' : isProfit ? '#2D6A2D06' : isLoss ? '#8B1A1A06' : undefined
-                    return (
-                      <tr
-                        key={t.id}
-                        className="trade-row"
-                        style={{ background: rowBg, cursor: 'default' }}
-                      >
-                        <td style={{ padding: '7px 6px', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>{timeAgo(t.created_at)}</td>
-                        <td style={{ padding: '7px 6px', fontWeight: 700, color: 'var(--text)' }}>{t.symbol}</td>
-                        <td style={{ padding: '7px 6px' }}>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color: isBuy ? '#C4834A' : '#2D6A2D',
-                              background: isBuy ? '#C4834A18' : '#2D6A2D18',
-                              borderRadius: 4,
-                              padding: '1px 5px',
-                            }}
-                          >
-                            {t.action}
-                          </span>
-                        </td>
-                        <td style={{ padding: '7px 6px', color: 'var(--text-2)' }}>{fmt(t.shares, 4)}</td>
-                        <td style={{ padding: '7px 6px', color: 'var(--text-2)' }}>{fmtPrice(t.price)}</td>
-                        <td style={{ padding: '7px 6px', color: 'var(--text)' }}>{fmtMoney(t.total)}</td>
-                        <td style={{ padding: '7px 6px' }}>
-                          {t.pnl != null ? (
-                            <span style={{ fontWeight: 600, color: t.pnl >= 0 ? '#2D6A2D' : '#8B1A1A' }}>
-                              {t.pnl >= 0 ? '+' : ''}{fmtMoney(t.pnl)}
-                            </span>
-                          ) : (
-                            <span style={{ color: 'var(--text-3)' }}>—</span>
-                          )}
-                        </td>
-                        <td style={{ padding: '7px 6px', maxWidth: 160 }}>
-                          <span style={{ color: 'var(--text-3)', fontSize: 11, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={t.reason ?? ''}>
-                            {t.auto && <span style={{ color: '#C4834A', marginRight: 4 }}>⚡</span>}
-                            {t.reason ?? ''}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
         </div>
 
-        {/* Market News */}
-        <div style={cardStyle}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', marginBottom: 14 }}>Market News</div>
+        {/* ── MARKET NEWS ── */}
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
+            Market News
+          </div>
           {news.length === 0 ? (
-            <div style={{ color: 'var(--text-3)', fontSize: 13, textAlign: 'center', padding: '20px 0' }}>No news available.</div>
+            <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading news…</div>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {news.slice(0, 8).map((item, i) => (
-                <a
-                  key={i}
-                  href={item.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="news-item"
-                  style={{
-                    display: 'block',
-                    padding: '10px 6px',
-                    borderBottom: i < 7 ? '1px solid var(--border)' : 'none',
-                    textDecoration: 'none',
-                    borderRadius: 6,
-                    transition: 'background 0.1s',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: 'var(--text)',
-                      lineHeight: 1.4,
-                      overflow: 'hidden',
-                      display: '-webkit-box',
-                      WebkitLineClamp: 1,
-                      WebkitBoxOrient: 'vertical',
-                    }}
-                  >
-                    {item.title}
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3, display: 'flex', gap: 8 }}>
-                    <span>{item.source}</span>
-                    <span>·</span>
-                    <span>{item.pubDate ? timeAgo(item.pubDate) : ''}</span>
-                  </div>
-                </a>
-              ))}
-            </div>
+            news.slice(0, 8).map((n, i) => (
+              <a key={i} href={n.link} target="_blank" rel="noreferrer" style={{
+                display: 'block', textDecoration: 'none',
+                padding: '10px 0', borderBottom: i < 7 ? '1px solid var(--border)' : 'none',
+              }}>
+                <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500, lineHeight: 1.4,
+                  overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                  {n.title}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>
+                  {n.source} · {n.pubDate}
+                </div>
+              </a>
+            ))
           )}
         </div>
+
       </div>
-    </div>
+    </>
   )
 }
