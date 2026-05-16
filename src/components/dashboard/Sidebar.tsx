@@ -1,6 +1,8 @@
 'use client'
 
-import { Search } from 'lucide-react'
+import { Search, LogOut } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 import { useStore } from '@/store/useStore'
 import { getDisplayName, getDayNumber } from '@/lib/utils'
 import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
@@ -9,6 +11,14 @@ export default function Sidebar() {
   const { profile, sidebarView, setSidebarView, setShowChatPanel } = useStore()
   const name = getDisplayName(profile)
   const dayNumber = profile ? getDayNumber(profile.created_at) : 1
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/')
+    router.refresh()
+  }
 
   return (
     <div
@@ -152,7 +162,7 @@ export default function Sidebar() {
           >
             {name.charAt(0).toUpperCase()}
           </div>
-          <div style={{ minWidth: 0 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
             <div
               style={{
                 fontSize: 12,
@@ -169,6 +179,33 @@ export default function Sidebar() {
               Day {dayNumber}
             </div>
           </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            title="Sign out"
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: 4,
+              borderRadius: 6,
+              color: 'var(--text-3)',
+              display: 'flex',
+              alignItems: 'center',
+              transition: 'color 0.15s, background 0.15s',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = '#EF4444'
+              e.currentTarget.style.background = 'rgba(239,68,68,0.08)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--text-3)'
+              e.currentTarget.style.background = 'none'
+            }}
+          >
+            <LogOut size={14} />
+          </button>
         </div>
       </div>
     </div>

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { Menu, X } from 'lucide-react'
+import { Menu, X, LogOut } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase'
 import { useStore } from '@/store/useStore'
 import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
 import JalayuLogo from '@/components/JalayuLogo'
@@ -10,6 +12,15 @@ export default function TopBar() {
   const { sidebarView, setSidebarView } = useStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    setMenuOpen(false)
+    router.push('/')
+    router.refresh()
+  }
 
   useEffect(() => {
     if (!menuOpen) return
@@ -169,6 +180,32 @@ export default function TopBar() {
                   })}
                 </div>
               ))}
+
+              {/* Sign out */}
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    padding: '7px 10px',
+                    borderRadius: 8,
+                    fontSize: 13,
+                    width: '100%',
+                    background: 'transparent',
+                    color: '#EF4444',
+                    fontWeight: 500,
+                    border: 'none',
+                    cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                >
+                  <LogOut size={15} color="#EF4444" />
+                  Sign out
+                </button>
+              </div>
             </div>
           )}
         </div>
