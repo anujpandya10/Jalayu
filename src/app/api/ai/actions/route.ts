@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { buildMedicationReminderFields } from '@/lib/medication-reminder'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -150,14 +151,68 @@ const TOOLS: Anthropic.Tool[] = [
         frequency: { type: 'string', description: 'How often, e.g. "once daily", "twice a day", "as needed"' },
         prescriber: { type: 'string', description: 'Doctor who prescribed it, if mentioned' },
         purpose: { type: 'string', description: 'What it\'s for, if mentioned' },
+        daily_reminder_time: { type: 'string', description: 'Optional HH:MM 24h for daily calendar reminder, e.g. "08:00"' },
       },
       required: ['name'],
+    },
+  },
+  {
+    name: 'add_health_appointment',
+    description: 'Schedule a doctor, dentist, specialist, therapy, or medical visit. Use for "doctor appointment", "see my PCP", "dentist on Tuesday at 3", "cardiology follow-up". Prefer over add_calendar_event for medical visits.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        title: { type: 'string', description: 'Appointment title, e.g. "Doctor visit", "Dentist cleaning"' },
+        date: { type: 'string', description: 'YYYY-MM-DD' },
+        time: { type: 'string', description: 'HH:MM 24h start time if given' },
+        provider_name: { type: 'string', description: 'Doctor or clinic name' },
+        location: { type: 'string', description: 'Address or clinic location' },
+        reason: { type: 'string', description: 'Reason for visit if mentioned' },
+      },
+      required: ['title', 'date'],
+    },
+  },
+  {
+    name: 'update_primary_care',
+    description: 'Save or update the user\'s primary care physician (PCP) contact info.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        name: { type: 'string', description: 'Doctor or practice name' },
+        phone: { type: 'string', description: 'Phone number' },
+        address: { type: 'string', description: 'Full address' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'add_medication_reminder',
+    description: 'Set a daily medication reminder that appears on the calendar. Use when user wants to be reminded to take a specific medication at a time.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        medication_name: { type: 'string', description: 'Medication name' },
+        time: { type: 'string', description: 'HH:MM 24h daily reminder time' },
+      },
+      required: ['medication_name', 'time'],
     },
   },
 ]
 
 export type ExecutedAction = {
-  type: 'task_added' | 'mood_logged' | 'reminder_added' | 'memory_saved' | 'task_completed' | 'decision_tracked' | 'insurance_saved' | 'insurance_updated' | 'medication_saved' | 'event_added'
+  type:
+    | 'task_added'
+    | 'mood_logged'
+    | 'reminder_added'
+    | 'memory_saved'
+    | 'task_completed'
+    | 'decision_tracked'
+    | 'insurance_saved'
+    | 'insurance_updated'
+    | 'primary_care_updated'
+    | 'medication_saved'
+    | 'appointment_added'
+    | 'event_added'
   data: Record<string, unknown>
   message: string
 }
@@ -270,6 +325,17 @@ Use conversation context for whose insurance it is. Dollar amounts: "$1,500" →
 
 ━━━ MEDICATIONS → add_medication ━━━
 Trigger for: "I take", "I'm on", "I'm prescribed", "my medication is", any drug name + dose + frequency.
+If user also wants a daily reminder time, include daily_reminder_time OR call add_medication_reminder.
+
+━━━ MEDICAL APPOINTMENTS → add_health_appointment ━━━
+Doctor, dentist, specialist, therapy, checkup, lab visit with a date → add_health_appointment (NOT add_calendar_event).
+Examples: "doctor appointment Tuesday at 3pm", "dentist next Friday", "see my cardiologist March 5 at 10am".
+
+━━━ PRIMARY CARE → update_primary_care ━━━
+When user gives PCP/doctor name, phone, or address for their regular doctor.
+
+━━━ MED REMINDERS → add_medication_reminder ━━━
+"Remind me to take [med] at [time] every day" → add_medication_reminder.
 
 ━━━ DECISIONS → track_decision ━━━
 Trigger for: "I decided", "I've decided", "going with", "I'm going to [major life choice]".
@@ -555,6 +621,7 @@ If intent is purely conversational with zero action content, call no tools.`,
           frequency?: string
           prescriber?: string
           purpose?: string
+          daily_reminder_time?: string
         }
         const { data, error } = await supabase
           .from('medications')
@@ -575,6 +642,123 @@ If intent is purely conversational with zero action content, call no tools.`,
             data: data as Record<string, unknown>,
             message: `Saved medication: ${input.name}${input.dosage_mg ? ` ${input.dosage_mg}mg` : ''}`,
           })
+          if (input.daily_reminder_time) {
+            const fields = buildMedicationReminderFields(input.name, input.daily_reminder_time)
+            const { data: rem } = await supabase
+              .from('reminders')
+              .insert({ user_id: user.id, ...fields })
+              .select()
+              .single()
+            if (rem) {
+              executed.push({
+                type: 'reminder_added',
+                data: rem as Record<string, unknown>,
+                message: `Daily reminder set for ${input.name}`,
+              })
+            }
+          }
+        }
+      }
+
+      if (block.name === 'add_medication_reminder') {
+        const input = block.input as { medication_name: string; time: string }
+        const fields = buildMedicationReminderFields(input.medication_name, input.time)
+        const { data, error } = await supabase
+          .from('reminders')
+          .insert({ user_id: user.id, ...fields })
+          .select()
+          .single()
+        if (!error && data) {
+          executed.push({
+            type: 'reminder_added',
+            data: data as Record<string, unknown>,
+            message: `Daily medication reminder: ${input.medication_name} at ${input.time}`,
+          })
+        }
+      }
+
+      if (block.name === 'add_health_appointment') {
+        const input = block.input as {
+          title: string
+          date: string
+          time?: string
+          provider_name?: string
+          location?: string
+          reason?: string
+        }
+        const timePart = input.time || '09:00'
+        const appointmentDate = new Date(`${input.date}T${timePart}:00`).toISOString()
+        const { data, error } = await supabase
+          .from('health_appointments')
+          .insert({
+            user_id: user.id,
+            title: input.title,
+            appointment_date: appointmentDate,
+            provider_name: input.provider_name || null,
+            location: input.location || null,
+            reason: input.reason || null,
+          })
+          .select()
+          .single()
+        if (!error && data) {
+          executed.push({
+            type: 'appointment_added',
+            data: data as Record<string, unknown>,
+            message: `Medical appointment: "${input.title}" on ${input.date}${input.time ? ` at ${input.time}` : ''}`,
+          })
+        }
+      }
+
+      if (block.name === 'update_primary_care') {
+        const input = block.input as { name?: string; phone?: string; address?: string }
+        const { data: profiles } = await supabase
+          .from('health_profiles')
+          .select('id')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: true })
+          .limit(1)
+
+        let profileId = profiles?.[0]?.id as string | undefined
+        const updates: Record<string, unknown> = { updated_at: now.toISOString() }
+        if (input.name) updates.primary_care_name = input.name
+        if (input.phone) updates.primary_care_phone = input.phone
+        if (input.address) updates.primary_care_address = input.address
+
+        if (profileId) {
+          const { data, error } = await supabase
+            .from('health_profiles')
+            .update(updates)
+            .eq('id', profileId)
+            .select()
+            .single()
+          if (!error && data) {
+            executed.push({
+              type: 'primary_care_updated',
+              data: data as Record<string, unknown>,
+              message: 'Primary care info updated',
+            })
+          }
+        } else if (input.name || input.phone || input.address) {
+          const { data, error } = await supabase
+            .from('health_profiles')
+            .insert({
+              user_id: user.id,
+              profile_label: 'Mine',
+              relationship: 'self',
+              primary_care_name: input.name || null,
+              primary_care_phone: input.phone || null,
+              primary_care_address: input.address || null,
+              updated_at: now.toISOString(),
+            })
+            .select()
+            .single()
+          if (!error && data) {
+            executed.push({
+              type: 'primary_care_updated',
+              data: data as Record<string, unknown>,
+              message: 'Primary care info saved',
+            })
+          }
         }
       }
     }

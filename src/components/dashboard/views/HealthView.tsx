@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react'
 import { useStore } from '@/store/useStore'
-import type { HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
+import type { HealthProfile, Medication, HealthAppointment, MedicalRecord, Reminder } from '@/lib/types'
 import HealthCoverageChat from './HealthCoverageChat'
 
 interface HealthViewProps {
@@ -628,23 +628,49 @@ function MedicationsTab({
   onAdd,
   onUpdate,
   onDelete,
+  onAddReminder,
   showToast,
 }: {
   medications: Medication[]
   onAdd: (m: Medication) => void
   onUpdate: (m: Medication) => void
   onDelete: (id: string) => void
+  onAddReminder: (r: Reminder) => void
   showToast: (m: string) => void
 }) {
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [addForm, setAddForm] = useState({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
   const [editForm, setEditForm] = useState({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
+  const [reminderPrompt, setReminderPrompt] = useState<{ medName: string } | null>(null)
+  const [reminderTime, setReminderTime] = useState('08:00')
+  const [savingReminder, setSavingReminder] = useState(false)
+
+  async function createMedReminder(medName: string, time: string) {
+    const { buildMedicationReminderFields } = await import('@/lib/medication-reminder')
+    const { createClient } = await import('@/lib/supabase')
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    const fields = buildMedicationReminderFields(medName, time)
+    const { data, error } = await supabase
+      .from('reminders')
+      .insert({ user_id: user.id, ...fields })
+      .select()
+      .single()
+    if (!error && data) {
+      onAddReminder(data as Reminder)
+      showToast('Daily reminder added to calendar')
+    } else {
+      showToast('Could not save reminder')
+    }
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
+    const medName = addForm.name.trim()
     const body = {
-      name: addForm.name,
+      name: medName,
       dosage_mg: addForm.dosage_mg ? parseFloat(addForm.dosage_mg) : null,
       frequency: addForm.frequency || null,
       prescriber: addForm.prescriber || null,
@@ -654,7 +680,11 @@ function MedicationsTab({
     try {
       const res = await fetch('/api/health/medications', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       const data = await res.json()
-      if (data.data) onAdd(data.data)
+      if (data.data) {
+        onAdd(data.data)
+        setReminderPrompt({ medName })
+        setReminderTime('08:00')
+      }
       setAddForm({ name: '', dosage_mg: '', frequency: '', prescriber: '', purpose: '', notes: '' })
       setShowAddForm(false)
       showToast('Medication added')
@@ -727,6 +757,48 @@ function MedicationsTab({
 
   return (
     <>
+      {reminderPrompt && (
+        <SectionCard>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>
+            Daily reminder for {reminderPrompt.medName}?
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 10px' }}>
+            Shows on your home calendar every day.
+          </p>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="time"
+              value={reminderTime}
+              onChange={(e) => setReminderTime(e.target.value)}
+              style={{ fontSize: 13, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text)' }}
+            />
+            <button
+              type="button"
+              disabled={savingReminder}
+              onClick={async () => {
+                setSavingReminder(true)
+                try {
+                  await createMedReminder(reminderPrompt.medName, reminderTime)
+                } finally {
+                  setSavingReminder(false)
+                  setReminderPrompt(null)
+                }
+              }}
+              style={{ fontSize: 12, fontWeight: 600, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 8, padding: '8px 14px', cursor: 'pointer' }}
+            >
+              {savingReminder ? 'Saving…' : 'Set reminder'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setReminderPrompt(null)}
+              style={{ fontSize: 12, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}
+            >
+              Skip
+            </button>
+          </div>
+        </SectionCard>
+      )}
+
       {medications.length === 0 && !showAddForm && (
         <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 12px' }}>No medications tracked yet.</p>
       )}
@@ -1256,6 +1328,7 @@ export default function HealthView({
     addMedicalRecord,
     updateMedicalRecord,
     removeMedicalRecord,
+    addReminder,
   } = useStore()
   const { toast, showToast } = useToast()
 
@@ -1333,6 +1406,7 @@ export default function HealthView({
           onAdd={addMedication}
           onUpdate={updateMedication}
           onDelete={removeMedication}
+          onAddReminder={addReminder}
           showToast={showToast}
         />
       )}

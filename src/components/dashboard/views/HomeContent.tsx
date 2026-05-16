@@ -4,12 +4,13 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Mic, MicOff, ChevronRight,
   TrendingUp, TrendingDown, Heart,
-  BookOpen, Sparkles, Brain, Stethoscope,
+  BookOpen, Sparkles, Brain,
   Users, FlaskConical, BarChart2, Zap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile, Task, Mood, Reminder } from '@/lib/types'
 import ScheduleCompact from '@/components/dashboard/ScheduleCompact'
+import HealthCompact from '@/components/dashboard/HealthCompact'
 import { useStore } from '@/store/useStore'
 import { getDayNumber } from '@/lib/utils'
 import GalaxyOrb from '@/components/GalaxyOrb'
@@ -186,6 +187,9 @@ export default function HomeContent({
 }) {
   const setShowChatPanel = useStore((s) => s.setShowChatPanel)
   const setSidebarView   = useStore((s) => s.setSidebarView)
+  const healthProfiles   = useStore((s) => s.healthProfiles)
+  const medications      = useStore((s) => s.medications)
+  const healthAppointments = useStore((s) => s.healthAppointments)
 
   const [morningNote, setMorningNote] = useState<string | null>(null)
   const [focus,       setFocus]       = useState<string | null>(null)
@@ -627,6 +631,7 @@ export default function HomeContent({
             <ScheduleCompact
               tasks={tasks}
               reminders={reminders}
+              healthAppointments={healthAppointments}
               onAddTask={onAddTask}
               onToggleTask={onToggleTask}
               onOpenFullCalendar={() => setSidebarView('calendar')}
@@ -707,11 +712,12 @@ export default function HomeContent({
               </div>
             </W>
 
-            {/* Health */}
-            <W accent={AMBER} icon={Stethoscope} label="Health" onClick={() => setSidebarView('health')}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Insurance & meds</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Coverage, appointments & records</p>
-            </W>
+            <HealthCompact
+              healthProfiles={healthProfiles}
+              medications={medications}
+              reminders={reminders}
+              onOpenHealth={() => setSidebarView('health')}
+            />
 
             {/* Strategy Lab */}
             <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
@@ -748,10 +754,12 @@ export default function HomeContent({
                 <div style={{ height: '100%', width: `${weekPct}%`, background: AMBER, borderRadius: 99 }} />
               </div>
             </W>
-            <W accent={AMBER} icon={Stethoscope} label="Health" onClick={() => setSidebarView('health')}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Insurance & meds</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Coverage & records</p>
-            </W>
+            <HealthCompact
+              healthProfiles={healthProfiles}
+              medications={medications}
+              reminders={reminders}
+              onOpenHealth={() => setSidebarView('health')}
+            />
           </div>
 
           {/* Strategy Lab — standalone on mobile */}

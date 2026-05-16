@@ -264,32 +264,8 @@ export default function ChatPanel() {
       })
         .then((r) => r.json())
         .then((result: { executed?: Array<{ type: string; data: Record<string, unknown>; message: string }> }) => {
-          for (const action of result.executed ?? []) {
-            if (action.type === 'task_added') {
-              addTask(action.data as never)
-              toast.success('Task added ✦')
-            }
-            if (action.type === 'event_added') {
-              addTask(action.data as never)
-              toast.success('Added to calendar ✦')
-            }
-            if (action.type === 'reminder_added') {
-              addReminder(action.data as never)
-              toast.success('Reminder set ✦')
-            }
-            if (action.type === 'memory_saved') {
-              addNote(action.data as never)
-              toast.success('Saved to memory ✦')
-            }
-            if (action.type === 'mood_logged') {
-              setTodayMood(action.data as never)
-            }
-            if (action.type === 'insurance_saved' || action.type === 'insurance_updated') {
-              toast.success(action.message)
-            }
-            if (action.type === 'medication_saved') {
-              toast.success(action.message)
-            }
+          if (result.executed?.length) {
+            import('@/lib/apply-ai-actions').then(({ applyAiActions }) => applyAiActions(result.executed!))
           }
         })
         .catch(() => {})

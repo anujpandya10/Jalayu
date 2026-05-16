@@ -28,6 +28,15 @@ function sameUtcDay(a: Date, b: Date) {
   )
 }
 
+const DOW_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
+
+function reminderDueToday(r: { remind_at: string; days_of_week?: string[] | null }, now: Date) {
+  if (!timeMatchUtc(String(r.remind_at), now, 6)) return false
+  if (!r.days_of_week?.length) return true
+  const key = DOW_KEYS[now.getUTCDay()]
+  return r.days_of_week.includes(key)
+}
+
 export async function GET(req: Request) {
   if (!verifyCron(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -53,7 +62,7 @@ export async function GET(req: Request) {
   const now = new Date()
   const { data: reminders, error: rErr } = await admin
     .from('reminders')
-    .select('id, user_id, title, remind_at, last_sent, is_active')
+    .select('id, user_id, title, remind_at, last_sent, is_active, days_of_week')
     .eq('is_active', true)
 
   if (rErr) {
@@ -65,7 +74,7 @@ export async function GET(req: Request) {
   const list = reminders || []
 
   for (const r of list) {
-    if (!timeMatchUtc(String(r.remind_at), now, 6)) continue
+    if (!reminderDueToday(r, now)) continue
     if (r.last_sent && sameUtcDay(new Date(r.last_sent), now)) continue
 
     const { data: subs } = await admin

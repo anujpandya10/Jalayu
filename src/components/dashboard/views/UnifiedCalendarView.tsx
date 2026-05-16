@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import type { Task, Reminder } from '@/lib/types'
+import type { Task, Reminder, HealthAppointment } from '@/lib/types'
 import {
   buildScheduleItems,
   collectScheduleDates,
@@ -16,6 +16,7 @@ import {
 interface UnifiedCalendarViewProps {
   tasks: Task[]
   reminders: Reminder[]
+  healthAppointments?: HealthAppointment[]
   onAddTask: (title: string, date?: string, eventType?: string) => Promise<void>
   onToggleTask: (task: Task) => Promise<void>
   onDeleteTask?: (taskId: string) => Promise<void>
@@ -43,6 +44,7 @@ function toLocalDate(dateStr: string): Date {
 export default function UnifiedCalendarView({
   tasks,
   reminders,
+  healthAppointments = [],
   onAddTask,
   onToggleTask,
   onDeleteTask,
@@ -77,13 +79,13 @@ export default function UnifiedCalendarView({
   }, [])
 
   const eventDateSet = useMemo(
-    () => collectScheduleDates(tasks, reminders, googleEvents, todayStr),
-    [tasks, reminders, googleEvents, todayStr],
+    () => collectScheduleDates(tasks, reminders, googleEvents, todayStr, healthAppointments),
+    [tasks, reminders, googleEvents, todayStr, healthAppointments],
   )
 
   const selectedEvents = useMemo(
-    () => buildScheduleItems(tasks, reminders, googleEvents, selectedDate, todayStr),
-    [tasks, reminders, googleEvents, selectedDate, todayStr],
+    () => buildScheduleItems(tasks, reminders, googleEvents, selectedDate, todayStr, healthAppointments),
+    [tasks, reminders, googleEvents, selectedDate, todayStr, healthAppointments],
   )
 
   // Calendar grid

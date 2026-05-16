@@ -24,6 +24,7 @@ import UnifiedCalendarView from '@/components/dashboard/views/UnifiedCalendarVie
 import TradingView from '@/components/dashboard/views/TradingView'
 import StrategyLabView from '@/components/dashboard/views/StrategyLabView'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
+import { applyAiActions } from '@/lib/apply-ai-actions'
 
 async function getSupabase() {
   const { createClient } = await import('@/lib/supabase')
@@ -104,40 +105,9 @@ export default function DashboardPage() {
 
   const handleAction = useCallback(
     (actions: Array<{ type: string; data: Record<string, unknown>; message: string }>) => {
-      for (const action of actions) {
-        if (action.type === 'task_added') {
-          addTask(action.data as unknown as Task)
-          toast.success('Task added ✦')
-        }
-        if (action.type === 'mood_logged') {
-          const mood = action.data as unknown as Mood
-          setTodayMood(mood)
-          setMoodsRecent([mood, ...useStore.getState().moodsRecent.filter((m) => m.id !== mood.id)].slice(0, 60))
-        }
-        if (action.type === 'reminder_added') {
-          addReminder(action.data as unknown as Reminder)
-          toast.success('Reminder set ✦')
-        }
-        if (action.type === 'memory_saved') {
-          addNote(action.data as unknown as Note)
-          toast.success('Saved to memory ✦')
-        }
-        if (action.type === 'task_completed') {
-          const task = action.data as unknown as Task
-          updateTask(task.id, { completed: true, completed_at: task.completed_at ?? null })
-          toast.success('Task done! ✦')
-        }
-        if (action.type === 'decision_tracked') {
-          toast.success('Decision tracked ✦')
-          addNote(action.data as unknown as Note)
-        }
-        if (action.type === 'event_added') {
-          addTask(action.data as unknown as Task)
-          toast.success('Added to calendar ✦')
-        }
-      }
+      applyAiActions(actions)
     },
-    [addTask, setTodayMood, setMoodsRecent, addReminder, addNote, updateTask],
+    [],
   )
 
   const handleAddTask = useCallback(
@@ -386,6 +356,7 @@ export default function DashboardPage() {
           <UnifiedCalendarView
             tasks={[...tasks, ...tasksRecent].filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)}
             reminders={reminders}
+            healthAppointments={healthAppointments}
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
             onDeleteTask={handleDeleteTask}
@@ -397,6 +368,7 @@ export default function DashboardPage() {
           <UnifiedCalendarView
             tasks={[...tasks, ...tasksRecent].filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)}
             reminders={reminders}
+            healthAppointments={healthAppointments}
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
             onDeleteTask={handleDeleteTask}

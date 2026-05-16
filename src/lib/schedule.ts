@@ -1,6 +1,14 @@
-import type { Task, Reminder } from '@/lib/types'
+import type { Task, Reminder, HealthAppointment } from '@/lib/types'
 
-export type ScheduleItemType = 'task' | 'reminder' | 'event' | 'birthday' | 'meeting' | 'google'
+export type ScheduleItemType =
+  | 'task'
+  | 'reminder'
+  | 'medication'
+  | 'appointment'
+  | 'event'
+  | 'birthday'
+  | 'meeting'
+  | 'google'
 
 export interface GoogleCalEvent {
   title: string
@@ -13,18 +21,22 @@ export interface ScheduleItem {
   type: ScheduleItemType
   sortMin: number
   completed?: boolean
-  source: 'task' | 'reminder' | 'google'
-  raw: Task | Reminder | GoogleCalEvent
+  source: 'task' | 'reminder' | 'google' | 'appointment'
+  raw: Task | Reminder | GoogleCalEvent | HealthAppointment
 }
 
 export const SCHEDULE_COLORS: Record<ScheduleItemType, string> = {
   task: 'var(--accent)',
   reminder: '#92400E',
+  medication: '#7C3AED',
+  appointment: '#0D9488',
   event: '#4B5563',
   birthday: '#15803D',
   meeting: '#1D4ED8',
   google: '#2563EB',
 }
+
+const DOW_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const
 
 export function toLocalDateStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -35,7 +47,7 @@ export function getDatePart(str: string | null | undefined): string | null {
   return str.slice(0, 10)
 }
 
-export function getSortMinutes(item: Task | Reminder | GoogleCalEvent): number {
+export function getSortMinutes(item: Task | Reminder | GoogleCalEvent | HealthAppointment): number {
   if ('due_time' in item && item.due_time) {
     const [h, m] = item.due_time.split(':').map(Number)
     return h * 60 + (m || 0)
@@ -43,6 +55,12 @@ export function getSortMinutes(item: Task | Reminder | GoogleCalEvent): number {
   if ('remind_at' in item) {
     try {
       const d = new Date(item.remind_at)
+      if (!Number.isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes()
+    } catch { /* fall through */ }
+  }
+  if ('appointment_date' in item) {
+    try {
+      const d = new Date(item.appointment_date)
       if (!Number.isNaN(d.getTime())) return d.getHours() * 60 + d.getMinutes()
     } catch { /* fall through */ }
   }
@@ -71,12 +89,28 @@ function taskMatchesDate(t: Task, dateStr: string, todayStr: string): boolean {
   return due === dateStr
 }
 
+function reminderMatchesDate(r: Reminder, dateStr: string): boolean {
+  if (!r.is_active) return false
+  if (getDatePart(r.remind_at) === dateStr) return true
+  if (r.days_of_week?.length) {
+    const d = new Date(`${dateStr}T12:00:00`)
+    const key = DOW_KEYS[d.getDay()]
+    return r.days_of_week.includes(key)
+  }
+  return false
+}
+
+function reminderScheduleType(r: Reminder): ScheduleItemType {
+  return r.type === 'medication' ? 'medication' : 'reminder'
+}
+
 export function buildScheduleItems(
   tasks: Task[],
   reminders: Reminder[],
   googleEvents: GoogleCalEvent[],
   dateStr: string,
   todayStr: string,
+  healthAppointments: HealthAppointment[] = [],
 ): ScheduleItem[] {
   const items: ScheduleItem[] = []
 
@@ -95,15 +129,26 @@ export function buildScheduleItems(
   }
 
   for (const r of reminders) {
-    if (!r.is_active) continue
-    if (getDatePart(r.remind_at) === dateStr) {
+    if (!reminderMatchesDate(r, dateStr)) continue
+    items.push({
+      id: `reminder-${r.id}`,
+      title: r.title,
+      type: reminderScheduleType(r),
+      sortMin: getSortMinutes(r),
+      source: 'reminder',
+      raw: r,
+    })
+  }
+
+  for (const a of healthAppointments) {
+    if (getDatePart(a.appointment_date) === dateStr) {
       items.push({
-        id: `reminder-${r.id}`,
-        title: r.title,
-        type: 'reminder',
-        sortMin: getSortMinutes(r),
-        source: 'reminder',
-        raw: r,
+        id: `appt-${a.id}`,
+        title: a.title,
+        type: 'appointment',
+        sortMin: getSortMinutes(a),
+        source: 'appointment',
+        raw: a,
       })
     }
   }
@@ -130,6 +175,7 @@ export function collectScheduleDates(
   reminders: Reminder[],
   googleEvents: GoogleCalEvent[],
   todayStr: string,
+  healthAppointments: HealthAppointment[] = [],
 ): Set<string> {
   const set = new Set<string>()
   for (const t of tasks) {
@@ -141,6 +187,18 @@ export function collectScheduleDates(
   for (const r of reminders) {
     if (!r.is_active) continue
     const dp = getDatePart(r.remind_at)
+    if (dp) set.add(dp)
+    if (r.days_of_week?.length) {
+      for (let i = -14; i <= 60; i++) {
+        const d = new Date()
+        d.setDate(d.getDate() + i)
+        const ds = toLocalDateStr(d)
+        if (reminderMatchesDate(r, ds)) set.add(ds)
+      }
+    }
+  }
+  for (const a of healthAppointments) {
+    const dp = getDatePart(a.appointment_date)
     if (dp) set.add(dp)
   }
   for (const ev of googleEvents) {
@@ -160,6 +218,8 @@ export function formatScheduleTime(sortMin: number): string | null {
 }
 
 export function scheduleItemIcon(type: ScheduleItemType): string {
+  if (type === 'medication') return '💊'
+  if (type === 'appointment') return '🩺'
   if (type === 'reminder') return '🔔'
   if (type === 'birthday') return '🎂'
   if (type === 'meeting') return '💼'
