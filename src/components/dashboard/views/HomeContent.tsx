@@ -6,6 +6,7 @@ import {
   TrendingUp, TrendingDown, CheckSquare, Heart,
   BookOpen, Sparkles, Brain, Stethoscope,
   Users, Bell, FlaskConical, BarChart2, Zap,
+  CalendarDays, Clock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile, Task, Mood } from '@/lib/types'
@@ -18,6 +19,11 @@ import GalaxyOrb from '@/components/GalaxyOrb'
 interface TradingSnap {
   netWorth: number; totalPnl: number; totalPnlPct: number
   openPositions: number; totalTrades: number
+}
+
+interface CalEvent {
+  title: string
+  start: string | null
 }
 
 declare global {
@@ -52,6 +58,29 @@ const MOODS = [
 const MOOD_EMOJI:  Record<number, string> = { 1: '😔', 2: '😕', 3: '😐', 4: '🙂', 5: '😊' }
 const MOOD_LABEL:  Record<number, string> = { 1: 'Rough', 2: 'Low', 3: 'Okay', 4: 'Good', 5: 'Great' }
 const AMBER = '#C4834A'
+
+function formatEventTime(start: string | null, todayStr: string): { label: string; isToday: boolean; isTomorrow: boolean } {
+  if (!start) return { label: 'All day', isToday: false, isTomorrow: false }
+  const d = new Date(start)
+  if (Number.isNaN(d.getTime())) return { label: start, isToday: false, isTomorrow: false }
+  // all-day events have date-only strings (no T)
+  if (!start.includes('T')) {
+    const dateStr = start
+    const isToday = dateStr === todayStr
+    const tomorrow = new Date(Date.now() + 86400000)
+    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
+    const isTomorrow = dateStr === tomorrowStr
+    return { label: isToday ? 'Today · all day' : isTomorrow ? 'Tomorrow · all day' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), isToday, isTomorrow }
+  }
+  const isToday = start.startsWith(todayStr)
+  const tomorrow = new Date(Date.now() + 86400000)
+  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
+  const isTomorrow = start.startsWith(tomorrowStr)
+  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+  if (isToday) return { label: `Today · ${timeStr}`, isToday: true, isTomorrow: false }
+  if (isTomorrow) return { label: `Tomorrow · ${timeStr}`, isToday: false, isTomorrow: true }
+  return { label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + timeStr, isToday: false, isTomorrow: false }
+}
 
 function Dots() {
   return (
@@ -133,6 +162,8 @@ export default function HomeContent({
   const [chapter,     setChapter]     = useState<string | null>(null)
   const [noteLoading, setNoteLoading] = useState(true)
   const [tradingSnap, setTradingSnap] = useState<TradingSnap | null>(null)
+  const [calEvents,   setCalEvents]   = useState<CalEvent[]>([])
+  const [calConnected, setCalConnected] = useState<boolean | null>(null)
   const [voiceListening, setVoiceListening] = useState(false)
   const homeRecRef       = useRef<HomeSpeechRec | null>(null)
   const homeVoiceBaseRef = useRef('')
@@ -218,6 +249,17 @@ export default function HomeContent({
       const totalPnl = netWorth - SEED
       setTradingSnap({ netWorth, totalPnl, totalPnlPct: (totalPnl / SEED) * 100, openPositions: positions.length, totalTrades: data.totalTrades ?? 0 })
     }).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetch('/api/calendar/events')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return
+        setCalConnected(data.connected ?? false)
+        setCalEvents((data.events ?? []).slice(0, 5))
+      })
+      .catch(() => { setCalConnected(false) })
   }, [])
 
   useEffect(() => {
@@ -561,6 +603,45 @@ export default function HomeContent({
               </W>
             </div>
 
+            {/* Calendar & Upcoming events — center column prominence */}
+            <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')} className="w-full">
+              {calConnected === false ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 2px' }}>No calendar connected</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Link Google Calendar to see what&apos;s coming up today</p>
+                  </div>
+                  <button onClick={(e) => { e.stopPropagation(); setSidebarView('calendar') }}
+                    style={{ fontSize: 10, fontWeight: 700, padding: '4px 12px', background: '#6366F1', color: '#fff', border: 'none', borderRadius: 99, cursor: 'pointer', flexShrink: 0 }}>
+                    Connect →
+                  </button>
+                </div>
+              ) : calConnected === null ? (
+                <Dots />
+              ) : calEvents.length === 0 ? (
+                <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>Nothing on the calendar — you&apos;re clear ✓</p>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '6px 16px' }}>
+                  {calEvents.map((ev, i) => {
+                    const { label, isToday, isTomorrow } = formatEventTime(ev.start, todayStr)
+                    const dotColor = isToday ? '#6366F1' : isTomorrow ? AMBER : 'var(--border-2)'
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0, marginTop: 4 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
+                          <p style={{ fontSize: 10, color: isToday ? '#6366F1' : 'var(--text-3)', margin: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Clock size={8} />
+                            {label}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </W>
+
             {/* Trading — full width */}
             <W accent={pnlColor} icon={tradingSnap && pnlPositive ? TrendingUp : TrendingDown}
               label="Trading Portfolio" onClick={() => setSidebarView('trading')}
@@ -742,6 +823,43 @@ export default function HomeContent({
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>
             </W>
 
+            {/* Calendar & Reminders */}
+            <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
+              {calConnected === false ? (
+                <>
+                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>No calendar linked</p>
+                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.5 }}>Connect Google Calendar to see events here</p>
+                  <button onClick={(e) => { e.stopPropagation(); setSidebarView('calendar') }}
+                    style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', background: '#6366F115', color: '#6366F1', border: '1px solid #6366F130', borderRadius: 99, cursor: 'pointer' }}>
+                    Connect →
+                  </button>
+                </>
+              ) : calConnected === null ? (
+                <Dots />
+              ) : calEvents.length === 0 ? (
+                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>Nothing scheduled — clear ahead ✓</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {calEvents.map((ev, i) => {
+                    const { label, isToday, isTomorrow } = formatEventTime(ev.start, todayStr)
+                    const dotColor = isToday ? '#6366F1' : isTomorrow ? AMBER : 'var(--border-2)'
+                    return (
+                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0, marginTop: 4 }} />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
+                          <p style={{ fontSize: 10, color: isToday ? '#6366F1' : 'var(--text-3)', margin: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <Clock size={8} />
+                            {label}
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </W>
+
             {/* Reminders */}
             <W accent="#F97316" icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Never miss it</p>
@@ -818,6 +936,32 @@ export default function HomeContent({
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Smart nudges</p>
             </W>
           </div>
+
+          {/* Calendar (mobile) */}
+          <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
+            {calConnected === false ? (
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>No calendar linked — tap to connect</p>
+            ) : calConnected === null ? (
+              <Dots />
+            ) : calEvents.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>Nothing scheduled — clear ahead ✓</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                {calEvents.slice(0, 3).map((ev, i) => {
+                  const { label, isToday } = formatEventTime(ev.start, todayStr)
+                  return (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? '#6366F1' : 'var(--border-2)', flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
+                        <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{label}</p>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </W>
         </div>
 
       </div>
