@@ -341,13 +341,29 @@ export async function rankSignalsEnriched(
   const scored = assets.map((asset) => ({ asset, s1: stage1Score(asset) }))
 
   const longPool = new Map<string, AssetData>()
+
+  // 1. Strong stage-1 longs first (trending assets)
   for (const { asset, s1 } of scored.filter((x) => x.s1 > 0).sort((a, b) => b.s1 - a.s1)) {
     if (longPool.size >= topN) break
     longPool.set(asset.symbol, asset)
   }
+
+  // 2. Also enrich momentum candidates (might have missed on 24h filter)
   for (const asset of assets) {
-    if (longPool.size >= topN + 2) break
+    if (longPool.size >= topN) break
     if (isMomentumCandidate(asset) && !longPool.has(asset.symbol)) {
+      longPool.set(asset.symbol, asset)
+    }
+  }
+
+  // 3. CRITICAL: fill remaining slots with ALL crypto/forex regardless of stage-1 score.
+  //    VWAP_LONG requires 1m candles to compute VWAP — it CANNOT fire without enrichment.
+  //    On quiet market days (most crypto flat, stage1=0) the pool above is empty
+  //    and VWAP_LONG never fires. Always enrich crypto/forex up to topN so the
+  //    intraday VWAP signal always has data to work with.
+  for (const asset of assets) {
+    if (longPool.size >= topN) break
+    if ((asset.assetType === 'crypto' || asset.assetType === 'forex') && !longPool.has(asset.symbol)) {
       longPool.set(asset.symbol, asset)
     }
   }
@@ -364,7 +380,13 @@ export async function rankSignalsEnriched(
     }
   }
 
-  const toEnrich = [...longPool.values(), ...shortPool.values()]
+  // Deduplicate across pools — no need to fetch candles twice for the same symbol
+  const seen = new Set<string>()
+  const toEnrich: AssetData[] = []
+  for (const asset of [...longPool.values(), ...shortPool.values()]) {
+    if (!seen.has(asset.symbol)) { seen.add(asset.symbol); toEnrich.push(asset) }
+  }
+
   const enriched = await Promise.allSettled(toEnrich.map((asset) => scoreAssetFull(asset)))
 
   const out: Signal[] = []
