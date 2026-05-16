@@ -32,7 +32,7 @@ export default function HomeWidgetShell({
   dragAttributes?: any
 }) {
   if (!editMode) {
-    return <div className={className}>{children}</div>
+    return <div className={className} style={{ height: '100%' }}>{children}</div>
   }
 
   return (

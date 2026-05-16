@@ -223,6 +223,13 @@ export async function scoreAssetFull(asset: AssetData): Promise<Signal> {
     score    = s2.score
     reasons  = s2.reasons
     setupTag = s2.setupTag
+
+    // No named setup after full indicator pass = no identifiable edge.
+    // Force score to 0 so this asset never clears filterLongEntries/filterShortEntries.
+    if (setupTag === 'UNTAGGED') {
+      score = 0
+      reasons = [...reasons, 'No setup tag after stage2 — skipping']
+    }
   } else {
     // No candles — fall back to 24h-only logic
     reasons  = [`24h change ${asset.change24h.toFixed(2)}% (no candles)`]
@@ -361,7 +368,8 @@ export async function rankSignalsEnriched(
 export function filterLongEntries(signals: Signal[]): Signal[] {
   return signals
     .filter((s) => s.score >= getMinLongScore(s.setupTag))
-    .filter((s) => s.setupTag !== 'UNTAGGED' || s.indicators !== null)
+    .filter((s) => s.setupTag !== 'UNTAGGED')                                           // no named setup = no edge = no trade
+    .filter((s) => !s.indicators || s.indicators.volSpike > 0.3)                        // require real volume confirmation
     .filter((s) => !(s.setupTag === 'MEAN_REVERT' && s.asset.change24h < -10))
     .filter((s) => !(s.indicators && s.indicators.rsi > 76 && s.setupTag !== 'MOMENTUM_LONG'))
     .sort((a, b) => b.score - a.score)
@@ -371,7 +379,8 @@ export function filterLongEntries(signals: Signal[]): Signal[] {
 export function filterShortEntries(signals: Signal[]): Signal[] {
   return signals
     .filter((s) => s.score <= MIN_SHORT_SCORE)
-    .filter((s) => s.setupTag !== 'UNTAGGED' || s.indicators !== null)
+    .filter((s) => s.setupTag !== 'UNTAGGED')                  // no named setup = no trade
+    .filter((s) => !s.indicators || s.indicators.volSpike > 0.3)
     .filter((s) => !(s.indicators && s.indicators.rsi < 28))
     .sort((a, b) => a.score - b.score)
 }

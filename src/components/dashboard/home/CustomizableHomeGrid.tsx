@@ -64,8 +64,9 @@ function SortableItem({
         transform: CSS.Transform.toString(transform),
         transition,
         opacity: isDragging ? 0.45 : 1,
+        height: '100%',         // fill the grid cell so stretch alignment works end-to-end
       }}
-      className={className}
+      className={`${className} wsize-${size}`}
     >
       <HomeWidgetShell
         id={id}

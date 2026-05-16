@@ -135,6 +135,8 @@ export function calculateEMA(data: number[], period: number): number {
 export function volumeSpike(volumes: number[]): number {
   if (volumes.length < 3) return 1.0
   const current = volumes[volumes.length - 1]
+  // If the current (live) candle has zero volume it may just be the candle-open moment — treat as neutral
+  if (current === 0) return 1.0
   const prior   = volumes.slice(0, -1)             // exclude current bar from MA
   const ma      = prior.slice(-20).reduce((a, b) => a + b, 0) / Math.min(20, prior.length)
   if (ma === 0) return 1.0

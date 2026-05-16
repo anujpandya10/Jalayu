@@ -69,6 +69,7 @@ function W({
       style={{
         display: 'block',
         width: '100%',
+        height: '100%',          // fill grid cell so background covers full size-tier height
         textAlign: 'left',
         background: 'var(--surface)',
         border: '1px solid var(--border)',
@@ -77,6 +78,7 @@ function W({
         cursor: onClick ? 'pointer' : 'default',
         position: 'relative',
         overflow: 'hidden',
+        boxSizing: 'border-box',
       } as React.CSSProperties}
     >
       <div
@@ -245,6 +247,8 @@ export function renderHomeWidget(
             border: '1px solid var(--border)',
             borderRadius: 20,
             padding: compact ? '14px 14px 12px' : '20px 18px 16px',
+            height: '100%',
+            boxSizing: 'border-box',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
@@ -286,7 +290,7 @@ export function renderHomeWidget(
 
     case 'morning_note':
       return (
-        <div style={{ background: 'var(--morning)', border: `1px solid ${AMBER}28`, borderRadius: 18, padding: compact ? '10px 12px' : '14px 16px', boxShadow: `0 0 20px ${AMBER}0A` }}>
+        <div style={{ background: 'var(--morning)', border: `1px solid ${AMBER}28`, borderRadius: 18, padding: compact ? '10px 12px' : '14px 16px', boxShadow: `0 0 20px ${AMBER}0A`, height: '100%', boxSizing: 'border-box' }}>
           {!compact && <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px' }}>✦ From Jalayu</p>}
           {ctx.noteLoading ? (
             <Dots />
@@ -314,7 +318,7 @@ export function renderHomeWidget(
 
     case 'ask_jalayu':
       return (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: compact ? '10px 12px' : '14px 16px' }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: compact ? '10px 12px' : '14px 16px', height: '100%', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: compact ? 6 : 10 }}>
             <div style={{ width: 22, height: 22, borderRadius: 6, background: `${AMBER}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Zap size={11} color={AMBER} />
@@ -394,7 +398,7 @@ export function renderHomeWidget(
 
     case 'quote':
       return (
-        <div style={{ background: `linear-gradient(135deg, ${AMBER}12 0%, transparent 60%)`, border: `1px solid ${AMBER}28`, borderRadius: 18, padding: compact ? '10px 12px' : '14px 18px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ background: `linear-gradient(135deg, ${AMBER}12 0%, transparent 60%)`, border: `1px solid ${AMBER}28`, borderRadius: 18, padding: compact ? '10px 12px' : '14px 18px', position: 'relative', overflow: 'hidden', height: '100%', boxSizing: 'border-box' }}>
           {!compact && <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px', textAlign: 'center' }}>✦ Daily Inspiration</p>}
           <p style={{
             fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic',

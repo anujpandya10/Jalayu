@@ -413,7 +413,10 @@ export default function HomeContent({
           box-sizing: border-box;
         }
         @media (max-width: 767px) {
-          .home-outer { padding-top: 16px; padding-bottom: 16px; }
+          .home-outer { padding-top: 16px; padding-bottom: 16px; padding-left: 12px; padding-right: 12px; }
+          /* Show actionable widgets (tasks/schedule) BEFORE the identity/note column on phones */
+          .home-3col > div:nth-child(1) { order: 2; }
+          .home-3col > div:nth-child(2) { order: 1; }
         }
         .home-3col {
           display: grid;
@@ -451,14 +454,24 @@ export default function HomeContent({
           display: grid;
           grid-template-columns: 1fr 1fr;
           gap: 12px;
-          align-items: start;
+          align-items: stretch; /* stretch so side-by-side cards always match height */
         }
         .widget-span-full { grid-column: 1 / -1; }
-        .widget-span-half { grid-column: span 1; min-width: 0; }
+        .widget-span-half { grid-column: span 1; min-width: 0; display: flex; flex-direction: column; }
         @media (max-width: 420px) {
           .widget-grid-col { grid-template-columns: 1fr; }
           .widget-span-half { grid-column: 1 / -1; }
         }
+
+        /* Unified size tiers — every widget of the same size is at least this tall */
+        .wsize-small  { min-height: 108px; }
+        .wsize-medium { min-height: 158px; }
+        .wsize-large  { min-height: 220px; }
+
+        /* Cards fill their grid cell so the background/border covers the full height */
+        .wsize-small  > *,
+        .wsize-medium > *,
+        .wsize-large  > * { height: 100%; }
 
         /* widget inner grid */
         .w2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; }
