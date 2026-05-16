@@ -150,6 +150,31 @@ export default function LandingPage() {
           transition: opacity 0.22s;
         }
         .feat-card:hover::before { opacity: 1; }
+        .land-footer {
+          background: linear-gradient(180deg, transparent 0%, rgba(0, 201, 167, 0.04) 100%);
+        }
+        .land-footer-tagline {
+          font-size: 13px;
+          color: rgba(255, 255, 255, 0.72);
+          margin: 0;
+          letter-spacing: 0.02em;
+        }
+        .land-footer-link {
+          font-size: 13px;
+          font-weight: 500;
+          color: rgba(167, 243, 232, 0.95);
+          text-decoration: none;
+          transition: color 0.15s;
+        }
+        .land-footer-link:hover {
+          color: #00C9A7;
+        }
+        .land-bottom-muted {
+          color: rgba(255, 255, 255, 0.68);
+        }
+        .land-bottom-subtle {
+          color: rgba(255, 255, 255, 0.55);
+        }
         .nav-signin {
           color: rgba(255,255,255,0.65);
           font-size: 13px;
@@ -340,7 +365,7 @@ export default function LandingPage() {
             <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 22, fontWeight: 800, color: '#4ADE80', lineHeight: 1 }}>$547.20</div>
-                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginTop: 2 }}>+9.4% · paper trading</div>
+                <div className="land-bottom-subtle" style={{ fontSize: 11, marginTop: 2 }}>+9.4% · paper trading</div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {['+$4.20', '+$1.88', '-$0.60', '+$3.11'].map((p, i) => (
@@ -360,7 +385,7 @@ export default function LandingPage() {
             <h2 style={{ fontSize: 'clamp(26px, 3.5vw, 40px)', fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1.2, margin: '0 0 18px' }}>
               Open. Read. Answer one question. Surface.
             </h2>
-            <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.48)', lineHeight: 1.8, margin: '0 0 28px' }}>
+            <p className="land-bottom-muted" style={{ fontSize: 15, lineHeight: 1.8, margin: '0 0 28px' }}>
               The whole home screen is a conversation. Jalayu speaks first — briefly, with intention. Then asks you one honest question. Your answer sets the current for the day.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -371,7 +396,7 @@ export default function LandingPage() {
               ].map(({ e, t }) => (
                 <div key={t} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                   <span style={{ color: '#00C9A7', flexShrink: 0, marginTop: 1, fontWeight: 700 }}>{e}</span>
-                  <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', lineHeight: 1.65 }}>{t}</span>
+                  <span className="land-bottom-muted" style={{ fontSize: 14, lineHeight: 1.65 }}>{t}</span>
                 </div>
               ))}
             </div>
@@ -385,8 +410,8 @@ export default function LandingPage() {
               &ldquo;You kept your streak alive through a tough week. The goal you set isn&apos;t far — today feels like the day to close the gap.&rdquo;
             </p>
             <div style={{ borderTop: '1px solid rgba(0,201,167,0.12)', paddingTop: 16, marginBottom: 16 }}>
-              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: '0 0 8px' }}>What does today need to be about?</p>
-              <div style={{ background: 'rgba(0,201,167,0.06)', border: '1px solid rgba(0,201,167,0.2)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'rgba(255,255,255,0.45)', fontStyle: 'italic' }}>
+              <p className="land-bottom-subtle" style={{ fontSize: 12, margin: '0 0 8px', fontWeight: 600 }}>What does today need to be about?</p>
+              <div style={{ background: 'rgba(0,201,167,0.06)', border: '1px solid rgba(0,201,167,0.2)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'rgba(255,255,255,0.7)', fontStyle: 'italic' }}>
                 deep work, no distractions…
               </div>
             </div>
@@ -394,7 +419,7 @@ export default function LandingPage() {
               {['Review Q2 goals', 'Call with team at 3pm', 'Journal before sleep'].map(t => (
                 <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div style={{ width: 13, height: 13, borderRadius: '50%', border: '1.5px solid rgba(0,201,167,0.3)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{t}</span>
+                  <span className="land-bottom-muted" style={{ fontSize: 13 }}>{t}</span>
                 </div>
               ))}
             </div>
@@ -412,7 +437,7 @@ export default function LandingPage() {
           Your mornings are<br />
           <span style={{ color: '#00C9A7' }}>worth protecting.</span>
         </h2>
-        <p style={{ fontSize: 16, color: 'rgba(255,255,255,0.4)', lineHeight: 1.7, maxWidth: 420, margin: '0 auto 44px' }}>
+        <p className="land-bottom-muted" style={{ fontSize: 16, lineHeight: 1.7, maxWidth: 420, margin: '0 auto 44px' }}>
           Free to start. No credit card. Just a better way to begin each day — from the depths up.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
@@ -422,14 +447,14 @@ export default function LandingPage() {
       </section>
 
       {/* ── FOOTER ───────────────────────────────────────────────────────────── */}
-      <footer style={{ position: 'relative', zIndex: 1, padding: '28px 24px', borderTop: '1px solid rgba(0,201,167,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+      <footer className="land-footer" style={{ position: 'relative', zIndex: 1, padding: '32px 24px 36px', borderTop: '1px solid rgba(0,201,167,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
         <JalayuLogo size={22} light />
-        <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.18)', margin: 0 }}>
+        <p className="land-footer-tagline">
           Jalayu — जलायु — life in motion.
         </p>
-        <div style={{ display: 'flex', gap: 20 }}>
-          <Link href="/login"  style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', textDecoration: 'none' }}>Sign in</Link>
-          <Link href="/signup" style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', textDecoration: 'none' }}>Sign up</Link>
+        <div style={{ display: 'flex', gap: 24 }}>
+          <Link href="/login" className="land-footer-link">Sign in</Link>
+          <Link href="/signup" className="land-footer-link">Sign up</Link>
         </div>
       </footer>
 
