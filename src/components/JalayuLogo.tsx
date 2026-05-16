@@ -17,13 +17,15 @@
 interface Props {
   markOnly?: boolean
   size?: number
+  /** Use on dark backgrounds — makes "Jala" white instead of near-black */
+  light?: boolean
 }
 
 const TEAL       = '#00C9A7'
 const TEAL_DARK  = '#009B83'
 const TEAL_LIGHT = '#67E8F9'
 
-export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
+export default function JalayuLogo({ markOnly = false, size = 28, light = false }: Props) {
   const s = size / 28
 
   return (
@@ -171,7 +173,7 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
               fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif',
             }}
           >
-            <span style={{ fontWeight: 600, color: '#1C1917' }}>
+            <span style={{ fontWeight: 600, color: light ? 'rgba(255,255,255,0.92)' : '#1C1917' }}>
               Jala
             </span>
             <span style={{ fontWeight: 700, color: TEAL, letterSpacing: '-0.01em' }}>

@@ -231,7 +231,7 @@ export default function LandingPage() {
 
       {/* ── NAV ──────────────────────────────────────────────────────────────── */}
       <nav style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100, padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(0,201,167,0.08)', backdropFilter: 'blur(20px)', background: 'rgba(2,12,22,0.7)' }}>
-        <JalayuLogo size={30} />
+        <JalayuLogo size={30} light />
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
           <Link href="/login" className="nav-signin">Sign in</Link>
           <Link href="/signup" style={{ background: 'linear-gradient(135deg, #009B83, #00C9A7)', color: '#020C16', fontSize: 13, fontWeight: 700, padding: '7px 18px', borderRadius: 99, textDecoration: 'none', boxShadow: '0 2px 16px rgba(0,201,167,0.4)', transition: 'opacity 0.15s, box-shadow 0.15s' }}>
@@ -248,7 +248,7 @@ export default function LandingPage() {
 
         {/* Logo — large, floating */}
         <div style={{ marginBottom: 32, animation: 'depthFloat 7s ease-in-out infinite' }}>
-          <JalayuLogo size={76} />
+          <JalayuLogo size={76} light />
         </div>
 
         {/* Eyebrow */}
@@ -406,7 +406,7 @@ export default function LandingPage() {
       <section style={{ position: 'relative', zIndex: 1, padding: '100px 24px', textAlign: 'center', borderTop: '1px solid rgba(0,201,167,0.07)' }}>
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, height: 400, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(0,201,167,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ marginBottom: 28, animation: 'depthFloat 6s ease-in-out infinite' }}>
-          <JalayuLogo size={56} />
+          <JalayuLogo size={56} light />
         </div>
         <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1.12, margin: '0 0 16px' }}>
           Your mornings are<br />
@@ -423,7 +423,7 @@ export default function LandingPage() {
 
       {/* ── FOOTER ───────────────────────────────────────────────────────────── */}
       <footer style={{ position: 'relative', zIndex: 1, padding: '28px 24px', borderTop: '1px solid rgba(0,201,167,0.07)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-        <JalayuLogo size={22} />
+        <JalayuLogo size={22} light />
         <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.18)', margin: 0 }}>
           Jalayu — जलायु — life in motion.
         </p>

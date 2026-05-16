@@ -86,7 +86,7 @@ export default function SignupPage() {
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ display: 'inline-block', marginBottom: 16 }}>
-            <JalayuLogo size={48} />
+            <JalayuLogo size={48} light />
           </div>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', margin: 0, letterSpacing: '0.04em' }}>
             your morning companion
