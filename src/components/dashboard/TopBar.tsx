@@ -36,8 +36,29 @@ export default function TopBar() {
         flexShrink: 0,
       }}
     >
-      {/* Brand logo */}
-      <JalayuLogo size={28} />
+      {/* Left spacer — balances the hamburger so the logo stays truly centered */}
+      <div style={{ width: 32, flexShrink: 0 }} />
+
+      {/* Brand logo — absolutely centered, tappable to go home */}
+      <button
+        type="button"
+        onClick={() => setSidebarView('dashboard')}
+        style={{
+          position: 'absolute',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          padding: '4px 8px',
+          borderRadius: 10,
+          display: 'flex',
+          alignItems: 'center',
+        }}
+        aria-label="Go to home"
+      >
+        <JalayuLogo size={36} />
+      </button>
 
       {/* Right: hamburger menu */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
