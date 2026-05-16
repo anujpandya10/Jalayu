@@ -16,6 +16,14 @@ export interface Profile {
   streak_count: number
   last_active: string | null
   preferred_language: string | null  // BCP-47, e.g. 'en', 'es', 'hi', 'ar'
+  phone: string | null
+  contact_email: string | null
+  address_line1: string | null
+  address_line2: string | null
+  city: string | null
+  state: string | null
+  postal_code: string | null
+  country: string | null
 }
 
 export interface Mood {
@@ -219,5 +227,6 @@ export type SidebarView =
   | 'health'
   | 'trading'
   | 'strategylab'
+  | 'settings'
 
 export type JourneyView = 'day1' | 'day2' | 'day7' | 'day30'

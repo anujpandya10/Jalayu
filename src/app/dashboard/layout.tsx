@@ -6,6 +6,7 @@ import { Loader2 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { todayString, getDayNumber, getJourneyView } from '@/lib/utils'
 import TopBar from '@/components/dashboard/TopBar'
+import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
 import PwaRegister from '@/components/PwaRegister'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
@@ -145,9 +146,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div
+      className="dashboard-shell"
       style={{
         display: 'flex',
-        height: '100vh',
+        height: '100dvh',
         background: 'var(--bg)',
         overflow: 'hidden',
       }}
@@ -168,20 +170,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         {/* Scrollable content */}
-        <main
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            paddingBottom: 16,
-          }}
-        >
+        <main className="dashboard-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
           <PwaRegister />
           {children}
         </main>
-
       </div>
 
-      {/* Chat panel slides in from right on both layouts */}
+      <div className="bottom-nav-shell">
+        <BottomNav />
+      </div>
+
       <ChatPanel />
     </div>
   )

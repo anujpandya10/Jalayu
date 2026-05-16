@@ -36,8 +36,10 @@ export default function TopBar() {
       style={{
         background: 'var(--surface)',
         borderBottom: '1px solid var(--border)',
-        padding: '0 20px',
+        padding: '0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left))',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
         height: 56,
+        minHeight: 'calc(56px + env(safe-area-inset-top, 0px))',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',

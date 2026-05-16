@@ -254,6 +254,9 @@ Today: ${new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long'
 
 ━━━ WHO THEY ARE ━━━
 - Name: ${profile?.nickname || profile?.full_name || 'unknown'}
+- Phone: ${profile?.phone || 'not set'}
+- Email: ${profile?.contact_email || 'not set'}
+- Address: ${[profile?.address_line1, profile?.address_line2, profile?.city, profile?.state, profile?.postal_code, profile?.country].filter(Boolean).join(', ') || 'not set'}
 - Work type: ${profile?.work_type || 'unknown'}
 - Day structure: ${profile?.day_structure || 'unknown'}
 - Peak productive hours: ${profile?.peak_hours || 'unknown'}

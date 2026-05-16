@@ -22,6 +22,7 @@ import HealthView from '@/components/dashboard/views/HealthView'
 import UnifiedCalendarView from '@/components/dashboard/views/UnifiedCalendarView'
 import TradingView from '@/components/dashboard/views/TradingView'
 import StrategyLabView from '@/components/dashboard/views/StrategyLabView'
+import SettingsView from '@/components/dashboard/views/SettingsView'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
 import { applyAiActions } from '@/lib/apply-ai-actions'
 
@@ -423,13 +424,15 @@ export default function DashboardPage() {
         return <TradingView />
       case 'strategylab':
         return <StrategyLabView />
+      case 'settings':
+        return <SettingsView />
       default:
         return null
     }
   })()
 
   return (
-    <div style={{ minHeight: '100%' }}>
+    <div className="dashboard-view-root" style={{ minHeight: '100%', minWidth: 0 }}>
       <Toaster position="top-center" toastOptions={{ style: { borderRadius: 10, fontSize: 13 } }} />
 
       <AnimatePresence mode="wait">
@@ -439,6 +442,7 @@ export default function DashboardPage() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -6 }}
           transition={{ duration: 0.18 }}
+          style={{ minWidth: 0 }}
         >
           {viewContent}
         </motion.div>

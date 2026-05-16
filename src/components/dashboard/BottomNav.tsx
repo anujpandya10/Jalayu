@@ -40,12 +40,14 @@ export default function BottomNav() {
             key={key}
             type="button"
             onClick={() => setSidebarView(view)}
+            className="touch-target"
             style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
+              justifyContent: 'center',
               gap: 3,
-              padding: '4px 14px',
+              padding: '8px 20px',
               borderRadius: 10,
               border: 'none',
               background: 'transparent',
@@ -53,6 +55,7 @@ export default function BottomNav() {
               cursor: 'pointer',
               filter: 'none',
               transition: 'color 0.2s, filter 0.2s',
+              WebkitTapHighlightColor: 'transparent',
             }}
           >
             <Icon size={20} />

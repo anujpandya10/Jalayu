@@ -98,7 +98,15 @@ export default function MemoryView({
   }
 
   return (
-    <div className="memory-view" style={{ padding: '16px 14px' }}>
+    <div
+      className="memory-view"
+      style={{
+        padding: '16px max(14px, env(safe-area-inset-right)) 20px max(14px, env(safe-area-inset-left))',
+        maxWidth: 640,
+        margin: '0 auto',
+        boxSizing: 'border-box',
+      }}
+    >
       <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Memory</h2>
       <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 16px' }}>
         Reflect on your day, capture thoughts, and browse your life archive.

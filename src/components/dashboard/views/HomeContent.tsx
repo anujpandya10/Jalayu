@@ -5,7 +5,7 @@ import {
   Mic, MicOff, ChevronRight,
   TrendingUp, TrendingDown, Heart,
   BookOpen, Sparkles, Brain,
-  Users, FlaskConical, BarChart2, Zap,
+  Users, FlaskConical, BarChart2, Zap, Target, Settings,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile, Task, Mood, Reminder } from '@/lib/types'
@@ -271,6 +271,15 @@ export default function HomeContent({
   const weekPct    = weekTotal > 0 ? Math.round((weekCompleted / weekTotal) * 100) : 0
 
   const orbState: OrbState = noteLoading ? 'speaking' : (voiceListening || input.trim()) ? 'listening' : 'idle'
+  const [clockSize, setClockSize] = useState(132)
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 420px)')
+    const apply = () => setClockSize(mq.matches ? 108 : 132)
+    apply()
+    mq.addEventListener('change', apply)
+    return () => mq.removeEventListener('change', apply)
+  }, [])
+
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const firstName = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
@@ -416,8 +425,11 @@ export default function HomeContent({
         .home-outer {
           width: 100%; max-width: 1440px;
           margin: 0 auto;
-          padding: 20px 20px 100px;
+          padding: 20px max(16px, env(safe-area-inset-right)) 24px max(16px, env(safe-area-inset-left));
           box-sizing: border-box;
+        }
+        @media (max-width: 767px) {
+          .home-outer { padding-top: 16px; padding-bottom: 16px; }
         }
         .home-3col {
           display: grid;
@@ -454,6 +466,16 @@ export default function HomeContent({
         .w2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; }
         .w2 > * { min-width: 0; }
         .w-full { grid-column: 1 / -1; }
+        @media (max-width: 520px) {
+          .w2 { grid-template-columns: 1fr; }
+        }
+        .reflection-desktop-only { display: none; }
+        .reflection-mobile-only { display: block; }
+        @media (min-width: 1100px) {
+          .reflection-desktop-only { display: block; }
+          .reflection-mobile-only { display: none !important; }
+          .home-right { align-self: stretch; }
+        }
 
         /* scrollable tasks on desktop */
         @media (min-width: 1100px) {
@@ -481,7 +503,9 @@ export default function HomeContent({
               <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '10px 0 8px', letterSpacing: '-0.02em' }}>
                 {greeting}{firstName ? `, ${firstName}` : ''}
               </p>
-              <PorscheClock size={132} />
+              <div className="porsche-clock-wrap">
+                <PorscheClock size={clockSize} />
+              </div>
               {chapter && (
                 <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '3px 0 0', fontStyle: 'italic', opacity: 0.8 }}>
                   {chapter}
@@ -648,10 +672,12 @@ export default function HomeContent({
               </p>
             </div>
 
-            <ReflectionCompact
-              reflection={todayReflection}
-              onOpenReflect={() => setSidebarView('memory')}
-            />
+            <div className="reflection-mobile-only">
+              <ReflectionCompact
+                reflection={todayReflection}
+                onOpenReflect={() => setSidebarView('memory')}
+              />
+            </div>
 
             <div className="w2">
             <W accent={AMBER} icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
@@ -737,6 +763,35 @@ export default function HomeContent({
           ══════════════════════════════════════════ */}
           <div className="home-right" style={{ display: 'none', flexDirection: 'column', gap: 12 }}>
 
+            <div className="reflection-desktop-only">
+              <ReflectionCompact
+                reflection={todayReflection}
+                onOpenReflect={() => setSidebarView('memory')}
+                variant="sidebar"
+              />
+            </div>
+
+            {profile?.biggest_goal && (
+              <W accent={AMBER} icon={Target} label="North star" onClick={() => setSidebarView('settings')}>
+                <p style={{
+                  fontFamily: 'var(--font-lora), Georgia, serif',
+                  fontStyle: 'italic', fontSize: 13, lineHeight: 1.55,
+                  color: 'var(--text)', margin: 0,
+                }}>
+                  {profile.biggest_goal}
+                </p>
+              </W>
+            )}
+
+            <W accent={AMBER} icon={Settings} label="Profile" onClick={() => setSidebarView('settings')}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 2px' }}>
+                {firstName || 'Your details'}
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.45 }}>
+                Name, phone, email & address for smarter AI
+              </p>
+            </W>
+
             {/* Progress */}
             <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -768,7 +823,7 @@ export default function HomeContent({
 
             <W accent={AMBER} icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Second brain</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Notes & insights</p>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Reflect & save notes</p>
             </W>
           </div>
 
@@ -788,10 +843,10 @@ export default function HomeContent({
             </div>
           </W>
 
-          <ReflectionCompact
-            reflection={todayReflection}
-            onOpenReflect={() => setSidebarView('memory')}
-          />
+          <W accent={AMBER} icon={Settings} label="Profile" onClick={() => setSidebarView('settings')}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 2px' }}>Your details</p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Phone, email & address for AI</p>
+          </W>
 
           <ExploreLinks
             items={[
