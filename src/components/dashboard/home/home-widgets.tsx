@@ -498,14 +498,21 @@ export function renderHomeWidget(
     case 'trading': {
       const PnlIcon = pnlPositive ? ArrowUpRight : ArrowDownRight
 
-      // Small: P&L change only — the one number that matters
+      // Small: net worth + P&L delta — same pattern as every brokerage app
       if (compact) return (
         <W accent={pnlColor} icon={pnlPositive ? TrendingUp : TrendingDown} label="Trading" onClick={() => ctx.setSidebarView('trading')}>
-          <p style={{ fontSize: 26, fontWeight: 800, color: pnlColor, margin: '0 0 2px', lineHeight: 1 }}>
-            {snap ? `${pnlPositive ? '+' : ''}$${Math.abs(snap.totalPnl).toFixed(2)}` : '—'}
+          {/* Total portfolio value */}
+          <p style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1 }}>
+            {snap ? `$${snap.netWorth.toFixed(2)}` : '—'}
           </p>
-          <p style={{ fontSize: 11, color: pnlPositive ? '#16A34A' : '#DC2626', margin: 0, fontWeight: 600 }}>
-            {snap ? `${pnlPositive ? '+' : ''}${snap.totalPnlPct.toFixed(2)}%` : ''}
+          {/* P&L with correct sign — e.g. "-$0.24 (-0.05%)" or "+$1.20 (+0.24%)" */}
+          <p style={{ fontSize: 11, color: pnlColor, margin: 0, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 3 }}>
+            {snap ? (
+              <>
+                <span>{pnlPositive ? '+' : '−'}${Math.abs(snap.totalPnl).toFixed(2)}</span>
+                <span style={{ opacity: 0.75 }}>({pnlPositive ? '+' : ''}{snap.totalPnlPct.toFixed(2)}%)</span>
+              </>
+            ) : null}
           </p>
         </W>
       )
@@ -526,10 +533,10 @@ export function renderHomeWidget(
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
                 <PnlIcon size={14} color={pnlColor} />
                 <p style={{ fontSize: 20, fontWeight: 700, color: pnlColor, margin: 0 }}>
-                  ${Math.abs(snap?.totalPnl ?? 0).toFixed(2)}
+                  {pnlPositive ? '+' : '−'}${Math.abs(snap?.totalPnl ?? 0).toFixed(2)}
                 </p>
               </div>
-              <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '1px 0 0', textAlign: 'right' }}>
+              <p style={{ fontSize: 10, color: pnlColor, margin: '1px 0 0', textAlign: 'right', opacity: 0.75 }}>
                 {snap ? `${pnlPositive ? '+' : ''}${snap.totalPnlPct.toFixed(2)}%` : ''}
               </p>
             </div>
@@ -553,10 +560,10 @@ export function renderHomeWidget(
               <div style={{ display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-end' }}>
                 <PnlIcon size={14} color={pnlColor} />
                 <p style={{ fontSize: 18, fontWeight: 700, color: pnlColor, margin: 0 }}>
-                  ${Math.abs(snap?.totalPnl ?? 0).toFixed(2)}
+                  {pnlPositive ? '+' : '−'}${Math.abs(snap?.totalPnl ?? 0).toFixed(2)}
                 </p>
               </div>
-              <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '1px 0 0' }}>
+              <p style={{ fontSize: 10, color: pnlColor, margin: '1px 0 0', opacity: 0.75 }}>
                 {snap ? `${pnlPositive ? '+' : ''}${snap.totalPnlPct.toFixed(2)}% all-time` : ''}
               </p>
             </div>
