@@ -38,6 +38,20 @@ const CRYPTO_LIST: { id: string; symbol: string; name: string }[] = [
   { id: 'near',          symbol: 'NEAR', name: 'NEAR'      },
 ]
 
+// ── Liquid large-cap stocks + ETFs — steady signals during US session ─────────
+const LARGE_CAP_STOCKS: { symbol: string; name: string }[] = [
+  { symbol: 'AAPL',  name: 'Apple Inc.' },
+  { symbol: 'MSFT',  name: 'Microsoft' },
+  { symbol: 'NVDA',  name: 'NVIDIA' },
+  { symbol: 'TSLA',  name: 'Tesla' },
+  { symbol: 'AMZN',  name: 'Amazon' },
+  { symbol: 'META',  name: 'Meta Platforms' },
+  { symbol: 'GOOGL', name: 'Alphabet' },
+  { symbol: 'AMD',   name: 'AMD' },
+  { symbol: 'SPY',   name: 'S&P 500 ETF' },
+  { symbol: 'QQQ',   name: 'Nasdaq 100 ETF' },
+]
+
 // ── Pump-and-dump watch stocks (historically volatile) ────────────────────────
 const PUMP_WATCH_STOCKS: { symbol: string; name: string }[] = [
   { symbol: 'GME',  name: 'GameStop' },
@@ -257,11 +271,12 @@ export async function getAllAssets(): Promise<AssetData[]> {
   const premarket = isPremarket()
 
   if (marketOpen || premarket) {
-    // Fetch pump-watch stocks during market hours and premarket
-    const pumpSettled = await Promise.allSettled(
-      PUMP_WATCH_STOCKS.map(({ symbol, name }) => fetchStockPrice(symbol, name))
+    // Fetch large-cap + pump-watch stocks in parallel
+    const stocksToFetch = [...LARGE_CAP_STOCKS, ...PUMP_WATCH_STOCKS]
+    const stockSettled = await Promise.allSettled(
+      stocksToFetch.map(({ symbol, name }) => fetchStockPrice(symbol, name))
     )
-    for (const r of pumpSettled) {
+    for (const r of stockSettled) {
       if (r.status === 'fulfilled' && r.value) results.push(r.value)
     }
 
@@ -280,7 +295,8 @@ export async function getAllAssets(): Promise<AssetData[]> {
   }
 
   const forexCount = results.filter((a) => a.assetType === 'forex').length
-  console.log(`[market-data] fetched ${results.length} assets (${crypto.length} crypto, ${forexCount} forex, market=${marketOpen}, premarket=${premarket})`)
+  const stockCount = results.filter((a) => a.assetType === 'stock').length
+  console.log(`[market-data] fetched ${results.length} assets (${crypto.length} crypto, ${stockCount} stocks, ${forexCount} forex, market=${marketOpen}, premarket=${premarket})`)
   return results
 }
 

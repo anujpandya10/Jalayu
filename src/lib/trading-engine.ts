@@ -2,7 +2,7 @@
  * Shared paper-trading engine — used by /api/trading/tick (dashboard) and /api/cron/trading (24/7).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getAllAssets, type AssetData } from '@/lib/market-data'
+import { getAllAssets, fetchStockPrice, isUsMarketOpen, isPremarket, type AssetData } from '@/lib/market-data'
 import { rankLongs, rankShorts, rankSignalsEnriched, type Signal } from '@/lib/trading-signals'
 import { getCurrentPhase, type PhaseInfo } from '@/lib/trading-phase'
 import {
@@ -158,11 +158,35 @@ export async function runTradingTick(
   let cash = Number(portfolio.cash)
   let tradesExecuted = 0
 
-  const assets = options.assets ?? await getAllAssets()
+  const baseAssets = options.assets ?? await getAllAssets()
+
+  // ── Merge user's personal watchlist (stocks only, during market/premarket) ──
+  const assets = [...baseAssets]
+  if (isUsMarketOpen() || isPremarket()) {
+    const { data: watchlistRows } = await supabase
+      .from('trading_watchlist')
+      .select('symbol, name')
+      .eq('user_id', userId)
+
+    if (watchlistRows && watchlistRows.length > 0) {
+      const existingSymbols = new Set(assets.map((a) => a.symbol))
+      const toFetch = watchlistRows.filter((r: { symbol: string }) => !existingSymbols.has(r.symbol))
+      if (toFetch.length > 0) {
+        const fetched = await Promise.allSettled(
+          toFetch.map((r: { symbol: string; name: string }) => fetchStockPrice(r.symbol, r.name ?? r.symbol))
+        )
+        for (const r of fetched) {
+          if (r.status === 'fulfilled' && r.value) assets.push(r.value)
+        }
+      }
+    }
+  }
+
   const priceMap    = new Map(assets.map((a) => [a.symbol, a.price]))
   const assetTypeMap = new Map(assets.map((a) => [a.symbol, a.assetType]))
   const pumpCandidates = assets.filter((a) => a.isPumpCandidate).length
-  const forexCount = assets.filter((a) => a.assetType === 'forex').length
+  const stockCount  = assets.filter((a) => a.assetType === 'stock').length
+  const forexCount  = assets.filter((a) => a.assetType === 'forex').length
 
   // ── Enriched signals: run indicator scoring on top candidates ─────────────
   // Enriches top 3 longs + top 3 shorts with 1m candles (Binance/Yahoo)
@@ -171,7 +195,7 @@ export async function runTradingTick(
 
   events.push({
     type: 'SCAN', symbol: '', name: '', price: 0, direction: 'LONG',
-    reason: `[${phaseInfo.emoji} ${phaseInfo.label}] Scanned ${assets.length} assets · ${pumpCandidates} pumps · ${forexCount} forex`,
+    reason: `[${phaseInfo.emoji} ${phaseInfo.label}] Scanned ${assets.length} assets · ${stockCount} stocks · ${pumpCandidates} pumps · ${forexCount} forex`,
     ts: now,
   })
 
