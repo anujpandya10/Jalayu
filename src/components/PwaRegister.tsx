@@ -3,6 +3,11 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
+}
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
@@ -17,9 +22,25 @@ function urlBase64ToUint8Array(base64String: string) {
 export default function PwaRegister() {
   const [ready, setReady] = useState(false)
   const [subscribing, setSubscribing] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
+  const [isInstalled, setIsInstalled] = useState(false)
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'serviceWorker' in navigator) setReady(true)
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+    setReady(true)
+
+    // Detect if already installed as PWA
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setIsInstalled(true)
+    }
+
+    // Capture the install prompt (only fires on mobile/desktop when app is installable)
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e as BeforeInstallPromptEvent)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
   }, [])
 
   const subscribe = async () => {
@@ -68,10 +89,22 @@ export default function PwaRegister() {
     }
   }
 
+  const handleInstall = async () => {
+    if (!installPrompt) return
+    await installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') {
+      setInstallPrompt(null)
+      setIsInstalled(true)
+      toast.success('Jalayu installed ✦')
+    }
+  }
+
   if (!ready) return null
 
   return (
-    <div style={{ padding: '0 14px 10px' }}>
+    <div style={{ padding: '0 14px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+      {/* Notification toggle */}
       <button
         type="button"
         onClick={subscribe}
@@ -88,11 +121,36 @@ export default function PwaRegister() {
           cursor: subscribing ? 'wait' : 'pointer',
         }}
       >
-        {subscribing ? 'Enabling…' : 'Enable reminder notifications (this device)'}
+        {subscribing ? 'Enabling…' : '🔔 Enable reminder notifications'}
       </button>
-      <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '6px 0 0', textAlign: 'center' }}>
-        Install the app (Add to Home Screen) for the best experience.
-      </p>
+
+      {/* Install prompt — only shown when browser has an installable PWA ready */}
+      {installPrompt && !isInstalled && (
+        <button
+          type="button"
+          onClick={handleInstall}
+          style={{
+            width: '100%',
+            padding: '10px 12px',
+            borderRadius: 10,
+            border: '0.5px solid var(--border-2)',
+            background: 'var(--morning)',
+            fontSize: 12,
+            fontWeight: 500,
+            color: 'var(--text-2)',
+            cursor: 'pointer',
+          }}
+        >
+          📲 Add Jalayu to your home screen
+        </button>
+      )}
+
+      {/* Already installed — show confirmation */}
+      {isInstalled && (
+        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, textAlign: 'center' }}>
+          ✓ Running as installed app
+        </p>
+      )}
     </div>
   )
 }

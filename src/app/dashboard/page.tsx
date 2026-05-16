@@ -348,7 +348,7 @@ export default function DashboardPage() {
       case 'calendar':
         return (
           <UnifiedCalendarView
-            tasks={[...tasks, ...tasksRecent]}
+            tasks={[...tasks, ...tasksRecent].filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)}
             reminders={reminders}
             onAddTask={handleAddTask}
             onToggleTask={handleToggleTask}
