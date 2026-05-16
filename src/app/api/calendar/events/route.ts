@@ -74,7 +74,7 @@ export async function GET() {
   const url =
     'https://www.googleapis.com/calendar/v3/calendars/primary/events?' +
     new URLSearchParams({
-      maxResults: '8',
+      maxResults: '50',
       singleEvents: 'true',
       orderBy: 'startTime',
       timeMin,

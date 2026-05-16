@@ -147,12 +147,47 @@ export default function DashboardPage() {
         data: { user },
       } = await supabase.auth.getUser()
       if (!user) return
+
+      let dueDate = todayString()
+      let dueTime: string | null = null
+      if (date) {
+        if (date.includes('T')) {
+          const [d, t] = date.split('T')
+          dueDate = d
+          dueTime = t?.slice(0, 5) || null
+        } else {
+          dueDate = date.slice(0, 10)
+        }
+      }
+
+      if (eventType === 'reminder') {
+        const local = new Date(`${dueDate}T${dueTime || '09:00'}:00`)
+        const { data, error } = await supabase
+          .from('reminders')
+          .insert({
+            user_id: user.id,
+            title,
+            remind_at: local.toISOString(),
+            is_active: true,
+          })
+          .select()
+          .single()
+        if (!error && data) {
+          addReminder(data as Reminder)
+          toast.success('Reminder added ✦')
+        } else {
+          toast.error('Could not save reminder')
+        }
+        return
+      }
+
       const { data, error } = await supabase
         .from('tasks')
         .insert({
           user_id: user.id,
           title,
-          due_date: date || todayString(),
+          due_date: dueDate,
+          due_time: dueTime,
           priority: 'medium',
           event_type: eventType || 'task',
         })
@@ -166,7 +201,7 @@ export default function DashboardPage() {
         toast.error(`Could not save: ${error.message}`)
       }
     },
-    [addTask],
+    [addTask, addReminder],
   )
 
   const handleToggleTask = useCallback(
@@ -332,7 +367,8 @@ export default function DashboardPage() {
             <HomeContent
               journeyView={journeyView}
               profile={profile}
-              tasks={tasks}
+              tasks={[...tasks, ...tasksRecent].filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)}
+              reminders={reminders}
               tasksRecent={tasksRecent}
               todayMood={todayMood}
               notes={notes}
@@ -358,10 +394,13 @@ export default function DashboardPage() {
         )
       case 'reminders':
         return (
-          <RemindersView
+          <UnifiedCalendarView
+            tasks={[...tasks, ...tasksRecent].filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)}
             reminders={reminders}
-            onAdded={(r) => addReminder(r)}
-            onUpdated={(id, u) => updateReminder(id, u)}
+            onAddTask={handleAddTask}
+            onToggleTask={handleToggleTask}
+            onDeleteTask={handleDeleteTask}
+            onEditTask={handleEditTask}
           />
         )
       case 'mind':

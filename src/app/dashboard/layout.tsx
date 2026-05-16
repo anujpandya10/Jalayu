@@ -90,7 +90,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       if (moodsRecentRes.data) setMoodsRecent(moodsRecentRes.data as Mood[])
       if (tasksRecentRes.data) setTasksRecent(tasksRecentRes.data as Task[])
       if (reflectionsRecentRes.data) setReflectionsRecent(reflectionsRecentRes.data as Reflection[])
-      if (healthProfileRes.data) setHealthProfiles(healthProfileRes.data as HealthProfile[])
+      if (healthProfileRes.error) {
+        console.error('[dashboard] health_profiles load:', healthProfileRes.error.message)
+      } else {
+        setHealthProfiles((healthProfileRes.data ?? []) as HealthProfile[])
+      }
       if (medsRes.data) setMedications(medsRes.data as Medication[])
       if (apptRes.data) setHealthAppointments(apptRes.data as HealthAppointment[])
       if (recordsRes.data) setMedicalRecords(recordsRes.data as MedicalRecord[])

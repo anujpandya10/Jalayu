@@ -62,9 +62,21 @@ interface JalayuStore {
   setReflectionsRecent: (r: Reflection[]) => void
   // Health actions
   setHealthProfiles: (h: HealthProfile[]) => void
+  addHealthProfile: (h: HealthProfile) => void
+  updateHealthProfile: (h: HealthProfile) => void
+  removeHealthProfile: (id: string) => void
   setMedications: (m: Medication[]) => void
+  addMedication: (m: Medication) => void
+  updateMedication: (m: Medication) => void
+  removeMedication: (id: string) => void
   setHealthAppointments: (a: HealthAppointment[]) => void
+  addHealthAppointment: (a: HealthAppointment) => void
+  updateHealthAppointment: (a: HealthAppointment) => void
+  removeHealthAppointment: (id: string) => void
   setMedicalRecords: (r: MedicalRecord[]) => void
+  addMedicalRecord: (r: MedicalRecord) => void
+  updateMedicalRecord: (r: MedicalRecord) => void
+  removeMedicalRecord: (id: string) => void
 
   // UI actions
   setSidebarView: (v: SidebarView) => void
@@ -129,9 +141,43 @@ export const useStore = create<JalayuStore>((set) => ({
   setTasksRecent: (tasksRecent) => set({ tasksRecent }),
   setReflectionsRecent: (reflectionsRecent) => set({ reflectionsRecent }),
   setHealthProfiles: (healthProfiles) => set({ healthProfiles }),
+  addHealthProfile: (p) =>
+    set((s) => ({ healthProfiles: [...s.healthProfiles, p] })),
+  updateHealthProfile: (p) =>
+    set((s) => ({
+      healthProfiles: s.healthProfiles.map((x) => (x.id === p.id ? p : x)),
+    })),
+  removeHealthProfile: (id) =>
+    set((s) => ({ healthProfiles: s.healthProfiles.filter((x) => x.id !== id) })),
   setMedications: (medications) => set({ medications }),
+  addMedication: (m) =>
+    set((s) => ({ medications: [m, ...s.medications] })),
+  updateMedication: (m) =>
+    set((s) => ({
+      medications: s.medications.map((x) => (x.id === m.id ? m : x)),
+    })),
+  removeMedication: (id) =>
+    set((s) => ({ medications: s.medications.filter((x) => x.id !== id) })),
   setHealthAppointments: (healthAppointments) => set({ healthAppointments }),
+  addHealthAppointment: (a) =>
+    set((s) => ({ healthAppointments: [a, ...s.healthAppointments] })),
+  updateHealthAppointment: (a) =>
+    set((s) => ({
+      healthAppointments: s.healthAppointments.map((x) => (x.id === a.id ? a : x)),
+    })),
+  removeHealthAppointment: (id) =>
+    set((s) => ({
+      healthAppointments: s.healthAppointments.filter((x) => x.id !== id),
+    })),
   setMedicalRecords: (medicalRecords) => set({ medicalRecords }),
+  addMedicalRecord: (r) =>
+    set((s) => ({ medicalRecords: [r, ...s.medicalRecords] })),
+  updateMedicalRecord: (r) =>
+    set((s) => ({
+      medicalRecords: s.medicalRecords.map((x) => (x.id === r.id ? r : x)),
+    })),
+  removeMedicalRecord: (id) =>
+    set((s) => ({ medicalRecords: s.medicalRecords.filter((x) => x.id !== id) })),
 
   setSidebarView: (sidebarView) => set({ sidebarView }),
   setShowChatPanel: (showChatPanel) => set({ showChatPanel }),

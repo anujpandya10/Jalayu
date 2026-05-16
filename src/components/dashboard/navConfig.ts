@@ -11,7 +11,6 @@ import {
   Puzzle,
   Mic2,
   Brain,
-  Bell,
   Stethoscope,
   FlaskConical,
 } from 'lucide-react'
@@ -28,7 +27,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
     section: 'Main',
     items: [
       { key: 'dashboard', icon: Home, label: 'Home' },
-      { key: 'calendar', icon: CheckSquare, label: 'Today' },
+      { key: 'calendar', icon: CheckSquare, label: 'Calendar' },
       { key: 'memory', icon: BookOpen, label: 'Memory' },
       { key: 'reflect', icon: Sparkles, label: 'Reflect' },
       { key: 'insights', icon: Brain, label: 'Intelligence' },
@@ -43,7 +42,6 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
       { key: 'meetings', icon: Mic2, label: 'Meetings' },
       { key: 'mind', icon: Brain, label: 'My mind' },
       { key: 'people', icon: Users, label: 'People' },
-      { key: 'reminders', icon: Bell, label: 'Reminders' },
       { key: 'widgets', icon: Puzzle, label: 'Widgets', badge: 'new-pill' },
       { key: 'trading', icon: TrendingUp, label: 'Trading', badge: 'new-pill' },
       { key: 'strategylab', icon: FlaskConical, label: 'Strategy Lab', badge: 'new-pill' },

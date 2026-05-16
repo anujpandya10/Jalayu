@@ -3,13 +3,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Mic, MicOff, ChevronRight,
-  TrendingUp, TrendingDown, CheckSquare, Heart,
+  TrendingUp, TrendingDown, Heart,
   BookOpen, Sparkles, Brain, Stethoscope,
-  Users, Bell, FlaskConical, BarChart2, Zap,
-  CalendarDays, Clock,
+  Users, FlaskConical, BarChart2, Zap,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
-import type { Profile, Task, Mood } from '@/lib/types'
+import type { Profile, Task, Mood, Reminder } from '@/lib/types'
+import ScheduleCompact from '@/components/dashboard/ScheduleCompact'
 import { useStore } from '@/store/useStore'
 import { getDayNumber } from '@/lib/utils'
 import GalaxyOrb from '@/components/GalaxyOrb'
@@ -19,11 +19,6 @@ import GalaxyOrb from '@/components/GalaxyOrb'
 interface TradingSnap {
   netWorth: number; totalPnl: number; totalPnlPct: number
   openPositions: number; totalTrades: number
-}
-
-interface CalEvent {
-  title: string
-  start: string | null
 }
 
 declare global {
@@ -116,29 +111,6 @@ function randomQuote(): { text: string; author: string } {
   return QUOTES[Math.floor(Math.random() * QUOTES.length)]
 }
 
-function formatEventTime(start: string | null, todayStr: string): { label: string; isToday: boolean; isTomorrow: boolean } {
-  if (!start) return { label: 'All day', isToday: false, isTomorrow: false }
-  const d = new Date(start)
-  if (Number.isNaN(d.getTime())) return { label: start, isToday: false, isTomorrow: false }
-  // all-day events have date-only strings (no T)
-  if (!start.includes('T')) {
-    const dateStr = start
-    const isToday = dateStr === todayStr
-    const tomorrow = new Date(Date.now() + 86400000)
-    const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
-    const isTomorrow = dateStr === tomorrowStr
-    return { label: isToday ? 'Today · all day' : isTomorrow ? 'Tomorrow · all day' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), isToday, isTomorrow }
-  }
-  const isToday = start.startsWith(todayStr)
-  const tomorrow = new Date(Date.now() + 86400000)
-  const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`
-  const isTomorrow = start.startsWith(tomorrowStr)
-  const timeStr = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-  if (isToday) return { label: `Today · ${timeStr}`, isToday: true, isTomorrow: false }
-  if (isTomorrow) return { label: `Tomorrow · ${timeStr}`, isToday: false, isTomorrow: true }
-  return { label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + timeStr, isToday: false, isTomorrow: false }
-}
-
 function Dots() {
   return (
     <div style={{ display: 'flex', gap: 5, alignItems: 'center', height: 20 }}>
@@ -200,14 +172,15 @@ function W({
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 export default function HomeContent({
-  profile, tasks, tasksRecent = [], todayMood, moodsRecent = [],
+  profile, tasks, reminders = [], tasksRecent = [], todayMood, moodsRecent = [],
   onMoodLog, onAddTask, onToggleTask, onAction,
 }: {
   journeyView?: string; profile: Profile | null; tasks: Task[]
+  reminders?: Reminder[]
   tasksRecent?: Task[]; todayMood: Mood | null; notes?: unknown[]
   moodsRecent?: Mood[]; daysSinceSignup?: number
   onMoodLog: (score: number) => void
-  onAddTask: (title: string) => Promise<void>
+  onAddTask: (title: string, date?: string, eventType?: string) => Promise<void>
   onToggleTask: (task: Task) => Promise<void>
   onAction?: (actions: Array<{ type: string; data: Record<string, unknown>; message: string }>) => void
 }) {
@@ -219,8 +192,6 @@ export default function HomeContent({
   const [chapter,     setChapter]     = useState<string | null>(null)
   const [noteLoading, setNoteLoading] = useState(true)
   const [tradingSnap, setTradingSnap] = useState<TradingSnap | null>(null)
-  const [calEvents,   setCalEvents]   = useState<CalEvent[]>([])
-  const [calConnected, setCalConnected] = useState<boolean | null>(null)
   const [quote] = useState<{ text: string; author: string }>(randomQuote)
   const [voiceListening, setVoiceListening] = useState(false)
   const homeRecRef       = useRef<HomeSpeechRec | null>(null)
@@ -231,21 +202,14 @@ export default function HomeContent({
   const [userAnswer,  setUserAnswer] = useState('')
   const [reply,       setReply]      = useState<Reply | null>(null)
   const [sending,     setSending]    = useState(false)
-  const [addingTask,  setAddingTask] = useState(false)
-  const [newTaskTitle, setNewTaskTitle] = useState('')
   const inputRef   = useRef<HTMLTextAreaElement>(null)
   const replyRef   = useRef<HTMLDivElement>(null)
 
   const dayNumber  = profile ? getDayNumber(profile.created_at) : 1
-  const todayStr   = toLocalDateStr(new Date())
+  const todayStr     = toLocalDateStr(new Date())
   const yesterdayStr = toLocalDateStr(new Date(Date.now() - 86400000))
 
-  const pendingTasks   = tasks.filter((t) => !t.completed)
-  const todayTasks     = pendingTasks.filter((t) => !t.due_date || t.due_date <= todayStr)
-  const futureTasks    = pendingTasks.filter((t) => t.due_date && t.due_date > todayStr)
-  const completedToday = [...tasks, ...tasksRecent].filter(
-    (t) => t.completed && t.completed_at && t.completed_at.startsWith(todayStr)
-  )
+  const pendingTasks = tasks.filter((t) => !t.completed)
   const yesterdayMood  = moodsRecent.find((m) => m.created_at.startsWith(yesterdayStr))
 
   const now2       = new Date()
@@ -307,17 +271,6 @@ export default function HomeContent({
       const totalPnl = netWorth - SEED
       setTradingSnap({ netWorth, totalPnl, totalPnlPct: (totalPnl / SEED) * 100, openPositions: positions.length, totalTrades: data.totalTrades ?? 0 })
     }).catch(() => {})
-  }, [])
-
-  useEffect(() => {
-    fetch('/api/calendar/events')
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => {
-        if (!data) return
-        setCalConnected(data.connected ?? false)
-        setCalEvents((data.events ?? []).slice(0, 5))
-      })
-      .catch(() => { setCalConnected(false) })
   }, [])
 
   useEffect(() => {
@@ -396,13 +349,6 @@ export default function HomeContent({
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
-  function handleAddTask(e: React.FormEvent) {
-    e.preventDefault()
-    const t = newTaskTitle.trim()
-    if (!t) return
-    onAddTask(t).then(() => { setNewTaskTitle(''); setAddingTask(false) }).catch(() => {})
-  }
-
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -428,6 +374,11 @@ export default function HomeContent({
           display: grid;
           grid-template-columns: 1fr;
           gap: 14px;
+        }
+
+        /* Phone / tablet: one schedule block (center), hide desktop task column */
+        @media (max-width: 1099px) {
+          .home-right { display: none !important; }
         }
 
         /* 2-col: tablet */
@@ -650,23 +601,7 @@ export default function HomeContent({
               </p>
             </div>
 
-            {/* Row: Today + Mood */}
-            <div className="w2">
-              <W accent={AMBER} icon={CheckSquare} label="Today" onClick={() => setSidebarView('calendar')}>
-                <p style={{ fontSize: 32, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 3px' }}>
-                  {todayTasks.length}
-                </p>
-                <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
-                  {todayTasks.length === 1 ? 'task left' : 'tasks left'}
-                </p>
-                {completedToday.length > 0 && (
-                  <p style={{ fontSize: 10, color: AMBER, margin: '5px 0 0', fontWeight: 600 }}>
-                    ✓ {completedToday.length} done
-                  </p>
-                )}
-              </W>
-
-              <W accent={AMBER} icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
+            <W accent={AMBER} icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
                 {todayMood ? (
                   <>
                     <p style={{ fontSize: 32, lineHeight: 1, margin: '0 0 3px' }}>{MOOD_EMOJI[todayMood.score]}</p>
@@ -687,8 +622,15 @@ export default function HomeContent({
                     </div>
                   </>
                 )}
-              </W>
-            </div>
+            </W>
+
+            <ScheduleCompact
+              tasks={tasks}
+              reminders={reminders}
+              onAddTask={onAddTask}
+              onToggleTask={onToggleTask}
+              onOpenFullCalendar={() => setSidebarView('calendar')}
+            />
 
             {/* Trading — full width */}
             <W accent={pnlColor} icon={tradingSnap && pnlPositive ? TrendingUp : TrendingDown}
@@ -725,44 +667,6 @@ export default function HomeContent({
               </div>
             </W>
 
-            {/* Row: Upcoming + Reminders */}
-            <div className="w2">
-              <W accent={AMBER} icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
-                {calConnected === false ? (
-                  <>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>No calendar linked</p>
-                    <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.5 }}>Connect Google Calendar</p>
-                    <button onClick={(e) => { e.stopPropagation(); setSidebarView('calendar') }}
-                      style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', background: `${AMBER}15`, color: AMBER, border: `1px solid ${AMBER}30`, borderRadius: 99, cursor: 'pointer' }}>
-                      Connect →
-                    </button>
-                  </>
-                ) : calConnected === null ? (
-                  <Dots />
-                ) : calEvents.length === 0 ? (
-                  <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>Clear ahead ✓</p>
-                ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                    {calEvents.slice(0, 3).map((ev, i) => {
-                      const { label, isToday } = formatEventTime(ev.start, todayStr)
-                      return (
-                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? AMBER : `${AMBER}60`, flexShrink: 0, marginTop: 4 }} />
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
-                            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{label}</p>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </W>
-              <W accent={AMBER} icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>Never miss it</p>
-                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Smart alerts & nudges</p>
-              </W>
-            </div>
 
             {/* Row: Intelligence + People */}
             <div className="w2">
@@ -781,93 +685,10 @@ export default function HomeContent({
           </div>
 
           {/* ═══════════════════════════════════════
-              RIGHT COLUMN — tasks, stats, quick nav
+              RIGHT COLUMN — stats, quick nav
               Hidden on mobile/tablet, shown on desktop
           ══════════════════════════════════════════ */}
           <div className="home-right" style={{ display: 'none', flexDirection: 'column', gap: 12 }}>
-
-            {/* Tasks */}
-            <div style={{
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 18, padding: '14px 16px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 6, background: `${AMBER}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CheckSquare size={11} color={AMBER} />
-                  </div>
-                  <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Today</span>
-                </div>
-                <button onClick={() => setSidebarView('calendar')} style={{ fontSize: 10, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  see all →
-                </button>
-              </div>
-
-              <div className="tasks-scroll">
-                {completedToday.slice(0, 2).map((t) => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7, opacity: 0.4 }}>
-                    <div style={{ width: 14, height: 14, borderRadius: '50%', background: 'var(--border-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M1 3L3 5L7 1" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    </div>
-                    <span style={{ fontSize: 12, color: 'var(--text-3)', textDecoration: 'line-through', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-                  </div>
-                ))}
-
-                {todayTasks.length === 0 && completedToday.length === 0 && !addingTask && (
-                  <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px' }}>Nothing for today yet.</p>
-                )}
-
-                {todayTasks.map((task) => (
-                  <div key={task.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-                    <button onClick={() => onToggleTask(task)} style={{
-                      width: 15, height: 15, borderRadius: '50%', marginTop: 2, flexShrink: 0,
-                      border: `1.5px solid ${task.priority === 'high' ? '#DC2626' : task.priority === 'medium' ? AMBER : 'var(--border-2)'}`,
-                      background: 'transparent', cursor: 'pointer',
-                    }} />
-                    <span style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.5, flex: 1 }}>
-                      {task.title}
-                      {task.priority === 'high' && (
-                        <span style={{ fontSize: 8, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,.07)', padding: '1px 4px', borderRadius: 3, marginLeft: 5, letterSpacing: '0.05em', textTransform: 'uppercase' }}>!</span>
-                      )}
-                    </span>
-                  </div>
-                ))}
-
-                {futureTasks.length > 0 && (
-                  <div style={{ paddingTop: 8, borderTop: '1px dashed var(--border)', marginTop: 4 }}>
-                    <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '0 0 6px' }}>Coming up ({futureTasks.length})</p>
-                    {futureTasks.slice(0, 3).map((t) => (
-                      <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                        <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border-2)', flexShrink: 0 }} />
-                        <span style={{ fontSize: 11, color: 'var(--text-3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.title}</span>
-                        {t.due_date && (
-                          <span style={{ fontSize: 10, color: 'var(--text-3)', flexShrink: 0 }}>
-                            {new Date(t.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {addingTask ? (
-                  <form onSubmit={handleAddTask} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                    <div style={{ width: 15, height: 15, borderRadius: '50%', border: '1.5px solid var(--text-3)', flexShrink: 0 }} />
-                    <input
-                      value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)}
-                      placeholder="add a task…" autoFocus
-                      onBlur={() => { if (!newTaskTitle.trim()) setAddingTask(false) }}
-                      onKeyDown={(e) => { if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle('') } }}
-                      style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 12, color: 'var(--text)', outline: 'none', fontFamily: 'inherit', borderBottom: '1px solid var(--border-2)', paddingBottom: 2 }}
-                    />
-                  </form>
-                ) : (
-                  <button onClick={() => setAddingTask(true)} style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 6 }}>
-                    + add task
-                  </button>
-                )}
-              </div>
-            </div>
 
             {/* Progress */}
             <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')}>
@@ -912,46 +733,11 @@ export default function HomeContent({
 
         </div>
 
-        {/* ── Mobile-only: tasks + extra widgets (below center grid) ───────── */}
+        {/* ── Mobile-only: extra widgets (below center grid) ───────── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }} className="mobile-only-extras">
           <style>{`
             @media (min-width: 1100px) { .mobile-only-extras { display: none !important; } }
           `}</style>
-
-          {/* Tasks (mobile) */}
-          <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: '14px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 22, height: 22, borderRadius: 6, background: `${AMBER}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CheckSquare size={11} color={AMBER} />
-                </div>
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Today&apos;s tasks</span>
-              </div>
-              <button onClick={() => setSidebarView('calendar')} style={{ fontSize: 10, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>see all →</button>
-            </div>
-            {todayTasks.slice(0, 5).map((task) => (
-              <div key={task.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-                <button onClick={() => onToggleTask(task)} style={{
-                  width: 15, height: 15, borderRadius: '50%', marginTop: 2, flexShrink: 0,
-                  border: `1.5px solid ${task.priority === 'high' ? '#DC2626' : 'var(--border-2)'}`,
-                  background: 'transparent', cursor: 'pointer',
-                }} />
-                <span style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5 }}>{task.title}</span>
-              </div>
-            ))}
-            {addingTask ? (
-              <form onSubmit={handleAddTask} style={{ display: 'flex', gap: 8 }}>
-                <div style={{ width: 15, height: 15, borderRadius: '50%', border: '1.5px solid var(--text-3)', flexShrink: 0, marginTop: 2 }} />
-                <input value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} placeholder="add a task…" autoFocus
-                  onBlur={() => { if (!newTaskTitle.trim()) setAddingTask(false) }}
-                  onKeyDown={(e) => { if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle('') } }}
-                  style={{ flex: 1, border: 'none', background: 'transparent', fontSize: 13, color: 'var(--text)', outline: 'none', fontFamily: 'inherit', borderBottom: '1px solid var(--border-2)', paddingBottom: 2 }}
-                />
-              </form>
-            ) : (
-              <button onClick={() => setAddingTask(true)} style={{ fontSize: 12, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>+ add task</button>
-            )}
-          </div>
 
           {/* Progress + Health */}
           <div className="w2">
@@ -968,42 +754,10 @@ export default function HomeContent({
             </W>
           </div>
 
-          {/* Strategy Lab + Reminders */}
-          <div className="w2">
-            <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Enable / disable</p>
-            </W>
-            <W accent={AMBER} icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Alerts</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Smart nudges</p>
-            </W>
-          </div>
-
-          {/* Calendar (mobile) */}
-          <W accent={AMBER} icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
-            {calConnected === false ? (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>No calendar linked — tap to connect</p>
-            ) : calConnected === null ? (
-              <Dots />
-            ) : calEvents.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>Nothing scheduled — clear ahead ✓</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-                {calEvents.slice(0, 3).map((ev, i) => {
-                  const { label, isToday } = formatEventTime(ev.start, todayStr)
-                  return (
-                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? AMBER : `${AMBER}50`, flexShrink: 0 }} />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
-                        <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{label}</p>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
+          {/* Strategy Lab — standalone on mobile */}
+          <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates by setup</p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Enable / disable strategies</p>
           </W>
         </div>
 

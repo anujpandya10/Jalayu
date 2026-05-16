@@ -1,7 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import type { Task, Reminder } from '@/lib/types'
+import {
+  buildScheduleItems,
+  collectScheduleDates,
+  formatScheduleTime,
+  scheduleItemIcon,
+  SCHEDULE_COLORS,
+  toLocalDateStr,
+  type GoogleCalEvent,
+  type ScheduleItem,
+} from '@/lib/schedule'
 
 interface UnifiedCalendarViewProps {
   tasks: Task[]
@@ -14,14 +24,6 @@ interface UnifiedCalendarViewProps {
 
 type EventType = 'task' | 'reminder' | 'event' | 'birthday' | 'meeting'
 
-const EVENT_COLORS: Record<EventType, string> = {
-  task: 'var(--accent)',
-  reminder: '#92400E',
-  event: '#4B5563',
-  birthday: '#15803D',
-  meeting: '#1D4ED8',
-}
-
 const EVENT_TYPE_OPTIONS: { id: EventType; label: string }[] = [
   { id: 'task', label: 'Task' },
   { id: 'reminder', label: 'Reminder' },
@@ -32,54 +34,10 @@ const EVENT_TYPE_OPTIONS: { id: EventType; label: string }[] = [
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-function toLocalDateStr(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 function toLocalDate(dateStr: string): Date {
   // Parse YYYY-MM-DD without timezone shift
   const [y, m, day] = dateStr.split('-').map(Number)
   return new Date(y, m - 1, day)
-}
-
-// Extract date portion from a datetime string
-function getDatePart(str: string | null | undefined): string | null {
-  if (!str) return null
-  // Could be "2026-05-15" or "2026-05-15T10:00:00"
-  return str.slice(0, 10)
-}
-
-// Get sort time (minutes from midnight) from Task due_time or Reminder remind_at
-function getSortMinutes(item: Task | Reminder): number {
-  if ('due_time' in item && item.due_time) {
-    const [h, m] = item.due_time.split(':').map(Number)
-    return h * 60 + (m || 0)
-  }
-  if ('remind_at' in item) {
-    try {
-      const d = new Date(item.remind_at)
-      return d.getHours() * 60 + d.getMinutes()
-    } catch {
-      return 1440
-    }
-  }
-  return 1440
-}
-
-function getEventType(item: Task | Reminder): EventType {
-  if ('event_type' in item && item.event_type) {
-    return item.event_type as EventType
-  }
-  if ('remind_at' in item) return 'reminder'
-  return 'task'
-}
-
-function getEventIcon(type: EventType): string {
-  if (type === 'reminder') return '🔔'
-  if (type === 'birthday') return '🎂'
-  if (type === 'meeting') return '💼'
-  if (type === 'event') return '📅'
-  return '' // tasks use circle
 }
 
 export default function UnifiedCalendarView({
@@ -104,37 +62,29 @@ export default function UnifiedCalendarView({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [googleEvents, setGoogleEvents] = useState<GoogleCalEvent[]>([])
+  const [calConnected, setCalConnected] = useState<boolean | null>(null)
 
-  // Build dates map: dateStr -> has events
-  const eventDateSet = useMemo(() => {
-    const set = new Set<string>()
-    for (const t of tasks) {
-      if (t.due_date) set.add(getDatePart(t.due_date)!)
-    }
-    for (const r of reminders) {
-      const dp = getDatePart(r.remind_at)
-      if (dp) set.add(dp)
-    }
-    return set
-  }, [tasks, reminders])
+  useEffect(() => {
+    fetch('/api/calendar/events')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) { setCalConnected(false); return }
+        setCalConnected(data.connected ?? false)
+        setGoogleEvents(data.events ?? [])
+      })
+      .catch(() => setCalConnected(false))
+  }, [])
 
-  // Events for selected date
-  const selectedEvents = useMemo(() => {
-    const items: Array<{ id: string; title: string; type: EventType; completed?: boolean; raw: Task | Reminder; sortMin: number }> = []
+  const eventDateSet = useMemo(
+    () => collectScheduleDates(tasks, reminders, googleEvents, todayStr),
+    [tasks, reminders, googleEvents, todayStr],
+  )
 
-    for (const t of tasks) {
-      if (getDatePart(t.due_date) === selectedDate) {
-        items.push({ id: t.id, title: t.title, type: getEventType(t), completed: t.completed, raw: t, sortMin: getSortMinutes(t) })
-      }
-    }
-    for (const r of reminders) {
-      if (getDatePart(r.remind_at) === selectedDate) {
-        items.push({ id: r.id, title: r.title, type: 'reminder', raw: r, sortMin: getSortMinutes(r) })
-      }
-    }
-
-    return items.sort((a, b) => a.sortMin - b.sortMin)
-  }, [tasks, reminders, selectedDate])
+  const selectedEvents = useMemo(
+    () => buildScheduleItems(tasks, reminders, googleEvents, selectedDate, todayStr),
+    [tasks, reminders, googleEvents, selectedDate, todayStr],
+  )
 
   // Calendar grid
   const calendarDays = useMemo(() => {
@@ -192,7 +142,14 @@ export default function UnifiedCalendarView({
     <div style={{ padding: '16px 14px', maxWidth: 640, margin: '0 auto' }}>
       {/* Header */}
       <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Calendar</h2>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 18px' }}>Tasks, reminders, and events in one view</p>
+      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 18px' }}>
+        Tasks, reminders, and Google Calendar events in one place
+      </p>
+      {calConnected === false && (
+        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 14px' }}>
+          <a href="/api/calendar/google/start" style={{ color: 'var(--accent)' }}>Connect Google Calendar</a> to pull in external events
+        </p>
+      )}
 
       {/* Month navigation */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -321,8 +278,8 @@ export default function UnifiedCalendarView({
                     fontSize: 11,
                     fontWeight: 600,
                     color: addEventType === opt.id ? '#fff' : 'var(--text-2)',
-                    background: addEventType === opt.id ? EVENT_COLORS[opt.id] : 'var(--surface)',
-                    border: `1px solid ${addEventType === opt.id ? EVENT_COLORS[opt.id] : 'var(--border)'}`,
+                    background: addEventType === opt.id ? SCHEDULE_COLORS[opt.id] : 'var(--surface)',
+                    border: `1px solid ${addEventType === opt.id ? SCHEDULE_COLORS[opt.id] : 'var(--border)'}`,
                     borderRadius: 20,
                     padding: '4px 10px',
                     cursor: 'pointer',
@@ -357,12 +314,14 @@ export default function UnifiedCalendarView({
           <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Nothing scheduled for this day.</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {selectedEvents.map((ev) => {
-              const color = EVENT_COLORS[ev.type]
-              const icon = getEventIcon(ev.type)
+            {selectedEvents.map((ev: ScheduleItem) => {
+              const color = SCHEDULE_COLORS[ev.type]
+              const icon = scheduleItemIcon(ev.type)
               const isEditing = editingId === ev.id
               const isDeleting = deletingId === ev.id
-              const isTaskType = !('remind_at' in ev.raw)
+              const isTaskType = ev.source === 'task'
+              const task = isTaskType ? (ev.raw as Task) : null
+              const timeLabel = formatScheduleTime(ev.sortMin)
 
               return (
                 <div
@@ -379,9 +338,9 @@ export default function UnifiedCalendarView({
                   }}
                 >
                   {/* Icon / checkbox */}
-                  {'completed' in ev ? (
+                  {isTaskType && task ? (
                     <button
-                      onClick={() => onToggleTask(ev.raw as Task)}
+                      onClick={() => onToggleTask(task)}
                       style={{
                         width: 18,
                         height: 18,
@@ -411,8 +370,8 @@ export default function UnifiedCalendarView({
                       <form
                         onSubmit={async (e) => {
                           e.preventDefault()
-                          if (editTitle.trim() && onEditTask) {
-                            await onEditTask(ev.id, editTitle.trim())
+                          if (editTitle.trim() && onEditTask && task) {
+                            await onEditTask(task.id, editTitle.trim())
                           }
                           setEditingId(null)
                         }}
@@ -443,7 +402,7 @@ export default function UnifiedCalendarView({
                         <span style={{ fontSize: 12, color: '#DC2626' }}>Delete "{ev.title}"?</span>
                         <button
                           onClick={async () => {
-                            if (onDeleteTask) await onDeleteTask(ev.id)
+                            if (onDeleteTask && task) await onDeleteTask(task.id)
                             setDeletingId(null)
                           }}
                           style={{ fontSize: 11, fontWeight: 600, color: '#DC2626', background: 'none', border: '1px solid rgba(220,38,38,0.3)', borderRadius: 5, padding: '2px 8px', cursor: 'pointer' }}
@@ -472,12 +431,10 @@ export default function UnifiedCalendarView({
                         </p>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
                           <span style={{ fontSize: 10, fontWeight: 600, color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            {ev.type}
+                            {ev.type === 'google' ? 'calendar' : ev.type}
                           </span>
-                          {ev.sortMin < 1440 && (
-                            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
-                              {String(Math.floor(ev.sortMin / 60)).padStart(2, '0')}:{String(ev.sortMin % 60).padStart(2, '0')}
-                            </span>
+                          {timeLabel && (
+                            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{timeLabel}</span>
                           )}
                         </div>
                       </>

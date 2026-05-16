@@ -1,13 +1,23 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
+import { useStore } from '@/store/useStore'
 import type { HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
+import HealthCoverageChat from './HealthCoverageChat'
 
 interface HealthViewProps {
   healthProfiles: HealthProfile[]
   medications: Medication[]
   appointments: HealthAppointment[]
   records: MedicalRecord[]
+}
+
+async function healthApiData<T>(res: Response): Promise<{ data?: T; error?: string }> {
+  const json = await res.json().catch(() => ({} as { error?: string; data?: T }))
+  if (!res.ok) {
+    return { error: json.error ?? `Request failed (${res.status})` }
+  }
+  return { data: json.data as T }
 }
 
 type Tab = 'overview' | 'medications' | 'appointments' | 'records' | 'coverage'
@@ -305,12 +315,14 @@ function OverviewTab({
   onProfileAdd,
   onProfileUpdate,
   onProfileDelete,
+  onReloadProfiles,
   showToast,
 }: {
   profiles: HealthProfile[]
   onProfileAdd: (p: HealthProfile) => void
   onProfileUpdate: (p: HealthProfile) => void
   onProfileDelete: (id: string) => void
+  onReloadProfiles: () => Promise<void>
   showToast: (m: string) => void
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -338,13 +350,14 @@ function OverviewTab({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(toInsBody(f)),
     })
-    const data = await res.json()
-    if (data.data) {
-      onProfileAdd(data.data)
+    const { data, error } = await healthApiData<HealthProfile>(res)
+    if (data) {
+      onProfileAdd(data)
+      await onReloadProfiles()
       setShowAddForm(false)
       showToast('Insurance added')
     } else {
-      showToast('Failed to save')
+      showToast(error ?? 'Failed to save')
     }
   }
 
@@ -354,13 +367,14 @@ function OverviewTab({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, ...toInsBody(f) }),
     })
-    const data = await res.json()
-    if (data.data) {
-      onProfileUpdate(data.data)
+    const { data, error } = await healthApiData<HealthProfile>(res)
+    if (data) {
+      onProfileUpdate(data)
+      await onReloadProfiles()
       setEditingId(null)
       showToast('Insurance updated')
     } else {
-      showToast('Failed to save')
+      showToast(error ?? 'Failed to save')
     }
   }
 
@@ -371,26 +385,33 @@ function OverviewTab({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
     })
-    if (res.ok) {
+    const { error } = await healthApiData<{ id: string }>(res)
+    if (!error) {
       onProfileDelete(id)
+      await onReloadProfiles()
       showToast('Deleted')
     } else {
-      showToast('Failed to delete')
+      showToast(error)
     }
   }
 
   async function submitPcp(e: React.FormEvent) {
     e.preventDefault()
     if (!baseProfile) {
-      // Create a new self profile with PCP data
       const res = await fetch('/api/health/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...pcpForm, profile_label: 'Mine', relationship: 'self' }),
       })
-      const data = await res.json()
-      if (data.data) { onProfileAdd(data.data); setEditPcp(false); showToast('Provider saved') }
-      else showToast('Failed to save')
+      const { data, error } = await healthApiData<HealthProfile>(res)
+      if (data) {
+        onProfileAdd(data)
+        await onReloadProfiles()
+        setEditPcp(false)
+        showToast('Provider saved')
+      } else {
+        showToast(error ?? 'Failed to save')
+      }
       return
     }
     const res = await fetch('/api/health/profile', {
@@ -398,9 +419,15 @@ function OverviewTab({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: baseProfile.id, ...pcpForm }),
     })
-    const data = await res.json()
-    if (data.data) { onProfileUpdate(data.data); setEditPcp(false); showToast('Provider updated') }
-    else showToast('Failed to save')
+    const { data, error } = await healthApiData<HealthProfile>(res)
+    if (data) {
+      onProfileUpdate(data)
+      await onReloadProfiles()
+      setEditPcp(false)
+      showToast('Provider updated')
+    } else {
+      showToast(error ?? 'Failed to save')
+    }
   }
 
   async function submitHistory(e: React.FormEvent) {
@@ -416,9 +443,15 @@ function OverviewTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...body, profile_label: 'Mine', relationship: 'self' }),
       })
-      const data = await res.json()
-      if (data.data) { onProfileAdd(data.data); setEditHistory(false); showToast('Health history saved') }
-      else showToast('Failed to save')
+      const { data, error } = await healthApiData<HealthProfile>(res)
+      if (data) {
+        onProfileAdd(data)
+        await onReloadProfiles()
+        setEditHistory(false)
+        showToast('Health history saved')
+      } else {
+        showToast(error ?? 'Failed to save')
+      }
       return
     }
     const res = await fetch('/api/health/profile', {
@@ -426,9 +459,15 @@ function OverviewTab({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id: baseProfile.id, ...body }),
     })
-    const data = await res.json()
-    if (data.data) { onProfileUpdate(data.data); setEditHistory(false); showToast('Health history updated') }
-    else showToast('Failed to save')
+    const { data, error } = await healthApiData<HealthProfile>(res)
+    if (data) {
+      onProfileUpdate(data)
+      await onReloadProfiles()
+      setEditHistory(false)
+      showToast('Health history updated')
+    } else {
+      showToast(error ?? 'Failed to save')
+    }
   }
 
   return (
@@ -1195,102 +1234,44 @@ function RecordsTab({
   )
 }
 
-// ── Tab: Ask Coverage ─────────────────────────────────────────────────────────
-interface QA { question: string; answer: string }
-
-function CoverageTab({ showToast }: { showToast: (m: string) => void }) {
-  const [question, setQuestion] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [history, setHistory] = useState<QA[]>([])
-
-  async function handleAsk(e: React.FormEvent) {
-    e.preventDefault()
-    if (!question.trim()) return
-    const q = question.trim()
-    setLoading(true)
-    setQuestion('')
-    try {
-      const res = await fetch('/api/health/coverage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: q }),
-      })
-      const data = await res.json()
-      const answer = data.answer ?? data.message ?? 'No response received.'
-      setHistory((h) => [{ question: q, answer }, ...h].slice(0, 3))
-    } catch {
-      showToast('Failed to get answer')
-      setHistory((h) => [{ question: q, answer: 'Something went wrong. Please try again.' }, ...h].slice(0, 3))
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <>
-      <SectionCard style={{ background: 'var(--morning)', marginBottom: 16 }}>
-        <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>Ask about your coverage</p>
-        <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.5 }}>
-          Ask questions about what your insurance covers, copays, deductibles, and more.
-        </p>
-        <form onSubmit={handleAsk} style={{ display: 'flex', gap: 8 }}>
-          <input
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            placeholder="e.g. Is therapy covered? What's my specialist copay?"
-            disabled={loading}
-            style={{ flex: 1, fontSize: 13, padding: '9px 12px', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)', color: 'var(--text)', outline: 'none' }}
-          />
-          <button
-            type="submit"
-            disabled={loading || !question.trim()}
-            style={{ fontSize: 13, fontWeight: 600, color: '#fff', background: loading ? 'var(--text-3)' : 'var(--accent)', border: 'none', borderRadius: 8, padding: '9px 16px', cursor: loading ? 'not-allowed' : 'pointer', flexShrink: 0 }}
-          >
-            {loading ? '…' : 'Ask'}
-          </button>
-        </form>
-      </SectionCard>
-
-      {loading && (
-        <SectionCard>
-          <p style={{ fontSize: 13, color: 'var(--text-3)', margin: 0 }}>Thinking…</p>
-        </SectionCard>
-      )}
-
-      {history.map((qa, i) => (
-        <div key={i} style={{ marginBottom: 14 }}>
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>Q: {qa.question}</p>
-          <SectionCard style={{ background: 'var(--morning)' }}>
-            <p style={{ fontSize: 14, color: 'var(--text)', margin: 0, lineHeight: 1.7, fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic' }}>
-              {qa.answer}
-            </p>
-          </SectionCard>
-        </div>
-      ))}
-    </>
-  )
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function HealthView({
-  healthProfiles: initialProfiles,
-  medications: initialMedications,
-  appointments: initialAppointments,
-  records: initialRecords,
+  healthProfiles,
+  medications,
+  appointments,
+  records,
 }: HealthViewProps) {
   const [activeTab, setActiveTab] = useState<Tab>('overview')
-  const [profiles, setProfiles] = useState<HealthProfile[]>(initialProfiles)
-  const [medications, setMedications] = useState<Medication[]>(initialMedications)
-  const [appointments, setAppointments] = useState<HealthAppointment[]>(initialAppointments)
-  const [records, setRecords] = useState<MedicalRecord[]>(initialRecords)
+  const {
+    setHealthProfiles,
+    addHealthProfile,
+    updateHealthProfile,
+    removeHealthProfile,
+    addMedication,
+    updateMedication,
+    removeMedication,
+    addHealthAppointment,
+    updateHealthAppointment,
+    removeHealthAppointment,
+    addMedicalRecord,
+    updateMedicalRecord,
+    removeMedicalRecord,
+  } = useStore()
   const { toast, showToast } = useToast()
+
+  const reloadProfiles = useCallback(async () => {
+    const res = await fetch('/api/health/profile')
+    const { data, error } = await healthApiData<HealthProfile[]>(res)
+    if (data) setHealthProfiles(data)
+    else if (error) console.error('[Health] reload profiles:', error)
+  }, [setHealthProfiles])
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'medications', label: 'Medications' },
     { id: 'appointments', label: 'Appointments' },
     { id: 'records', label: 'Records' },
-    { id: 'coverage', label: 'Ask Coverage' },
+    { id: 'coverage', label: 'Coverage AI' },
   ]
 
   return (
@@ -1338,41 +1319,42 @@ export default function HealthView({
       {/* Tab content */}
       {activeTab === 'overview' && (
         <OverviewTab
-          profiles={profiles}
-          onProfileAdd={(p) => setProfiles((prev) => [...prev, p])}
-          onProfileUpdate={(p) => setProfiles((prev) => prev.map((x) => (x.id === p.id ? p : x)))}
-          onProfileDelete={(id) => setProfiles((prev) => prev.filter((x) => x.id !== id))}
+          profiles={healthProfiles}
+          onProfileAdd={addHealthProfile}
+          onProfileUpdate={updateHealthProfile}
+          onProfileDelete={removeHealthProfile}
+          onReloadProfiles={reloadProfiles}
           showToast={showToast}
         />
       )}
       {activeTab === 'medications' && (
         <MedicationsTab
           medications={medications}
-          onAdd={(m) => setMedications((prev) => [...prev, m])}
-          onUpdate={(m) => setMedications((prev) => prev.map((x) => (x.id === m.id ? m : x)))}
-          onDelete={(id) => setMedications((prev) => prev.filter((m) => m.id !== id))}
+          onAdd={addMedication}
+          onUpdate={updateMedication}
+          onDelete={removeMedication}
           showToast={showToast}
         />
       )}
       {activeTab === 'appointments' && (
         <AppointmentsTab
           appointments={appointments}
-          onAdd={(a) => setAppointments((prev) => [...prev, a])}
-          onUpdate={(a) => setAppointments((prev) => prev.map((x) => (x.id === a.id ? a : x)))}
-          onDelete={(id) => setAppointments((prev) => prev.filter((a) => a.id !== id))}
+          onAdd={addHealthAppointment}
+          onUpdate={updateHealthAppointment}
+          onDelete={removeHealthAppointment}
           showToast={showToast}
         />
       )}
       {activeTab === 'records' && (
         <RecordsTab
           records={records}
-          onAdd={(r) => setRecords((prev) => [...prev, r])}
-          onUpdate={(r) => setRecords((prev) => prev.map((x) => (x.id === r.id ? r : x)))}
-          onDelete={(id) => setRecords((prev) => prev.filter((r) => r.id !== id))}
+          onAdd={addMedicalRecord}
+          onUpdate={updateMedicalRecord}
+          onDelete={removeMedicalRecord}
           showToast={showToast}
         />
       )}
-      {activeTab === 'coverage' && <CoverageTab showToast={showToast} />}
+      {activeTab === 'coverage' && <HealthCoverageChat showToast={showToast} />}
 
       {/* Toast */}
       {toast && (
