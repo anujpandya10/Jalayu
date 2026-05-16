@@ -11,9 +11,10 @@ import toast from 'react-hot-toast'
 import type { Profile, Task, Mood, Reminder } from '@/lib/types'
 import ScheduleCompact from '@/components/dashboard/ScheduleCompact'
 import HealthCompact from '@/components/dashboard/HealthCompact'
+import ReflectionCompact from '@/components/dashboard/ReflectionCompact'
 import { useStore } from '@/store/useStore'
-import { getDayNumber } from '@/lib/utils'
 import GalaxyOrb from '@/components/GalaxyOrb'
+import PorscheClock from '@/components/dashboard/PorscheClock'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -234,6 +235,7 @@ export default function HomeContent({
   const healthProfiles   = useStore((s) => s.healthProfiles)
   const medications      = useStore((s) => s.medications)
   const healthAppointments = useStore((s) => s.healthAppointments)
+  const todayReflection    = useStore((s) => s.todayReflection)
 
   const [morningNote, setMorningNote] = useState<string | null>(null)
   const [focus,       setFocus]       = useState<string | null>(null)
@@ -253,7 +255,6 @@ export default function HomeContent({
   const inputRef   = useRef<HTMLTextAreaElement>(null)
   const replyRef   = useRef<HTMLDivElement>(null)
 
-  const dayNumber  = profile ? getDayNumber(profile.created_at) : 1
   const todayStr     = toLocalDateStr(new Date())
   const yesterdayStr = toLocalDateStr(new Date(Date.now() - 86400000))
 
@@ -477,13 +478,10 @@ export default function HomeContent({
               display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
             }}>
               <GalaxyOrb state={orbState} size={100} />
-              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '10px 0 3px', letterSpacing: '-0.02em' }}>
+              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '10px 0 8px', letterSpacing: '-0.02em' }}>
                 {greeting}{firstName ? `, ${firstName}` : ''}
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
-                {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
-                {' · '}Day {dayNumber}
-              </p>
+              <PorscheClock size={132} />
               {chapter && (
                 <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '3px 0 0', fontStyle: 'italic', opacity: 0.8 }}>
                   {chapter}
@@ -650,6 +648,11 @@ export default function HomeContent({
               </p>
             </div>
 
+            <ReflectionCompact
+              reflection={todayReflection}
+              onOpenReflect={() => setSidebarView('memory')}
+            />
+
             <div className="w2">
             <W accent={AMBER} icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
                 {todayMood ? (
@@ -763,12 +766,6 @@ export default function HomeContent({
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>
             </W>
 
-            {/* Reflect + Memory (swapped: Reflect first) */}
-            <W accent={AMBER} icon={Sparkles} label="Reflect" onClick={() => setSidebarView('reflect')}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Daily reflection</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>What today taught you</p>
-            </W>
-
             <W accent={AMBER} icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Second brain</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Notes & insights</p>
@@ -790,6 +787,11 @@ export default function HomeContent({
               <div style={{ height: '100%', width: `${weekPct}%`, background: AMBER, borderRadius: 99 }} />
             </div>
           </W>
+
+          <ReflectionCompact
+            reflection={todayReflection}
+            onOpenReflect={() => setSidebarView('memory')}
+          />
 
           <ExploreLinks
             items={[

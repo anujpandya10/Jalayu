@@ -1,7 +1,7 @@
 'use client'
 
 import type { ComponentType } from 'react'
-import { Home, CheckSquare, BookOpen, Moon } from 'lucide-react'
+import { Home, CheckSquare, BookOpen } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import type { SidebarView } from '@/lib/types'
 
@@ -9,7 +9,6 @@ const TABS: { key: string; icon: ComponentType<{ size?: number }>; label: string
   { key: 'home', icon: Home, label: 'Home', view: 'dashboard' },
   { key: 'today', icon: CheckSquare, label: 'Calendar', view: 'calendar' },
   { key: 'memory', icon: BookOpen, label: 'Memory', view: 'memory' },
-  { key: 'reflect', icon: Moon, label: 'Reflect', view: 'reflect' },
 ]
 
 export default function BottomNav() {

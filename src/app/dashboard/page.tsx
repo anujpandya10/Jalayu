@@ -12,7 +12,6 @@ import RemindersView from '@/components/dashboard/views/RemindersView'
 import MindView from '@/components/dashboard/views/MindView'
 import LearningView from '@/components/dashboard/views/LearningView'
 import MemoryView from '@/components/dashboard/views/MemoryView'
-import ReflectView from '@/components/dashboard/views/ReflectView'
 import ProgressView from '@/components/dashboard/views/ProgressView'
 import WellnessView from '@/components/dashboard/views/WellnessView'
 import PeopleView from '@/components/dashboard/views/PeopleView'
@@ -385,12 +384,12 @@ export default function DashboardPage() {
           <MemoryView
             notes={notes}
             reflections={reflectionsRecent}
+            todayReflection={todayReflection}
             name={name}
             onSaveNote={handleSaveNote}
+            onSaveReflection={handleSaveReflection}
           />
         )
-      case 'reflect':
-        return <ReflectView todayReflection={todayReflection} onSave={handleSaveReflection} />
       case 'progress':
         return (
           <ProgressView profile={profile} moodsRecent={moodsRecent} tasksRecent={tasksRecent} insights={insights} />

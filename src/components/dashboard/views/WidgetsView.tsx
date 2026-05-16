@@ -26,7 +26,7 @@ const TILES: { id: string; title: string; description: string; icon: ComponentTy
     title: 'End of day',
     description: 'Close the loop with a two-minute reflection.',
     icon: Sparkles,
-    view: 'reflect',
+    view: 'memory',
   },
   {
     id: 'mind',
