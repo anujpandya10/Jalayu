@@ -14,7 +14,7 @@
   --border: #E7E5DF;       /* warm tan border */
   --border-2: #D6D3CC;     /* stronger border when needed */
 
-  --accent: #292524;       /* dark warm brown — CTAs, focus */
+  --accent: #0A7B6A;       /* deep teal — brand colour, CTAs, focus */
   --accent-fg: #FFFFFF;
 
   /* ── Legacy aliases (keep so existing components don't break) ── */

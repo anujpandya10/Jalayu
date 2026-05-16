@@ -43,8 +43,8 @@ export default function LoginPage() {
     width: '100%',
     padding: '12px 14px',
     borderRadius: 12,
-    border: `1px solid ${focused === id ? 'rgba(196,131,74,0.7)' : 'rgba(255,255,255,0.1)'}`,
-    background: focused === id ? 'rgba(196,131,74,0.06)' : 'rgba(255,255,255,0.04)',
+    border: `1px solid ${focused === id ? 'rgba(0,201,167,0.7)' : 'rgba(255,255,255,0.1)'}`,
+    background: focused === id ? 'rgba(0,201,167,0.06)' : 'rgba(255,255,255,0.04)',
     fontSize: 14,
     color: '#ffffff',
     outline: 'none',
@@ -54,11 +54,11 @@ export default function LoginPage() {
   })
 
   return (
-    <div style={{ minHeight: '100vh', background: '#07060A', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', position: 'relative', fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#020C16', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', position: 'relative', fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif' }}>
       <AuthBackground />
 
       <Toaster position="top-center" toastOptions={{
-        style: { background: 'rgba(30,24,20,0.95)', color: '#fff', border: '1px solid rgba(196,131,74,0.3)', borderRadius: 10, fontSize: 13, backdropFilter: 'blur(12px)' },
+        style: { background: 'rgba(2,15,30,0.95)', color: '#fff', border: '1px solid rgba(0,201,167,0.3)', borderRadius: 10, fontSize: 13, backdropFilter: 'blur(12px)' },
       }} />
 
       <style>{`
@@ -102,7 +102,7 @@ export default function LoginPage() {
         }}>
 
           {/* Subtle amber glow top-left */}
-          <div style={{ position: 'absolute', top: -60, left: -60, width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(196,131,74,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
+          <div style={{ position: 'absolute', top: -60, left: -60, width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(0,201,167,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
 
           <h2 style={{ fontSize: 22, fontWeight: 700, color: '#ffffff', margin: '0 0 6px', letterSpacing: '-0.02em' }}>
             Welcome back
@@ -168,10 +168,10 @@ export default function LoginPage() {
                 padding: '13px',
                 marginTop: 4,
                 background: loading
-                  ? 'rgba(196,131,74,0.3)'
-                  : 'linear-gradient(135deg, #C4834A 0%, #E8AA6A 50%, #C4834A 100%)',
+                  ? 'rgba(0,201,167,0.3)'
+                  : 'linear-gradient(135deg, #009B83 0%, #00C9A7 50%, #67E8F9 100%)',
                 backgroundSize: '200% 200%',
-                color: '#1C1008',
+                color: '#020C16',
                 border: 'none',
                 borderRadius: 12,
                 fontSize: 14,
@@ -182,11 +182,11 @@ export default function LoginPage() {
                 justifyContent: 'center',
                 gap: 8,
                 transition: 'transform 0.15s, box-shadow 0.15s',
-                boxShadow: loading ? 'none' : '0 4px 24px rgba(196,131,74,0.4)',
+                boxShadow: loading ? 'none' : '0 4px 24px rgba(0,201,167,0.4)',
                 letterSpacing: '-0.01em',
               }}
-              onMouseEnter={(e) => { if (!loading) { (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 32px rgba(196,131,74,0.55)' } }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = loading ? 'none' : '0 4px 24px rgba(196,131,74,0.4)' }}
+              onMouseEnter={(e) => { if (!loading) { (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'; (e.currentTarget as HTMLElement).style.boxShadow = '0 8px 32px rgba(0,201,167,0.55)' } }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = ''; (e.currentTarget as HTMLElement).style.boxShadow = loading ? 'none' : '0 4px 24px rgba(0,201,167,0.4)' }}
             >
               {loading ? <Loader2 size={15} className="animate-spin" /> : null}
               {loading ? 'Signing in…' : 'Sign in →'}
@@ -201,7 +201,7 @@ export default function LoginPage() {
           </div>
 
           <Link href="/signup" style={{ display: 'block', width: '100%', textAlign: 'center', padding: '12px', borderRadius: 12, border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)', fontSize: 13, fontWeight: 500, color: 'rgba(255,255,255,0.7)', textDecoration: 'none', transition: 'background 0.15s, border-color 0.15s' }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(196,131,74,0.35)' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(0,201,167,0.35)' }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.12)' }}
           >
             Create your account

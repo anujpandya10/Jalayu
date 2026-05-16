@@ -57,7 +57,7 @@ const MOODS = [
 ]
 const MOOD_EMOJI:  Record<number, string> = { 1: '😔', 2: '😕', 3: '😐', 4: '🙂', 5: '😊' }
 const MOOD_LABEL:  Record<number, string> = { 1: 'Rough', 2: 'Low', 3: 'Okay', 4: 'Good', 5: 'Great' }
-const AMBER = '#C4834A'
+const AMBER = '#00C9A7'  // ocean rebrand
 
 const QUOTES: { text: string; author: string }[] = [
   { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },

@@ -3,15 +3,15 @@
 /**
  * JalayuLogo — brand mark + wordmark
  *
- * Mark concept: a dark celestial orb with a tilted golden ring — evoking
- * the Sanskrit root "jal" (water, life in motion) meeting the cosmos.
- * A planet companion rides the ring, its glow breathing slowly.
+ * Mark concept: a dark deep-water orb with a bioluminescent ring — evoking
+ * the Sanskrit root "jal" (water, life in motion). A creature of light
+ * orbits in the deep, its glow breathing slowly like plankton in the dark.
  *
  * Colour logic:
- *   • Orb: deep warm dark (stone → near-black radial gradient)
- *   • Ring: warm amber/gold — the only light in the dark sphere
- *   • Planet: same amber, with a living pulse glow
- *   • "Jala" in warm near-black, "yu" in terracotta amber — genuinely different
+ *   • Orb: deep navy-black (ocean depth)
+ *   • Ring: bioluminescent teal/cyan — the only light in the deep
+ *   • Planet: same teal, with a living pulse glow
+ *   • "Jala" in warm near-black, "yu" in bioluminescent teal
  */
 
 interface Props {
@@ -19,9 +19,9 @@ interface Props {
   size?: number
 }
 
-const AMBER = '#C4834A'
-const AMBER_DARK = '#A06838'
-const AMBER_LIGHT = '#E8AA6A'
+const TEAL       = '#00C9A7'
+const TEAL_DARK  = '#009B83'
+const TEAL_LIGHT = '#67E8F9'
 
 export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
   const s = size / 28
@@ -31,11 +31,11 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
       <style>{`
         @keyframes jalDotBreath {
           0%, 100% { opacity: 0.28; r: ${3.6 * s}; }
-          50%       { opacity: 0.58; r: ${5.2 * s}; }
+          50%       { opacity: 0.62; r: ${5.4 * s}; }
         }
         @keyframes jalRingGlow {
-          0%, 100% { opacity: 0.55; }
-          50%       { opacity: 0.85; }
+          0%, 100% { opacity: 0.5; }
+          50%       { opacity: 0.9; }
         }
       `}</style>
 
@@ -58,32 +58,32 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
           style={{ flexShrink: 0, overflow: 'visible' }}
         >
           <defs>
-            {/* Orb body gradient */}
+            {/* Orb: deep ocean gradient — near-black with a blue tint */}
             <radialGradient id="jl-orb" cx="36%" cy="32%" r="72%" fx="36%" fy="32%">
-              <stop offset="0%"   stopColor="#7C736E" />
-              <stop offset="42%"  stopColor="#3D3532" />
-              <stop offset="100%" stopColor="#1A1614" />
+              <stop offset="0%"   stopColor="#1A3A4A" />
+              <stop offset="42%"  stopColor="#0A1E2A" />
+              <stop offset="100%" stopColor="#040E14" />
             </radialGradient>
 
-            {/* Ambient glow behind orb */}
+            {/* Ambient bioluminescent glow behind orb */}
             <radialGradient id="jl-glow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%"   stopColor={AMBER} stopOpacity="0.18" />
-              <stop offset="100%" stopColor={AMBER} stopOpacity="0"    />
+              <stop offset="0%"   stopColor={TEAL} stopOpacity="0.22" />
+              <stop offset="100%" stopColor={TEAL} stopOpacity="0"    />
             </radialGradient>
 
-            {/* Ring gradient: amber sweep */}
+            {/* Ring gradient: teal bioluminescent sweep */}
             <linearGradient id="jl-ring-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%"   stopColor={AMBER}       stopOpacity="0"   />
-              <stop offset="30%"  stopColor={AMBER_DARK}  stopOpacity="0.9" />
-              <stop offset="60%"  stopColor={AMBER_LIGHT} stopOpacity="1"   />
-              <stop offset="100%" stopColor={AMBER}       stopOpacity="0.1" />
+              <stop offset="0%"   stopColor={TEAL}       stopOpacity="0"   />
+              <stop offset="30%"  stopColor={TEAL_DARK}  stopOpacity="0.9" />
+              <stop offset="60%"  stopColor={TEAL_LIGHT} stopOpacity="1"   />
+              <stop offset="100%" stopColor={TEAL}       stopOpacity="0.1" />
             </linearGradient>
 
-            {/* Ring gradient for the dimmer back half */}
+            {/* Ring back half — dimmer, deep water */}
             <linearGradient id="jl-ring-back" x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%"   stopColor={AMBER} stopOpacity="0"    />
-              <stop offset="50%"  stopColor={AMBER} stopOpacity="0.18" />
-              <stop offset="100%" stopColor={AMBER} stopOpacity="0"    />
+              <stop offset="0%"   stopColor={TEAL} stopOpacity="0"    />
+              <stop offset="50%"  stopColor={TEAL} stopOpacity="0.15" />
+              <stop offset="100%" stopColor={TEAL} stopOpacity="0"    />
             </linearGradient>
           </defs>
 
@@ -103,30 +103,24 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
           {/* ─ Orb ─ */}
           <circle cx="14" cy="14" r="7.5" fill="url(#jl-orb)" />
 
-          {/* Orb rim — catches a little of the ring's light */}
+          {/* Orb rim — catches the bioluminescent ring light */}
           <circle
             cx="14" cy="14" r="7.5"
             fill="none"
-            stroke={AMBER}
+            stroke={TEAL}
             strokeWidth="0.6"
-            strokeOpacity="0.1"
+            strokeOpacity="0.12"
           />
 
-          {/* Specular highlight */}
+          {/* Specular highlight — light from above (surface) */}
           <ellipse
             cx="11.4" cy="10.8"
             rx="2.4" ry="1.3"
-            fill="rgba(255,255,255,0.22)"
+            fill="rgba(103,232,249,0.18)"
             transform="rotate(-28 11.4 10.8)"
           />
 
-          {/* ─ Ring: bright front arc (rendered in front of orb) ─
-               Arc from left edge to right edge of the ellipse, sweeping below —
-               this is the "close" half of the orbital ring.
-               Computed: ellipse cx=14 cy=14 rx=13 ry=4.6, rotated -20deg.
-               Left point (angle=180°): (14-13, 14)=(1,14) → rotated -20°: (2.78, 9.30)
-               Right point (angle=0°):  (14+13, 14)=(27,14) → rotated -20°: (25.22, 18.70)
-               We draw the bottom sweep (large-arc=0 sweeping positive). */}
+          {/* ─ Ring: bright front arc ─ */}
           <path
             d="M 2.78 9.30 A 13 4.6 -20 0 1 25.22 18.70"
             fill="none"
@@ -136,26 +130,18 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
             style={{ animation: 'jalRingGlow 4s ease-in-out infinite' }}
           />
 
-          {/* ─ Planet — orbits the ring continuously ─ */}
-          {/*
-            The ring splits at (2.78, 9.30) and (25.22, 18.70).
-            We trace the full ellipse clockwise in two arcs:
-              1st arc (sweep=1): front of ring (below orb)
-              2nd arc (sweep=1): back of ring (above orb)
-            animateMotion offsets the group from its origin (0,0)
-            so the planet follows the exact same path as the ring.
-          */}
+          {/* ─ Creature — orbits the ring, glows like a bioluminescent organism ─ */}
           <g>
             {/* Breathing glow halo */}
             <circle
               cx="0" cy="0" r="3.6"
-              fill={AMBER}
+              fill={TEAL}
               style={{ animation: 'jalDotBreath 3.5s ease-in-out infinite' }}
             />
-            {/* Solid planet body */}
-            <circle cx="0" cy="0" r="2.2" fill={AMBER_LIGHT} />
+            {/* Solid body */}
+            <circle cx="0" cy="0" r="2.2" fill={TEAL_LIGHT} />
             {/* Specular highlight */}
-            <circle cx="-0.7" cy="-0.5" r="0.7" fill="rgba(255,255,255,0.55)" />
+            <circle cx="-0.7" cy="-0.5" r="0.7" fill="rgba(255,255,255,0.6)" />
 
             {/* Orbital motion — full revolution in 8 s */}
             <animateMotion
@@ -164,10 +150,10 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
               rotate="0"
               path="M 2.78 9.30 A 13 4.6 -20 0 1 25.22 18.70 A 13 4.6 -20 0 1 2.78 9.30"
             />
-            {/* Depth cue: dim to 30 % when passing behind the orb (back half) */}
+            {/* Depth cue: dim when behind the orb */}
             <animate
               attributeName="opacity"
-              values="1;1;0.3;0.3;1"
+              values="1;1;0.25;0.25;1"
               keyTimes="0;0.47;0.5;0.97;1"
               dur="8s"
               repeatCount="indefinite"
@@ -185,21 +171,10 @@ export default function JalayuLogo({ markOnly = false, size = 28 }: Props) {
               fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif',
             }}
           >
-            <span
-              style={{
-                fontWeight: 600,
-                color: '#2C2826',
-              }}
-            >
+            <span style={{ fontWeight: 600, color: '#1C1917' }}>
               Jala
             </span>
-            <span
-              style={{
-                fontWeight: 700,
-                color: AMBER,
-                letterSpacing: '-0.01em',
-              }}
-            >
+            <span style={{ fontWeight: 700, color: TEAL, letterSpacing: '-0.01em' }}>
               yu
             </span>
           </span>
