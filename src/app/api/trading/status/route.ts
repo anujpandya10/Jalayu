@@ -25,8 +25,8 @@ export async function GET() {
   // Get current signals (lightweight — used to show "scanning X assets")
   const assets = await getAllAssets()
   const signals = rankSignals(assets)
-  const topBuys = signals.filter((s) => s.action === 'BUY').slice(0, 3)
-  const topSells = signals.filter((s) => s.action === 'SELL').slice(0, 3)
+  const topBuys = signals.filter((s) => s.action === 'BUY_LONG').slice(0, 3)
+  const topSells = signals.filter((s) => s.action === 'SELL_SHORT').slice(0, 3)
 
   return NextResponse.json({
     lastRunAt: portfolio?.last_run_at ?? null,

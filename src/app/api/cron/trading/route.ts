@@ -113,7 +113,7 @@ export async function GET(req: Request) {
 
       // Top 2 buy signals we don't already hold
       const buySignals = signals
-        .filter((s) => s.action === 'BUY' && !heldSymbols.has(s.asset.symbol))
+        .filter((s) => s.action === 'BUY_LONG' && !heldSymbols.has(s.asset.symbol))
         .slice(0, 2)
 
       for (const signal of buySignals) {

@@ -10,6 +10,7 @@ interface PositionRow {
   asset_type: string | null
   take_profit_price: number | null
   stop_loss_price: number | null
+  direction?: string | null
 }
 
 export async function GET() {
@@ -51,9 +52,13 @@ export async function GET() {
       try {
         const quote = await getQuote(pos.symbol)
         const currentPrice = quote.price
+        const isShort = pos.direction === 'SHORT'
         const value = currentPrice * pos.shares
         const cost = pos.avg_buy_price * pos.shares
-        const pnl = value - cost
+        // For SHORT: profit = price fell below entry
+        const pnl = isShort
+          ? (pos.avg_buy_price - currentPrice) * pos.shares
+          : value - cost
         const pnlPct = cost !== 0 ? (pnl / cost) * 100 : 0
         return {
           symbol: pos.symbol,
@@ -65,6 +70,7 @@ export async function GET() {
           pnl,
           pnlPct,
           assetType: pos.asset_type ?? 'stock',
+          direction: pos.direction ?? 'LONG',
           takeProfitPrice: pos.take_profit_price ?? null,
           stopLossPrice: pos.stop_loss_price ?? null,
         }
@@ -79,6 +85,7 @@ export async function GET() {
           pnl: 0,
           pnlPct: 0,
           assetType: pos.asset_type ?? 'stock',
+          direction: pos.direction ?? 'LONG',
           takeProfitPrice: pos.take_profit_price ?? null,
           stopLossPrice: pos.stop_loss_price ?? null,
         }

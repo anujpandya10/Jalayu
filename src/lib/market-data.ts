@@ -10,6 +10,7 @@ export interface AssetData {
   change24h: number   // % change last 24h
   change7d: number    // % change last 7d
   assetType: 'crypto' | 'stock'
+  isPumpCandidate?: boolean  // true if big gainer / historically volatile pump stock
 }
 
 // Legacy Candle type kept so existing imports don't break
@@ -36,16 +37,18 @@ const CRYPTO_LIST: { id: string; symbol: string; name: string }[] = [
   { id: 'near',          symbol: 'NEAR', name: 'NEAR'      },
 ]
 
-// ── Stocks ────────────────────────────────────────────────────────────────────
-const STOCK_LIST: { symbol: string; name: string }[] = [
-  { symbol: 'AAPL',  name: 'Apple'     },
-  { symbol: 'NVDA',  name: 'Nvidia'    },
-  { symbol: 'TSLA',  name: 'Tesla'     },
-  { symbol: 'MSFT',  name: 'Microsoft' },
-  { symbol: 'AMZN',  name: 'Amazon'    },
-  { symbol: 'META',  name: 'Meta'      },
-  { symbol: 'SPY',   name: 'S&P 500'   },
-  { symbol: 'QQQ',   name: 'Nasdaq'    },
+// ── Pump-and-dump watch stocks (historically volatile) ────────────────────────
+const PUMP_WATCH_STOCKS: { symbol: string; name: string }[] = [
+  { symbol: 'GME',  name: 'GameStop'        },
+  { symbol: 'AMC',  name: 'AMC Entertainment' },
+  { symbol: 'SPCE', name: 'Virgin Galactic'  },
+  { symbol: 'BBAI', name: 'BigBear.ai'       },
+  { symbol: 'MULN', name: 'Mullen Auto'      },
+  { symbol: 'FFIE', name: 'Faraday Future'   },
+  { symbol: 'BBBY', name: 'Bed Bath Beyond'  },
+  { symbol: 'CLOV', name: 'Clover Health'    },
+  { symbol: 'SNDL', name: 'Sundial Growers'  },
+  { symbol: 'MVIS', name: 'MicroVision'      },
 ]
 
 export function isUsMarketOpen(): boolean {
@@ -84,6 +87,7 @@ async function fetchCryptoPrices(): Promise<AssetData[]> {
         change24h: d.usd_24h_change ?? 0,
         change7d: d.usd_7d_change ?? 0,
         assetType: 'crypto' as const,
+        isPumpCandidate: false,
       }]
     })
   } catch (err) {
@@ -93,7 +97,7 @@ async function fetchCryptoPrices(): Promise<AssetData[]> {
 }
 
 // ── Yahoo Finance for a single stock ─────────────────────────────────────────
-async function fetchStockPrice(symbol: string, fallbackName: string): Promise<AssetData | null> {
+export async function fetchStockPrice(symbol: string, fallbackName: string): Promise<AssetData | null> {
   try {
     const res = await fetch(
       `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`,
@@ -107,14 +111,49 @@ async function fetchStockPrice(symbol: string, fallbackName: string): Promise<As
     if (!meta?.regularMarketPrice) return null
     const price = meta.regularMarketPrice
     const prev = meta.previousClose ?? price
+    const change24h = prev > 0 ? ((price - prev) / prev) * 100 : 0
     return {
       symbol, name: meta.shortName || fallbackName,
       price,
-      change24h: prev > 0 ? ((price - prev) / prev) * 100 : 0,
+      change24h,
       change7d: 0,
       assetType: 'stock',
+      isPumpCandidate: change24h > 10,
     }
   } catch { return null }
+}
+
+// ── Yahoo Finance day gainers screener (pump candidates) ──────────────────────
+async function fetchTopGainers(): Promise<AssetData[]> {
+  try {
+    const url = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=25&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap'
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
+      cache: 'no-store',
+    })
+    if (!res.ok) return []
+    const json = await res.json() as {
+      finance?: { result?: Array<{ quotes?: Array<{
+        symbol?: string
+        shortName?: string
+        regularMarketPrice?: number
+        regularMarketChangePercent?: number
+      }> }> }
+    }
+    const quotes = json?.finance?.result?.[0]?.quotes ?? []
+    return quotes
+      .filter((q) => q.regularMarketPrice != null && q.regularMarketChangePercent != null)
+      .map((q) => ({
+        symbol: q.symbol ?? '',
+        name: q.shortName ?? q.symbol ?? '',
+        price: q.regularMarketPrice ?? 0,
+        change24h: q.regularMarketChangePercent ?? 0,
+        change7d: 0,
+        assetType: 'stock' as const,
+        isPumpCandidate: (q.regularMarketChangePercent ?? 0) > 15,
+      }))
+      .filter((a) => a.symbol !== '')
+  } catch { return [] }
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -125,17 +164,30 @@ export async function getAllAssets(): Promise<AssetData[]> {
   const crypto = await fetchCryptoPrices()
   results.push(...crypto)
 
-  // Stocks only during US market hours
-  if (isUsMarketOpen()) {
-    const settled = await Promise.allSettled(
-      STOCK_LIST.map(({ symbol, name }) => fetchStockPrice(symbol, name))
+  const marketOpen = isUsMarketOpen()
+
+  if (marketOpen) {
+    // Fetch pump-watch stocks during market hours
+    const pumpSettled = await Promise.allSettled(
+      PUMP_WATCH_STOCKS.map(({ symbol, name }) => fetchStockPrice(symbol, name))
     )
-    for (const r of settled) {
+    for (const r of pumpSettled) {
       if (r.status === 'fulfilled' && r.value) results.push(r.value)
+    }
+
+    // Fetch top gainers (pump candidates from screener)
+    const gainers = await fetchTopGainers()
+    // Deduplicate against already-fetched symbols
+    const existingSymbols = new Set(results.map((a) => a.symbol))
+    for (const g of gainers) {
+      if (!existingSymbols.has(g.symbol)) {
+        results.push(g)
+        existingSymbols.add(g.symbol)
+      }
     }
   }
 
-  console.log(`[market-data] fetched ${results.length} assets (${crypto.length} crypto)`)
+  console.log(`[market-data] fetched ${results.length} assets (${crypto.length} crypto, market=${marketOpen})`)
   return results
 }
 

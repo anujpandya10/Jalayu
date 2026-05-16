@@ -2,64 +2,114 @@ import type { AssetData } from './market-data'
 
 export interface Signal {
   asset: AssetData
-  score: number       // positive = buy opportunity, negative = sell
-  action: 'BUY' | 'SELL' | 'HOLD'
+  score: number          // positive = LONG, negative = SHORT opportunity
+  direction: 'LONG' | 'SHORT'
+  action: 'BUY_LONG' | 'SELL_SHORT' | 'HOLD'
   reason: string
+  urgency: 'high' | 'medium' | 'low'
 }
 
 /**
- * Score an asset based on momentum and mean-reversion signals.
+ * Score an asset for both LONG (dip-buy) and SHORT (pump-and-dump) opportunities.
  *
- * Strategy: buy assets that dipped in the last 24h but are in a healthy 7d trend
- * (dip-buy in an uptrend). Sell assets that are overbought on both timeframes.
+ * Positive score → LONG signal (buy the dip / oversold bounce)
+ * Negative score → SHORT signal (short the pump, profit when it dumps)
  *
- * Score ranges -10 to +10. BUY threshold: ≥ 1.5. SELL threshold: ≤ -2.
- *
- * We ALWAYS produce a ranked list — no asset gets score 0 unless perfectly neutral.
- * This ensures the algo always finds something to trade.
+ * Score clamped to [-10, +10].
+ * BUY_LONG threshold: >= 1.5
+ * SELL_SHORT threshold: <= -3
  */
 export function scoreAsset(asset: AssetData): Signal {
-  const { change24h, change7d } = asset
+  const { change24h, change7d, isPumpCandidate } = asset
   let score = 0
+  let urgency: Signal['urgency'] = 'low'
   const reasons: string[] = []
 
-  // ── 24h momentum (primary signal) ─────────────────────────────────────────
-  // Extreme drop in 24h → strong buy (mean reversion)
-  if (change24h <= -8)       { score += 4.5; reasons.push(`${change24h.toFixed(1)}% 24h drop`) }
-  else if (change24h <= -5)  { score += 3.5; reasons.push(`${change24h.toFixed(1)}% 24h dip`) }
-  else if (change24h <= -3)  { score += 2.5; reasons.push(`${change24h.toFixed(1)}% 24h dip`) }
-  else if (change24h <= -1.5){ score += 1.5; reasons.push(`${change24h.toFixed(1)}% 24h pullback`) }
-  else if (change24h <= -0.5){ score += 0.8; reasons.push(`${change24h.toFixed(1)}% 24h pullback`) }
-  else if (change24h >= 8)   { score -= 4.0; reasons.push(`${change24h.toFixed(1)}% 24h spike`) }
-  else if (change24h >= 5)   { score -= 2.5; reasons.push(`${change24h.toFixed(1)}% 24h spike`) }
-  else if (change24h >= 3)   { score -= 1.5; reasons.push(`${change24h.toFixed(1)}% 24h rise`) }
-  else if (change24h >= 1.5) { score -= 0.8; reasons.push(`${change24h.toFixed(1)}% 24h rise`) }
+  if (change24h > 30) {
+    // Supernova spike — extreme pump, dump imminent
+    score = -9
+    urgency = 'high'
+    reasons.push(`Supernova spike +${change24h.toFixed(1)}%, dump imminent`)
+  } else if (change24h > 20) {
+    score = -7
+    urgency = 'high'
+    reasons.push(`Parabolic move +${change24h.toFixed(1)}%, short the top`)
+  } else if (change24h > 12) {
+    score = -5
+    urgency = 'medium'
+    reasons.push(`Pump detected +${change24h.toFixed(1)}%, watching for reversal`)
+  } else if (change24h > 8) {
+    score = -3
+    urgency = 'low'
+    reasons.push(`Elevated +${change24h.toFixed(1)}%, potential short setup`)
+  } else if (change24h < -15) {
+    // Panic sell — extreme oversold bounce opportunity
+    score = 7
+    urgency = 'high'
+    reasons.push(`Panic sell ${change24h.toFixed(1)}%, extreme oversold bounce`)
+  } else if (change24h < -8) {
+    score = 5
+    urgency = 'high'
+    reasons.push(`Heavy selling ${change24h.toFixed(1)}%, oversold bounce play`)
+  } else if (change24h < -5) {
+    score = 3.5
+    urgency = 'medium'
+    reasons.push(`Significant dip ${change24h.toFixed(1)}%, mean reversion`)
+  } else if (change24h < -2) {
+    score = 2
+    urgency = 'low'
+    reasons.push(`Pullback ${change24h.toFixed(1)}%, potential uptrend`)
+  } else if (change24h < -1) {
+    score = 1.5
+    urgency = 'low'
+    reasons.push(`Minor dip ${change24h.toFixed(1)}%`)
+  }
 
-  // ── 7d trend context (secondary signal) ───────────────────────────────────
-  // Dip-buy: 24h down but 7d up = healthy pullback in uptrend → buy more
-  if (change24h < 0 && change7d > 3)  { score += 1.5; reasons.push(`7d +${change7d.toFixed(1)}% uptrend`) }
-  if (change24h < 0 && change7d > 0)  { score += 0.5 }
-  // Extended rally: both 24h and 7d up = potentially overbought
-  if (change24h > 2 && change7d > 10) { score -= 1.5; reasons.push(`7d +${change7d.toFixed(1)}% extended`) }
-  // Deep correction: 7d also down = might go lower → reduce score
-  if (change24h < -5 && change7d < -10) { score -= 1.0; reasons.push('deep correction') }
+  // Pump candidate bonus — stocks being artificially pumped
+  if (isPumpCandidate) {
+    score -= 2
+    reasons.push('pump candidate')
+    if (urgency === 'low') urgency = 'medium'
+  }
+
+  // Dip-in-uptrend bonus for longs
+  if (score > 0 && change7d > 0) {
+    score += 1
+    reasons.push(`7d +${change7d.toFixed(1)}% uptrend`)
+  }
 
   score = Math.max(-10, Math.min(10, score))
 
-  // Always floor to a small non-zero value so ranking produces variety
-  if (score === 0) score = -change24h * 0.1
-
-  const action: Signal['action'] = score >= 1.5 ? 'BUY' : score <= -2 ? 'SELL' : 'HOLD'
+  const action: Signal['action'] = score >= 1.5 ? 'BUY_LONG' : score <= -3 ? 'SELL_SHORT' : 'HOLD'
+  const direction: Signal['direction'] = score > 0 ? 'LONG' : 'SHORT'
 
   return {
     asset,
     score,
+    direction,
     action,
+    urgency,
     reason: reasons.join(', ') || `neutral (${change24h.toFixed(2)}% 24h)`,
   }
 }
 
-/** Rank all assets by score descending. */
+/** Rank all assets by score descending (best longs first). */
 export function rankSignals(assets: AssetData[]): Signal[] {
   return assets.map(scoreAsset).sort((a, b) => b.score - a.score)
+}
+
+/** Returns LONG signals sorted best first (highest score). */
+export function rankLongs(assets: AssetData[]): Signal[] {
+  return assets
+    .map(scoreAsset)
+    .filter((s) => s.action === 'BUY_LONG')
+    .sort((a, b) => b.score - a.score)
+}
+
+/** Returns SHORT signals sorted best first (most negative score first). */
+export function rankShorts(assets: AssetData[]): Signal[] {
+  return assets
+    .map(scoreAsset)
+    .filter((s) => s.action === 'SELL_SHORT')
+    .sort((a, b) => a.score - b.score)  // most negative first
 }

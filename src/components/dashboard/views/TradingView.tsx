@@ -14,6 +14,7 @@ interface Position {
   pnl: number
   pnlPct: number
   assetType?: string
+  direction?: string
 }
 
 interface Portfolio {
@@ -36,6 +37,7 @@ interface Trade {
   reason: string | null
   auto: boolean
   created_at: string
+  direction?: string | null
 }
 
 interface NewsItem {
@@ -46,14 +48,17 @@ interface NewsItem {
 }
 
 interface TickEvent {
-  type: 'BUY' | 'SELL' | 'ROTATE' | 'SCAN' | 'SKIP' | 'HOLD'
+  type: 'LONG_BUY' | 'LONG_SELL' | 'SHORT_OPEN' | 'SHORT_COVER' | 'SCAN' | 'HOLD'
   symbol: string
   name: string
   price: number
+  direction: 'LONG' | 'SHORT'
   shares?: number
   total?: number
   pnl?: number
+  pnlPct?: number
   reason: string
+  urgency?: string
   ts: number
 }
 
@@ -87,19 +92,34 @@ function timeAgo(ts: number): string {
 
 // ─── Subcomponents ─────────────────────────────────────────────────────────────
 
-function PulseDot({ active }: { active: boolean }) {
+function PulseDot({ active, color = '#2D6A2D' }: { active: boolean; color?: string }) {
   return (
     <span style={{ position: 'relative', display: 'inline-flex', width: 10, height: 10, flexShrink: 0 }}>
       <span style={{
         position: 'absolute', inset: 0, borderRadius: '50%',
-        background: active ? '#2D6A2D' : '#aaa',
+        background: active ? color : '#aaa',
         animation: active ? 'pingDot 1.4s ease-in-out infinite' : 'none',
         opacity: 0.5,
       }} />
       <span style={{
         position: 'relative', display: 'inline-flex', width: 10, height: 10,
-        borderRadius: '50%', background: active ? '#2D6A2D' : '#aaa',
+        borderRadius: '50%', background: active ? color : '#aaa',
       }} />
+    </span>
+  )
+}
+
+function DirectionChip({ direction }: { direction: 'LONG' | 'SHORT' | string }) {
+  const isShort = direction === 'SHORT'
+  return (
+    <span style={{
+      fontSize: 9, fontWeight: 800, padding: '1px 5px', borderRadius: 4,
+      background: isShort ? '#C4834A22' : '#2D6A2D22',
+      color: isShort ? '#C4834A' : '#2D6A2D',
+      letterSpacing: '0.06em',
+      textTransform: 'uppercase',
+    }}>
+      {isShort ? 'SHORT' : 'LONG'}
     </span>
   )
 }
@@ -122,11 +142,10 @@ function ActivityFeed({ items, scanning }: { items: ActivityItem[]; scanning: bo
       overflowY: 'auto',
       marginBottom: 20,
     }} ref={feedRef}>
-      {/* scanning line */}
       {scanning && (
         <div style={{ color: '#94a3b8', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ animation: 'spin 1s linear infinite', display: 'inline-block' }}>◌</span>
-          <span>Scanning markets…</span>
+          <span>Scanning for pump &amp; dump signals…</span>
         </div>
       )}
       {items.length === 0 && !scanning && (
@@ -137,19 +156,32 @@ function ActivityFeed({ items, scanning }: { items: ActivityItem[]; scanning: bo
         let prefix = '·'
         let line = event.reason
 
-        if (event.type === 'BUY') {
+        if (event.type === 'LONG_BUY') {
           color = '#86efac'
-          prefix = '▲ BUY'
+          prefix = '▲ LONG'
           line = `${event.symbol} ${event.shares?.toFixed(6)} @ ${fmtPrice(event.price)} = ${fmtMoney(event.total ?? 0)} — ${event.reason}`
-        } else if (event.type === 'SELL' || event.type === 'ROTATE') {
+        } else if (event.type === 'LONG_SELL') {
           const pnlPos = (event.pnl ?? 0) >= 0
           color = pnlPos ? '#fcd34d' : '#f87171'
-          prefix = event.type === 'ROTATE' ? '↩ ROTATE' : pnlPos ? '▼ SELL ✓' : '▼ SELL ✗'
+          prefix = pnlPos ? '▼ LONG EXIT ✓' : '▼ LONG EXIT ✗'
           const pnlVal = event.pnl ?? 0
           const pnlStr = pnlVal >= 0
             ? `+$${Math.abs(pnlVal).toFixed(3)} profit`
             : `-$${Math.abs(pnlVal).toFixed(3)} loss`
           line = `${event.symbol} — ${pnlStr} — ${event.reason}`
+        } else if (event.type === 'SHORT_OPEN') {
+          color = '#fdba74'  // orange
+          prefix = '▼ SHORT ↓'
+          line = `${event.symbol} shorted ${event.shares?.toFixed(6)} @ ${fmtPrice(event.price)} = ${fmtMoney(event.total ?? 0)} — ${event.reason}`
+        } else if (event.type === 'SHORT_COVER') {
+          const pnlPos = (event.pnl ?? 0) >= 0
+          color = pnlPos ? '#fcd34d' : '#f87171'
+          prefix = pnlPos ? '▲ COVER ✓' : '▲ COVER ✗'
+          const pnlVal = event.pnl ?? 0
+          const pnlStr = pnlVal >= 0
+            ? `+$${Math.abs(pnlVal).toFixed(3)} profit`
+            : `-$${Math.abs(pnlVal).toFixed(3)} loss`
+          line = `${event.symbol} covered — ${pnlStr} — ${event.reason}`
         } else if (event.type === 'SCAN') {
           color = '#60a5fa'
           prefix = '⟳ SCAN'
@@ -159,9 +191,12 @@ function ActivityFeed({ items, scanning }: { items: ActivityItem[]; scanning: bo
         }
 
         return (
-          <div key={id} style={{ color, marginBottom: 4, lineHeight: 1.5 }}>
-            <span style={{ color: '#475569', marginRight: 6 }}>{timeAgo(event.ts)}</span>
-            <span style={{ fontWeight: 700, marginRight: 6 }}>{prefix}</span>
+          <div key={id} style={{ color, marginBottom: 4, lineHeight: 1.5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ color: '#475569' }}>{timeAgo(event.ts)}</span>
+            <span style={{ fontWeight: 700 }}>{prefix}</span>
+            {(event.type === 'LONG_BUY' || event.type === 'LONG_SELL' || event.type === 'SHORT_OPEN' || event.type === 'SHORT_COVER') && (
+              <DirectionChip direction={event.direction} />
+            )}
             <span>{line}</span>
           </div>
         )
@@ -171,36 +206,51 @@ function ActivityFeed({ items, scanning }: { items: ActivityItem[]; scanning: bo
 }
 
 function PositionRow({ pos }: { pos: Position }) {
+  const isShort = pos.direction === 'SHORT'
+  // For LONG: profit = price rose. For SHORT: profit = price fell (pnl is already computed correctly)
   const up = pos.pnl >= 0
+
+  // Progress bar: for LONG toward TP; for SHORT toward dump
   const pctFromTP = pos.avgBuyPrice > 0
-    ? ((pos.currentPrice - pos.avgBuyPrice * 1.005) / (pos.avgBuyPrice * 0.005)) * 100
+    ? isShort
+      ? ((pos.avgBuyPrice - pos.currentPrice) / (pos.avgBuyPrice * 0.005)) * 100  // SHORT: progress toward drop
+      : ((pos.currentPrice - pos.avgBuyPrice * 1.005) / (pos.avgBuyPrice * 0.005)) * 100
     : 0
+
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '90px 1fr 90px 90px 100px',
+      gridTemplateColumns: '100px 1fr 90px 90px 100px',
       gap: 8,
       padding: '10px 0',
       borderBottom: '1px solid var(--border)',
       alignItems: 'center',
     }}>
       <div>
-        <div style={{ fontWeight: 700, fontSize: 13 }}>{pos.symbol}</div>
+        <div style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 5 }}>
+          {pos.symbol}
+          <DirectionChip direction={isShort ? 'SHORT' : 'LONG'} />
+        </div>
         <div style={{ fontSize: 10, color: 'var(--text-3)' }}>{pos.name}</div>
       </div>
       <div>
         <div style={{ fontSize: 11, color: 'var(--text-3)' }}>
           entry {fmtPrice(pos.avgBuyPrice)} → <span style={{ fontWeight: 600, color: up ? '#2D6A2D' : '#8B1A1A' }}>{fmtPrice(pos.currentPrice)}</span>
         </div>
-        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
-          TP {fmtPrice(pos.avgBuyPrice * 1.005)} · SL {fmtPrice(pos.avgBuyPrice * 0.992)}
-        </div>
-        {/* progress bar toward TP */}
+        {isShort ? (
+          <div style={{ fontSize: 10, color: '#C4834A', marginTop: 2 }}>
+            need it to DROP · TP {fmtPrice(pos.avgBuyPrice * 0.9985)} · SL {fmtPrice(pos.avgBuyPrice * 1.003)}
+          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
+            TP {fmtPrice(pos.avgBuyPrice * 1.005)} · SL {fmtPrice(pos.avgBuyPrice * 0.997)}
+          </div>
+        )}
         <div style={{ height: 3, background: 'var(--border)', borderRadius: 2, marginTop: 4, maxWidth: 120 }}>
           <div style={{
             height: '100%', borderRadius: 2,
             width: `${Math.min(100, Math.max(0, pctFromTP))}%`,
-            background: up ? '#2D6A2D' : '#8B1A1A',
+            background: up ? (isShort ? '#C4834A' : '#2D6A2D') : '#8B1A1A',
           }} />
         </div>
       </div>
@@ -217,7 +267,7 @@ function PositionRow({ pos }: { pos: Position }) {
       </div>
       <div style={{ textAlign: 'right' }}>
         <span style={{ fontSize: 11, color: up ? '#2D6A2D' : '#8B1A1A', fontWeight: 600 }}>
-          {up ? '+' : ''}{fmtMoney(pos.pnl)}
+          {up ? '+' : '-'}{fmtMoney(Math.abs(pos.pnl))}
         </span>
       </div>
     </div>
@@ -226,7 +276,7 @@ function PositionRow({ pos }: { pos: Position }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-const TICK_INTERVAL = 12000 // 12 seconds
+const TICK_INTERVAL = 8000 // 8 seconds
 
 export default function TradingView() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
@@ -239,6 +289,9 @@ export default function TradingView() {
   const [countdown, setCountdown] = useState(TICK_INTERVAL / 1000)
   const [totalTrades, setTotalTrades] = useState(0)
   const [assetsScanned, setAssetsScanned] = useState(0)
+  const [pumpCandidates, setPumpCandidates] = useState(0)
+  const [currentLongs, setCurrentLongs] = useState(0)
+  const [currentShorts, setCurrentShorts] = useState(0)
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -271,18 +324,33 @@ export default function TradingView() {
     try {
       const res = await fetch('/api/trading/tick', { method: 'POST' })
       if (!res.ok) return
-      const data = await res.json() as { events: TickEvent[]; cash: number; assetsScanned: number }
+      const data = await res.json() as {
+        events: TickEvent[]
+        cash: number
+        assetsScanned: number
+        pumpCandidates?: number
+        currentLongs?: number
+        currentShorts?: number
+      }
 
       addActivity(data.events)
       setAssetsScanned(data.assetsScanned)
+      setPumpCandidates(data.pumpCandidates ?? 0)
+      setCurrentLongs(data.currentLongs ?? 0)
+      setCurrentShorts(data.currentShorts ?? 0)
       setLastScan(Date.now())
 
-      const hadTrades = data.events.some((e) => e.type === 'BUY' || e.type === 'SELL')
+      const hadTrades = data.events.some((e) =>
+        e.type === 'LONG_BUY' || e.type === 'LONG_SELL' ||
+        e.type === 'SHORT_OPEN' || e.type === 'SHORT_COVER'
+      )
       if (hadTrades) {
-        setTotalTrades((n) => n + data.events.filter((e) => e.type === 'BUY' || e.type === 'SELL').length)
+        setTotalTrades((n) => n + data.events.filter((e) =>
+          e.type === 'LONG_BUY' || e.type === 'LONG_SELL' ||
+          e.type === 'SHORT_OPEN' || e.type === 'SHORT_COVER'
+        ).length)
         await Promise.all([loadPortfolio(), loadTrades()])
       } else {
-        // Still update cash from response
         setPortfolio((prev) => prev ? { ...prev, cash: data.cash } : prev)
       }
     } catch { /* silent */ } finally {
@@ -296,18 +364,13 @@ export default function TradingView() {
       .finally(() => setLoading(false))
   }, [loadPortfolio, loadTrades, loadNews])
 
-  // Run tick immediately, then every 20s
+  // Run tick immediately, then every 8s
   useEffect(() => {
-    // small delay on first run so initial load finishes first
     const initial = setTimeout(() => { runTick() }, 1500)
-
     tickRef.current = setInterval(() => { runTick() }, TICK_INTERVAL)
-
-    // Countdown timer
     cdRef.current = setInterval(() => {
       setCountdown((n) => Math.max(0, n - 1))
     }, 1000)
-
     return () => {
       clearTimeout(initial)
       if (tickRef.current) clearInterval(tickRef.current)
@@ -317,6 +380,7 @@ export default function TradingView() {
 
   const totalPnL = portfolio?.totalPnL ?? 0
   const totalPnLPct = portfolio?.totalPnLPct ?? 0
+  const hasShorts = currentShorts > 0
 
   if (loading) {
     return (
@@ -356,21 +420,33 @@ export default function TradingView() {
           justifyContent: 'space-between',
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            <PulseDot active={true} />
-            <span style={{ fontWeight: 800, fontSize: 13, color: '#86efac', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-              Auto-Trader Live
+            <PulseDot active={true} color={hasShorts ? '#C4834A' : '#2D6A2D'} />
+            <span style={{
+              fontWeight: 800, fontSize: 13,
+              color: hasShorts ? '#fdba74' : '#86efac',
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+            }}>
+              {hasShorts ? 'PUMP & DUMP DETECTOR ACTIVE' : 'Auto-Trader Live'}
             </span>
             <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>
               {scanning ? '⟳ Scanning…' : `${assetsScanned} assets scanned`}
             </span>
+            {pumpCandidates > 0 && (
+              <>
+                <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
+                <span style={{ fontSize: 12, color: '#fdba74', fontWeight: 700 }}>
+                  {pumpCandidates} pump candidates
+                </span>
+              </>
+            )}
             <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>
               Next scan: <strong style={{ color: '#e2e8f0' }}>{countdown}s</strong>
             </span>
             <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>
-              Trades this session: <strong style={{ color: '#fcd34d' }}>{totalTrades}</strong>
+              Trades: <strong style={{ color: '#fcd34d' }}>{totalTrades}</strong>
             </span>
             {lastScan && (
               <>
@@ -407,7 +483,7 @@ export default function TradingView() {
               {fmtMoney(portfolio?.totalValue ?? 500)}
             </div>
             <div style={{ fontSize: 13, fontWeight: 600, color: totalPnL >= 0 ? '#2D6A2D' : '#8B1A1A', marginTop: 2 }}>
-              {totalPnL >= 0 ? '+' : '-'}{fmtMoney(totalPnL)} ({fmtPct(totalPnLPct)})
+              {totalPnL >= 0 ? '+' : '-'}{fmtMoney(Math.abs(totalPnL))} ({fmtPct(totalPnLPct)})
             </div>
           </div>
           <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
@@ -415,12 +491,23 @@ export default function TradingView() {
             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{fmtMoney(portfolio?.cash ?? 500)}</div>
           </div>
           <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Open Positions</div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Positions</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{portfolio?.positions.length ?? 0}</div>
+            <div style={{ fontSize: 11, marginTop: 2 }}>
+              <span style={{ color: '#2D6A2D', fontWeight: 700 }}>{currentLongs}L</span>
+              <span style={{ color: 'var(--text-3)', margin: '0 4px' }}>·</span>
+              <span style={{ color: '#C4834A', fontWeight: 700 }}>{currentShorts}S</span>
+            </div>
           </div>
           <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Total Trades</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{trades.length}</div>
+          </div>
+          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Running P&amp;L</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: totalPnL >= 0 ? '#2D6A2D' : '#8B1A1A' }}>
+              {totalPnL >= 0 ? '+' : ''}{fmtPct(totalPnLPct)}
+            </div>
           </div>
         </div>
 
@@ -431,11 +518,15 @@ export default function TradingView() {
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
               Open Positions
+              {currentShorts > 0 && (
+                <span style={{ marginLeft: 8, color: '#C4834A', fontSize: 10, fontWeight: 700 }}>
+                  {currentShorts} SHORT{currentShorts > 1 ? 'S' : ''} OPEN
+                </span>
+              )}
             </div>
-            {/* Column headers */}
             {(portfolio?.positions.length ?? 0) > 0 && (
               <div style={{
-                display: 'grid', gridTemplateColumns: '90px 1fr 90px 90px 100px',
+                display: 'grid', gridTemplateColumns: '100px 1fr 90px 90px 100px',
                 gap: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)', marginBottom: 2,
               }}>
                 {['Asset', 'Price / Targets', 'Value', 'Change', 'P&L'].map((h) => (
@@ -445,7 +536,7 @@ export default function TradingView() {
             )}
             {(portfolio?.positions.length ?? 0) === 0 ? (
               <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: 13, padding: '24px 0' }}>
-                No open positions — algo will enter when signals fire
+                No open positions — algo scanning for longs &amp; short setups
               </div>
             ) : (
               portfolio!.positions.map((pos) => <PositionRow key={pos.symbol} pos={pos} />)
@@ -461,19 +552,30 @@ export default function TradingView() {
               <div style={{ textAlign: 'center', color: 'var(--text-3)', fontSize: 13, padding: '24px 0' }}>No trades yet</div>
             ) : (
               trades.map((t) => {
+                const isShortPos = t.direction === 'SHORT'
                 const isBuy = t.action === 'BUY'
                 const pnlPos = (t.pnl ?? 0) >= 0
+
+                // Label: LONG BUY, LONG SELL, SHORT OPEN, SHORT COVER
+                let label = isBuy ? 'BUY' : 'SELL'
+                let labelColor = isBuy ? '#2D6A2D' : (pnlPos ? '#2D6A2D' : '#8B1A1A')
+                let labelBg = isBuy ? '#2D6A2D18' : (pnlPos ? '#2D6A2D18' : '#8B1A1A18')
+                if (isShortPos) {
+                  label = isBuy ? 'SHORT' : 'COVER'
+                  labelColor = '#C4834A'
+                  labelBg = '#C4834A18'
+                }
+
                 return (
                   <div key={t.id} className="trade-row" style={{
-                    display: 'grid', gridTemplateColumns: '50px 70px 1fr 70px',
+                    display: 'grid', gridTemplateColumns: '60px 70px 1fr 70px',
                     gap: 8, padding: '8px 0', borderBottom: '1px solid var(--border)', alignItems: 'start',
                   }}>
                     <span style={{
                       fontSize: 10, fontWeight: 800, padding: '2px 6px', borderRadius: 5,
-                      background: isBuy ? '#2D6A2D18' : pnlPos ? '#2D6A2D18' : '#8B1A1A18',
-                      color: isBuy ? '#2D6A2D' : pnlPos ? '#2D6A2D' : '#8B1A1A',
+                      background: labelBg, color: labelColor,
                     }}>
-                      {isBuy ? 'BUY' : 'SELL'}
+                      {label}
                     </span>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 12 }}>{t.symbol}</div>
