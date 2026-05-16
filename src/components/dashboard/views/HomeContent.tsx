@@ -10,9 +10,15 @@ import type { HomeWidgetId, WidgetSize } from '@/lib/dashboard-layout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+export interface TradingPosition {
+  symbol: string; name: string; direction: 'LONG' | 'SHORT'
+  pnl: number; pnlPct: number; currentPrice: number; avgBuyPrice: number
+}
+
 interface TradingSnap {
   netWorth: number; totalPnl: number; totalPnlPct: number
   openPositions: number; totalTrades: number
+  positions: TradingPosition[]
 }
 
 declare global {
@@ -226,11 +232,18 @@ export default function HomeContent({
       if (!data) return
       const SEED = 500
       const cash = Number(data.cash ?? SEED)
-      const positions: Array<{ shares: number; currentPrice: number; avgBuyPrice: number }> = data.positions ?? []
-      const posValue = positions.reduce((s, p) => s + Number(p.shares) * Number(p.currentPrice || p.avgBuyPrice), 0)
+      const rawPositions: Array<{ symbol: string; name: string; shares: number; currentPrice: number; avgBuyPrice: number; pnl: number; pnlPct: number; direction?: string }> = data.positions ?? []
+      const posValue = rawPositions.reduce((s, p) => s + Number(p.shares) * Number(p.currentPrice || p.avgBuyPrice), 0)
       const netWorth = cash + posValue
       const totalPnl = netWorth - SEED
-      setTradingSnap({ netWorth, totalPnl, totalPnlPct: (totalPnl / SEED) * 100, openPositions: positions.length, totalTrades: data.totalTrades ?? 0 })
+      const positions: TradingPosition[] = rawPositions.map((p) => ({
+        symbol: p.symbol, name: p.name ?? p.symbol,
+        direction: (p.direction === 'SHORT' ? 'SHORT' : 'LONG') as 'LONG' | 'SHORT',
+        pnl: Number(p.pnl ?? 0), pnlPct: Number(p.pnlPct ?? 0),
+        currentPrice: Number(p.currentPrice ?? p.avgBuyPrice),
+        avgBuyPrice: Number(p.avgBuyPrice),
+      }))
+      setTradingSnap({ netWorth, totalPnl, totalPnlPct: (totalPnl / SEED) * 100, openPositions: positions.length, totalTrades: data.totalTrades ?? 0, positions })
     }).catch(() => {})
   }, [])
 
@@ -317,6 +330,7 @@ export default function HomeContent({
       reminders,
       todayMood,
       yesterdayMood,
+      moodsRecent,
       healthProfiles,
       medications,
       healthAppointments,
@@ -355,6 +369,7 @@ export default function HomeContent({
       reminders,
       todayMood,
       yesterdayMood,
+      moodsRecent,
       healthProfiles,
       medications,
       healthAppointments,
