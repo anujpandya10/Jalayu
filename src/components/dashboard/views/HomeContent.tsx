@@ -503,8 +503,9 @@ export default function HomeContent({
 
             {/* Morning note */}
             <div style={{
-              background: 'var(--morning)', border: '1px solid var(--border)',
+              background: 'var(--morning)', border: `1px solid ${AMBER}28`,
               borderRadius: 18, padding: '14px 16px',
+              boxShadow: `0 0 20px ${AMBER}0A`,
             }}>
               <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px' }}>
                 ✦ From Jalayu
@@ -651,7 +652,7 @@ export default function HomeContent({
 
             {/* Row: Today + Mood */}
             <div className="w2">
-              <W accent="#6366F1" icon={CheckSquare} label="Today" onClick={() => setSidebarView('calendar')}>
+              <W accent={AMBER} icon={CheckSquare} label="Today" onClick={() => setSidebarView('calendar')}>
                 <p style={{ fontSize: 32, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 3px' }}>
                   {todayTasks.length}
                 </p>
@@ -659,13 +660,13 @@ export default function HomeContent({
                   {todayTasks.length === 1 ? 'task left' : 'tasks left'}
                 </p>
                 {completedToday.length > 0 && (
-                  <p style={{ fontSize: 10, color: '#6366F1', margin: '5px 0 0', fontWeight: 600 }}>
+                  <p style={{ fontSize: 10, color: AMBER, margin: '5px 0 0', fontWeight: 600 }}>
                     ✓ {completedToday.length} done
                   </p>
                 )}
               </W>
 
-              <W accent="#F43F5E" icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
+              <W accent={AMBER} icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
                 {todayMood ? (
                   <>
                     <p style={{ fontSize: 32, lineHeight: 1, margin: '0 0 3px' }}>{MOOD_EMOJI[todayMood.score]}</p>
@@ -726,13 +727,13 @@ export default function HomeContent({
 
             {/* Row: Upcoming + Reminders */}
             <div className="w2">
-              <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
+              <W accent={AMBER} icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
                 {calConnected === false ? (
                   <>
                     <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>No calendar linked</p>
                     <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.5 }}>Connect Google Calendar</p>
                     <button onClick={(e) => { e.stopPropagation(); setSidebarView('calendar') }}
-                      style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', background: '#6366F115', color: '#6366F1', border: '1px solid #6366F130', borderRadius: 99, cursor: 'pointer' }}>
+                      style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', background: `${AMBER}15`, color: AMBER, border: `1px solid ${AMBER}30`, borderRadius: 99, cursor: 'pointer' }}>
                       Connect →
                     </button>
                   </>
@@ -746,7 +747,7 @@ export default function HomeContent({
                       const { label, isToday } = formatEventTime(ev.start, todayStr)
                       return (
                         <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
-                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? '#6366F1' : AMBER, flexShrink: 0, marginTop: 4 }} />
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? AMBER : `${AMBER}60`, flexShrink: 0, marginTop: 4 }} />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
                             <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{label}</p>
@@ -757,7 +758,7 @@ export default function HomeContent({
                   </div>
                 )}
               </W>
-              <W accent="#F97316" icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
+              <W accent={AMBER} icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
                 <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>Never miss it</p>
                 <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Smart alerts & nudges</p>
               </W>
@@ -765,11 +766,11 @@ export default function HomeContent({
 
             {/* Row: Intelligence + People */}
             <div className="w2">
-              <W accent="#6366F1" icon={Brain} label="Intelligence" onClick={() => setSidebarView('insights')}>
+              <W accent={AMBER} icon={Brain} label="Intelligence" onClick={() => setSidebarView('insights')}>
                 <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>AI insights</p>
                 <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Patterns from your data</p>
               </W>
-              <W accent="#EC4899" icon={Users} label="People" onClick={() => setSidebarView('people')}>
+              <W accent={AMBER} icon={Users} label="People" onClick={() => setSidebarView('people')}>
                 <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>Your circle</p>
                 <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Contacts & relationships</p>
               </W>
@@ -792,8 +793,8 @@ export default function HomeContent({
             }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <div style={{ width: 22, height: 22, borderRadius: 6, background: '#6366F115', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <CheckSquare size={11} color="#6366F1" />
+                  <div style={{ width: 22, height: 22, borderRadius: 6, background: `${AMBER}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CheckSquare size={11} color={AMBER} />
                   </div>
                   <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Today</span>
                 </div>
@@ -881,29 +882,29 @@ export default function HomeContent({
                 </div>
               </div>
               <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${weekPct}%`, background: `linear-gradient(90deg, ${AMBER}, #E8AA6A)`, borderRadius: 99, transition: 'width 1s cubic-bezier(.34,1.56,.64,1)' }} />
+                <div style={{ height: '100%', width: `${weekPct}%`, background: `linear-gradient(90deg, ${AMBER}, #67E8F9)`, borderRadius: 99, transition: 'width 1s cubic-bezier(.34,1.56,.64,1)' }} />
               </div>
             </W>
 
             {/* Health */}
-            <W accent="#14B8A6" icon={Stethoscope} label="Health" onClick={() => setSidebarView('health')}>
+            <W accent={AMBER} icon={Stethoscope} label="Health" onClick={() => setSidebarView('health')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Insurance & meds</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Coverage, appointments & records</p>
             </W>
 
             {/* Strategy Lab */}
-            <W accent="#22C55E" icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
+            <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates by setup</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>
             </W>
 
             {/* Reflect + Memory (swapped: Reflect first) */}
-            <W accent="#8B5CF6" icon={Sparkles} label="Reflect" onClick={() => setSidebarView('reflect')}>
+            <W accent={AMBER} icon={Sparkles} label="Reflect" onClick={() => setSidebarView('reflect')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Daily reflection</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>What today taught you</p>
             </W>
 
-            <W accent="#F59E0B" icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')}>
+            <W accent={AMBER} icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Second brain</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Notes & insights</p>
             </W>
@@ -921,8 +922,8 @@ export default function HomeContent({
           <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: '14px 16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <div style={{ width: 22, height: 22, borderRadius: 6, background: '#6366F115', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CheckSquare size={11} color="#6366F1" />
+                <div style={{ width: 22, height: 22, borderRadius: 6, background: `${AMBER}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckSquare size={11} color={AMBER} />
                 </div>
                 <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Today&apos;s tasks</span>
               </div>
@@ -961,7 +962,7 @@ export default function HomeContent({
                 <div style={{ height: '100%', width: `${weekPct}%`, background: AMBER, borderRadius: 99 }} />
               </div>
             </W>
-            <W accent="#14B8A6" icon={Stethoscope} label="Health" onClick={() => setSidebarView('health')}>
+            <W accent={AMBER} icon={Stethoscope} label="Health" onClick={() => setSidebarView('health')}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Insurance & meds</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Coverage & records</p>
             </W>
@@ -969,18 +970,18 @@ export default function HomeContent({
 
           {/* Strategy Lab + Reminders */}
           <div className="w2">
-            <W accent="#22C55E" icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
+            <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Enable / disable</p>
             </W>
-            <W accent="#F97316" icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
+            <W accent={AMBER} icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
               <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Alerts</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Smart nudges</p>
             </W>
           </div>
 
           {/* Calendar (mobile) */}
-          <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
+          <W accent={AMBER} icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
             {calConnected === false ? (
               <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>No calendar linked — tap to connect</p>
             ) : calConnected === null ? (
@@ -993,7 +994,7 @@ export default function HomeContent({
                   const { label, isToday } = formatEventTime(ev.start, todayStr)
                   return (
                     <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? '#6366F1' : 'var(--border-2)', flexShrink: 0 }} />
+                      <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? AMBER : `${AMBER}50`, flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
                         <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{label}</p>
