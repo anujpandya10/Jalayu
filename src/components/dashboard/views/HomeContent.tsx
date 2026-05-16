@@ -1,78 +1,26 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Mic, MicOff, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react'
+import {
+  Mic, MicOff, ChevronRight,
+  TrendingUp, TrendingDown, CheckSquare, Heart,
+  BookOpen, Sparkles, Brain, Stethoscope,
+  Users, Bell, FlaskConical, BarChart2, Zap,
+} from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile, Task, Mood } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 import { getDayNumber } from '@/lib/utils'
 import GalaxyOrb from '@/components/GalaxyOrb'
 
-// ── Trading P&L mini-widget ────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface TradingSnap {
-  cash: number
   netWorth: number
   totalPnl: number
   totalPnlPct: number
   openPositions: number
   totalTrades: number
-}
-
-function TradingPnlWidget({ onNavigate }: { onNavigate: () => void }) {
-  const [snap, setSnap] = useState<TradingSnap | null>(null)
-
-  useEffect(() => {
-    const SEED = 500
-    Promise.all([
-      fetch('/api/trading/portfolio').then(r => r.ok ? r.json() : null),
-    ]).then(([data]) => {
-      if (!data) return
-      const cash = Number(data.cash ?? SEED)
-      const positions: Array<{ shares: number; currentPrice: number; avgBuyPrice: number }> = data.positions ?? []
-      const posValue = positions.reduce((s, p) => s + Number(p.shares) * Number(p.currentPrice || p.avgBuyPrice), 0)
-      const netWorth = cash + posValue
-      const totalPnl = netWorth - SEED
-      setSnap({
-        cash,
-        netWorth,
-        totalPnl,
-        totalPnlPct: (totalPnl / SEED) * 100,
-        openPositions: positions.length,
-        totalTrades: data.totalTrades ?? 0,
-      })
-    }).catch(() => {})
-  }, [])
-
-  const positive = snap ? snap.totalPnl >= 0 : true
-  const pnlColor = positive ? '#22C55E' : '#EF4444'
-
-  return (
-    <button
-      onClick={onNavigate}
-      style={{
-        display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
-        background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 14, padding: '14px 14px 12px',
-        transition: 'border-color 0.15s',
-      }}
-    >
-      <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 6px' }}>
-        Trading
-      </p>
-      {snap ? (
-        <>
-          <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px', lineHeight: 1 }}>
-            ${snap.netWorth.toFixed(2)}
-          </p>
-          <p style={{ fontSize: 11, color: pnlColor, margin: 0 }}>
-            {positive ? '+' : ''}{snap.totalPnl.toFixed(2)} · {snap.openPositions} open
-          </p>
-        </>
-      ) : (
-        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Loading…</p>
-      )}
-    </button>
-  )
 }
 
 declare global {
@@ -94,25 +42,26 @@ function toLocalDateStr(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-type Reply = { content: string; streaming: boolean }
-type OrbState = 'idle' | 'listening' | 'speaking'
+type Reply     = { content: string; streaming: boolean }
+type OrbState  = 'idle' | 'listening' | 'speaking'
 
-const MOODS = [
+const MOODS: { score: number; emoji: string; label: string }[] = [
   { score: 1, emoji: '😔', label: 'Rough' },
-  { score: 2, emoji: '😕', label: 'Low' },
-  { score: 3, emoji: '😐', label: 'Okay' },
-  { score: 4, emoji: '🙂', label: 'Good' },
+  { score: 2, emoji: '😕', label: 'Low'   },
+  { score: 3, emoji: '😐', label: 'Okay'  },
+  { score: 4, emoji: '🙂', label: 'Good'  },
   { score: 5, emoji: '😊', label: 'Great' },
 ]
 const MOOD_EMOJI: Record<number, string> = { 1: '😔', 2: '😕', 3: '😐', 4: '🙂', 5: '😊' }
+const MOOD_LABEL: Record<number, string> = { 1: 'Rough', 2: 'Low', 3: 'Okay', 4: 'Good', 5: 'Great' }
 const AMBER = '#C4834A'
 
 function Dots() {
   return (
-    <div style={{ display: 'flex', gap: 5, alignItems: 'center', height: 22 }}>
+    <div style={{ display: 'flex', gap: 5, alignItems: 'center', height: 20 }}>
       {[0, 1, 2].map((i) => (
         <span key={i} style={{
-          width: 5, height: 5, borderRadius: '50%',
+          width: 4, height: 4, borderRadius: '50%',
           background: 'var(--text-3)', display: 'inline-block',
           animation: `jdot 1.3s ease-in-out ${i * 0.18}s infinite`,
         }} />
@@ -120,6 +69,73 @@ function Dots() {
     </div>
   )
 }
+
+// ── Widget card base ──────────────────────────────────────────────────────────
+
+function Widget({
+  accent, icon: Icon, label, onClick, children, fullWidth = false, minHeight,
+}: {
+  accent: string
+  icon: React.ComponentType<{ size?: number; color?: string }>
+  label: string
+  onClick?: () => void
+  children: React.ReactNode
+  fullWidth?: boolean
+  minHeight?: number
+}) {
+  const Tag = onClick ? 'button' : 'div'
+  return (
+    <Tag
+      onClick={onClick}
+      style={{
+        display: 'block', width: '100%', textAlign: 'left',
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 20, padding: '16px 18px',
+        cursor: onClick ? 'pointer' : 'default',
+        minHeight: minHeight ?? 0,
+        position: 'relative', overflow: 'hidden',
+        transition: 'transform 0.12s, box-shadow 0.12s',
+        gridColumn: fullWidth ? '1 / -1' : undefined,
+      } as React.CSSProperties}
+      onMouseEnter={onClick ? (e) => {
+        (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)'
+        ;(e.currentTarget as HTMLElement).style.boxShadow = '0 4px 16px rgba(0,0,0,0.07)'
+      } : undefined}
+      onMouseLeave={onClick ? (e) => {
+        (e.currentTarget as HTMLElement).style.transform = 'translateY(0)'
+        ;(e.currentTarget as HTMLElement).style.boxShadow = 'none'
+      } : undefined}
+    >
+      {/* Accent tint in corner */}
+      <div style={{
+        position: 'absolute', top: 0, right: 0, width: 80, height: 80,
+        background: `radial-gradient(circle at 100% 0%, ${accent}18 0%, transparent 70%)`,
+        pointerEvents: 'none',
+      }} />
+
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{
+            width: 26, height: 26, borderRadius: 8,
+            background: `${accent}15`,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <Icon size={13} color={accent} />
+          </div>
+          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
+            {label}
+          </span>
+        </div>
+        {onClick && <ChevronRight size={13} color="var(--text-3)" />}
+      </div>
+
+      {children}
+    </Tag>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function HomeContent({
   profile,
@@ -149,100 +165,116 @@ export default function HomeContent({
   const setSidebarView   = useStore((s) => s.setSidebarView)
 
   const [morningNote, setMorningNote] = useState<string | null>(null)
-  const [focus, setFocus] = useState<string | null>(null)
-  const [tip, setTip] = useState<string | null>(null)
-  const [chapter, setChapter] = useState<string | null>(null)
+  const [focus,       setFocus]       = useState<string | null>(null)
+  const [tip,         setTip]         = useState<string | null>(null)
+  const [chapter,     setChapter]     = useState<string | null>(null)
   const [noteLoading, setNoteLoading] = useState(true)
+  const [tradingSnap, setTradingSnap] = useState<TradingSnap | null>(null)
+
   const [voiceListening, setVoiceListening] = useState(false)
-  const homeRecRef = useRef<HomeSpeechRec | null>(null)
+  const homeRecRef      = useRef<HomeSpeechRec | null>(null)
   const homeVoiceBaseRef = useRef('')
-  const homeFinalRef = useRef('')
-  const [input, setInput] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const [userAnswer, setUserAnswer] = useState('')
-  const [reply, setReply] = useState<Reply | null>(null)
-  const [sending, setSending] = useState(false)
-  const [addingTask, setAddingTask] = useState(false)
+  const homeFinalRef    = useRef('')
+  const [input,       setInput]       = useState('')
+  const [submitted,   setSubmitted]   = useState(false)
+  const [userAnswer,  setUserAnswer]  = useState('')
+  const [reply,       setReply]       = useState<Reply | null>(null)
+  const [sending,     setSending]     = useState(false)
+  const [addingTask,  setAddingTask]  = useState(false)
   const [newTaskTitle, setNewTaskTitle] = useState('')
 
-  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const inputRef   = useRef<HTMLTextAreaElement>(null)
   const newTaskRef = useRef<HTMLInputElement>(null)
-  const replyRef = useRef<HTMLDivElement>(null)
+  const replyRef   = useRef<HTMLDivElement>(null)
 
-  const dayNumber = profile ? getDayNumber(profile.created_at) : 1
-  const todayStr = toLocalDateStr(new Date())
+  const dayNumber   = profile ? getDayNumber(profile.created_at) : 1
+  const todayStr    = toLocalDateStr(new Date())
   const yesterdayStr = toLocalDateStr(new Date(Date.now() - 86400000))
 
-  // Pending tasks for today and overdue
-  const pendingTasks = tasks.filter((t) => !t.completed)
-  const todayTasks = pendingTasks.filter((t) => !t.due_date || t.due_date <= todayStr)
-  const futureTasks = pendingTasks.filter((t) => t.due_date && t.due_date > todayStr)
-
-  // Tasks completed today
+  const pendingTasks  = tasks.filter((t) => !t.completed)
+  const todayTasks    = pendingTasks.filter((t) => !t.due_date || t.due_date <= todayStr)
+  const futureTasks   = pendingTasks.filter((t) => t.due_date && t.due_date > todayStr)
   const completedToday = [...tasks, ...tasksRecent].filter(
     (t) => t.completed && t.completed_at && t.completed_at.startsWith(todayStr)
   )
 
-  // Yesterday's stats
   const completedYesterday = tasksRecent.filter(
     (t) => t.completed && t.completed_at && t.completed_at.startsWith(yesterdayStr)
   )
   const yesterdayMood = moodsRecent.find((m) => m.created_at.startsWith(yesterdayStr))
 
-  // Week progress (Mon–Sun)
-  const now = new Date()
-  const dayOfWeek = now.getDay() === 0 ? 6 : now.getDay() - 1 // Mon=0
-  const weekStart = toLocalDateStr(new Date(now.getTime() - dayOfWeek * 86400000))
+  const now2       = new Date()
+  const dayOfWeek  = now2.getDay() === 0 ? 6 : now2.getDay() - 1
+  const weekStart  = toLocalDateStr(new Date(now2.getTime() - dayOfWeek * 86400000))
   const weekCompleted = tasksRecent.filter(
     (t) => t.completed && t.completed_at && t.completed_at.slice(0, 10) >= weekStart
   ).length
-  const weekTotal = weekCompleted + pendingTasks.length
-  const weekPct = weekTotal > 0 ? Math.round((weekCompleted / weekTotal) * 100) : 0
+  const weekTotal  = weekCompleted + pendingTasks.length
+  const weekPct    = weekTotal > 0 ? Math.round((weekCompleted / weekTotal) * 100) : 0
 
   const orbState: OrbState = noteLoading ? 'speaking' : (voiceListening || input.trim()) ? 'listening' : 'idle'
 
-  // Load morning note + focus + tip
-  useEffect(() => {
-    const userId = profile?.id
-    const cacheKey = userId ? `jalayu_morning3_${userId}_${todayStr}` : null
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
 
+  // ── Fetch morning note ────────────────────────────────────────────────────
+  useEffect(() => {
+    const userId  = profile?.id
+    const cacheKey = userId ? `jalayu_morning3_${userId}_${todayStr}` : null
     if (cacheKey) {
       try {
         const cached = localStorage.getItem(cacheKey)
         if (cached) {
-          const parsed = JSON.parse(cached)
-          if (parsed.note) setMorningNote(parsed.note)
-          if (parsed.focus) setFocus(parsed.focus)
-          if (parsed.tip) setTip(parsed.tip)
-          if (parsed.chapter) setChapter(parsed.chapter)
+          const p = JSON.parse(cached)
+          if (p.note)    setMorningNote(p.note)
+          if (p.focus)   setFocus(p.focus)
+          if (p.tip)     setTip(p.tip)
+          if (p.chapter) setChapter(p.chapter)
           setNoteLoading(false)
           return
         }
       } catch { /* proceed */ }
     }
-
     let cancelled = false
     setNoteLoading(true)
-
     fetch('/api/ai/morning')
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return
-        if (data.note) setMorningNote(data.note)
-        if (data.focus) setFocus(data.focus)
-        if (data.tip) setTip(data.tip)
+        if (data.note)    setMorningNote(data.note)
+        if (data.focus)   setFocus(data.focus)
+        if (data.tip)     setTip(data.tip)
         if (data.chapter) setChapter(data.chapter)
         if (cacheKey && data.note) {
-          try {
-            localStorage.setItem(cacheKey, JSON.stringify({ note: data.note, focus: data.focus || '', tip: data.tip || '', chapter: data.chapter || '' }))
-          } catch { /* ok */ }
+          try { localStorage.setItem(cacheKey, JSON.stringify({ note: data.note, focus: data.focus || '', tip: data.tip || '', chapter: data.chapter || '' })) } catch { /* ok */ }
         }
       })
       .catch(() => { if (!cancelled) setMorningNote('A new day to work toward what matters.') })
       .finally(() => { if (!cancelled) setNoteLoading(false) })
-
     return () => { cancelled = true }
   }, [profile?.id, todayStr])
+
+  // ── Fetch trading snap ────────────────────────────────────────────────────
+  useEffect(() => {
+    const SEED = 500
+    fetch('/api/trading/portfolio')
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return
+        const cash = Number(data.cash ?? SEED)
+        const positions: Array<{ shares: number; currentPrice: number; avgBuyPrice: number }> = data.positions ?? []
+        const posValue = positions.reduce((s, p) => s + Number(p.shares) * Number(p.currentPrice || p.avgBuyPrice), 0)
+        const netWorth = cash + posValue
+        const totalPnl = netWorth - SEED
+        setTradingSnap({
+          netWorth, totalPnl,
+          totalPnlPct: (totalPnl / SEED) * 100,
+          openPositions: positions.length,
+          totalTrades: data.totalTrades ?? 0,
+        })
+      }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     if (reply) replyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
@@ -274,7 +306,6 @@ export default function HomeContent({
     rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US'
     homeVoiceBaseRef.current = input.trim()
     homeFinalRef.current = ''
-
     rec.onresult = (ev) => {
       let finalChunk = ''; let interimChunk = ''
       for (let i = 0; i < ev.results.length; i++) {
@@ -322,7 +353,6 @@ export default function HomeContent({
         body: JSON.stringify({ messages: [{ role: 'user', content: focusPrefix + text }] }),
       })
       if (!res.ok || !res.body) { setReply({ content: "I'm here. Keep going.", streaming: false }); return }
-
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let content = ''
@@ -333,11 +363,9 @@ export default function HomeContent({
         setReply({ content, streaming: true })
       }
       setReply({ content, streaming: false })
-
       actionsPromise.then((result: { executed: Array<{ type: string; data: Record<string, unknown>; message: string }> }) => {
         if (result.executed?.length) onAction?.(result.executed)
       })
-
       if (text && content) {
         fetch('/api/chat/messages', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -362,7 +390,10 @@ export default function HomeContent({
     onAddTask(t).then(() => { setNewTaskTitle(''); setAddingTask(false) }).catch(() => {})
   }
 
-  const hasYesterdayData = completedYesterday.length > 0 || !!yesterdayMood
+  const pnlPositive = (tradingSnap?.totalPnl ?? 0) >= 0
+  const pnlColor    = pnlPositive ? '#22C55E' : '#EF4444'
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -373,350 +404,466 @@ export default function HomeContent({
         }
         @keyframes fadein {
           from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
+          to   { opacity: 1; transform: translateY(0); }
         }
         @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-        @keyframes barGrow { from { width: 0%; } to { width: var(--bar-w); } }
-        .fade-up { animation: fadein 0.4s ease forwards; }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.6; transform: scale(1); }
+          50%       { opacity: 1;   transform: scale(1.15); }
+        }
         @keyframes homeMicRipple {
           0%   { transform: scale(1);   opacity: 0.5; }
           100% { transform: scale(2.4); opacity: 0;   }
         }
         @keyframes homeMicDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-        @keyframes chatPulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 0.2; } }
-        .task-row:hover .task-actions { opacity: 1; }
+        .fade-up { animation: fadein 0.4s ease forwards; }
+        .widget-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
       `}</style>
 
-      <div style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 100px' }}>
+      <div style={{ maxWidth: 520, margin: '0 auto', padding: '0 14px 110px' }}>
 
-        {/* ── 1. HEADER ROW (compact 44px) ── */}
-        <div className="fade-up" style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          height: 44, marginBottom: 10,
+        {/* ── HERO: Orb + greeting ─────────────────────────────────────── */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          paddingTop: 20, paddingBottom: 8, marginBottom: 4,
         }}>
-          <div>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 600, margin: 0, lineHeight: 1.2 }}>
-              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
-            </p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '2px 0 0', lineHeight: 1 }}>
-              Day {dayNumber}{!noteLoading && chapter ? ` · ${chapter}` : ''}
-            </p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {(profile?.streak_count ?? 0) > 0 && (
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 4,
-                background: 'var(--morning)', border: '1px solid var(--border)',
-                borderRadius: 99, padding: '4px 9px',
-              }}>
-                <span style={{ fontSize: 13 }}>🔥</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: AMBER }}>{profile?.streak_count}</span>
-              </div>
-            )}
-            {todayMood && (
-              <span style={{ fontSize: 18, lineHeight: 1 }}>{MOOD_EMOJI[todayMood.score]}</span>
-            )}
-          </div>
-        </div>
-
-        {/* ── 2. MORNING NOTE (no card, just italic text) ── */}
-        {(noteLoading || morningNote) && (
-          <div className="fade-up" style={{ marginBottom: 16 }}>
-            {noteLoading ? <Dots /> : (
-              <p style={{
-                fontFamily: 'var(--font-lora), Georgia, serif',
-                fontStyle: 'italic', fontSize: 14, lineHeight: 1.7,
-                color: 'var(--text-2)', margin: 0,
-              }}>
-                {morningNote}
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* ── 3. FOCUS CARD ── */}
-        {!noteLoading && (
-          <div className="fade-up" style={{
-            background: 'var(--surface)',
-            border: `1px solid var(--border)`,
-            borderLeft: `3px solid ${AMBER}`,
-            borderRadius: 14,
-            padding: '14px 16px',
-            marginBottom: 14,
-          }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 6px' }}>
-              Today&apos;s Focus
-            </p>
-            <p style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4, margin: 0, letterSpacing: '-0.01em' }}>
-              {focus || (pendingTasks.length > 0 ? pendingTasks[0].title : 'Tell me what you want to work on.')}
-            </p>
-          </div>
-        )}
-
-        {/* ── 4. STATS GRID (2 columns) ── */}
-        <div className="fade-up" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-
-          {/* LEFT — Week tasks */}
-          <div style={{
-            background: 'var(--surface)', border: '1px solid var(--border)',
-            borderRadius: 14, padding: '14px 14px 12px', cursor: 'default',
-          }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 6px' }}>
-              This Week
-            </p>
-            <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px', lineHeight: 1 }}>
-              {weekCompleted}/{weekTotal || 0}
-            </p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px' }}>
-              {weekPct}% done
-            </p>
-            <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${weekPct}%`,
-                background: AMBER,
-                borderRadius: 99,
-                transition: 'width 1s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }} />
-            </div>
-          </div>
-
-          {/* RIGHT — Trading inline */}
-          <TradingPnlWidget onNavigate={() => setSidebarView('trading')} />
-        </div>
-
-        {/* ── 5. MOOD CHECK ROW (only if !todayMood) ── */}
-        {!todayMood && (
-          <div className="fade-up" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>How are you?</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              {MOODS.map(({ score, emoji, label }) => (
-                <button
-                  key={score}
-                  onClick={() => onMoodLog(score)}
-                  title={label}
-                  style={{ fontSize: 20, background: 'none', border: 'none', cursor: 'pointer', padding: '2px', lineHeight: 1, transition: 'transform 0.15s' }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.25)' }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── 6. TODAY TASKS SECTION ── */}
-        <div className="fade-up" style={{ marginBottom: 20 }}>
-          {/* Header row */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
-              Today
-            </p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {(completedToday.length > 0 || todayTasks.length > 0) && (
-                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
-                  {completedToday.length > 0 && <span style={{ color: AMBER, fontWeight: 600 }}>{completedToday.length} done · </span>}
-                  {todayTasks.length} left
-                </p>
-              )}
-              <button
-                onClick={() => setAddingTask(true)}
-                style={{
-                  fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none',
-                  cursor: 'pointer', padding: 0, transition: 'color 0.15s',
-                }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)' }}
-              >
-                + add
-              </button>
-            </div>
-          </div>
-
-          {todayTasks.length === 0 && completedToday.length === 0 && !addingTask && (
-            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 8px' }}>
-              Nothing for today yet.
-            </p>
-          )}
-
-          {/* Completed today (faded, max 2) */}
-          {completedToday.slice(0, 2).map((task) => (
-            <div key={task.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7, opacity: 0.4,
+          <GalaxyOrb state={orbState} size={110} />
+          <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '8px 0 2px', letterSpacing: '-0.02em' }}>
+            {greeting}{firstName ? `, ${firstName}` : ''}
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0 }}>
+            {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            {' · '}Day {dayNumber}
+            {chapter ? ` · ${chapter}` : ''}
+          </p>
+          {(profile?.streak_count ?? 0) > 0 && (
+            <div style={{
+              marginTop: 8, display: 'flex', alignItems: 'center', gap: 4,
+              background: `${AMBER}18`, border: `1px solid ${AMBER}30`,
+              borderRadius: 99, padding: '3px 10px',
             }}>
-              <div style={{
-                width: 15, height: 15, borderRadius: '50%',
-                background: 'var(--border-2)', border: '1.5px solid var(--border-2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>
-                <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
-                  <path d="M1 3L3 5L7 1" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </div>
-              <span style={{ fontSize: 13, color: 'var(--text-3)', textDecoration: 'line-through', flex: 1 }}>
-                {task.title}
+              <span style={{ fontSize: 12 }}>🔥</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: AMBER }}>
+                {profile?.streak_count} day streak
               </span>
             </div>
-          ))}
-
-          {/* Pending tasks */}
-          {todayTasks.map((task) => (
-            <div
-              key={task.id}
-              className="task-row"
-              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8, position: 'relative' }}
-            >
-              <button
-                onClick={() => onToggleTask(task)}
-                style={{
-                  width: 16, height: 16, borderRadius: '50%',
-                  border: `1.5px solid ${task.priority === 'high' ? '#DC2626' : task.priority === 'medium' ? AMBER : 'var(--border-2)'}`,
-                  background: 'transparent', cursor: 'pointer', flexShrink: 0, marginTop: 2,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'border-color 0.15s, background 0.15s',
-                }}
-                onMouseEnter={(e) => { const el = e.currentTarget as HTMLElement; el.style.background = 'var(--morning)' }}
-                onMouseLeave={(e) => { const el = e.currentTarget as HTMLElement; el.style.background = 'transparent' }}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.45 }}>{task.title}</span>
-                <div style={{ display: 'flex', gap: 5, marginTop: 2, flexWrap: 'wrap' }}>
-                  {task.due_date && task.due_date < todayStr && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, color: '#92400E',
-                      background: 'rgba(146,64,14,0.08)', padding: '2px 5px',
-                      borderRadius: 4, letterSpacing: '0.06em', textTransform: 'uppercase',
-                    }}>overdue</span>
-                  )}
-                  {task.due_date === todayStr && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, color: AMBER,
-                      background: `${AMBER}15`, padding: '2px 5px',
-                      borderRadius: 4, letterSpacing: '0.06em', textTransform: 'uppercase',
-                    }}>due today</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {/* Future tasks (collapsed) */}
-          {futureTasks.length > 0 && (
-            <div style={{ marginTop: 4, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 6px' }}>
-                Coming up ({futureTasks.length})
-              </p>
-              {futureTasks.slice(0, 3).map((task) => (
-                <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border-2)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: 'var(--text-3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
-                  {task.due_date && (
-                    <span style={{ fontSize: 10, color: 'var(--text-3)', flexShrink: 0 }}>
-                      {new Date(task.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Inline add input */}
-          {addingTask && (
-            <form onSubmit={handleAddTask} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '1.5px solid var(--text-3)', flexShrink: 0 }} />
-              <input
-                ref={newTaskRef}
-                value={newTaskTitle}
-                onChange={(e) => setNewTaskTitle(e.target.value)}
-                placeholder="add a task…"
-                autoFocus
-                onBlur={() => { if (!newTaskTitle.trim()) setAddingTask(false) }}
-                onKeyDown={(e) => { if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle('') } }}
-                style={{
-                  flex: 1, border: 'none', background: 'transparent',
-                  fontSize: 14, color: 'var(--text)', outline: 'none',
-                  fontFamily: 'inherit', borderBottom: '1px solid var(--border-2)', paddingBottom: 3,
-                }}
-              />
-            </form>
           )}
         </div>
 
-        {/* ── 7. CHAT AREA ── */}
-        {!submitted ? (
-          <div className="fade-up">
-            {/* Pulsing dot + label */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: 'var(--accent, #C4834A)', opacity: 0.7,
-                display: 'inline-block', flexShrink: 0,
-                animation: 'chatPulse 2s ease-in-out infinite',
-              }} />
-              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Ask me anything</span>
-            </div>
-            <div style={{
-              borderBottom: `1.5px solid ${voiceListening ? 'rgba(220,38,38,0.35)' : 'var(--border-2)'}`,
-              paddingBottom: 6, display: 'flex', alignItems: 'flex-end', gap: 8,
-              transition: 'border-color 0.2s',
+        {/* ── MORNING NOTE ─────────────────────────────────────────────── */}
+        <div className="fade-up" style={{
+          background: 'var(--morning)', border: '1px solid var(--border)',
+          borderRadius: 18, padding: '16px 18px', marginBottom: 14,
+        }}>
+          <p style={{ fontSize: 10, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>
+            ✦ From Jalayu
+          </p>
+          {noteLoading ? <Dots /> : (
+            <p style={{
+              fontFamily: 'var(--font-lora), Georgia, serif',
+              fontStyle: 'italic', fontSize: 14, lineHeight: 1.85,
+              color: 'var(--text-2)', margin: 0,
             }}>
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={voiceListening ? 'Listening…' : 'Tell me anything — I\'ll handle it'}
-                rows={1}
+              {morningNote || 'A new day to work toward what matters.'}
+            </p>
+          )}
+          {!noteLoading && (
+            <button
+              onClick={() => setShowChatPanel(true)}
+              style={{
+                marginTop: 10, fontSize: 11, color: 'var(--text-3)',
+                background: 'none', border: 'none', cursor: 'pointer',
+                padding: 0, display: 'flex', alignItems: 'center', gap: 3,
+              }}
+            >
+              keep talking <ChevronRight size={11} />
+            </button>
+          )}
+        </div>
+
+        {/* ── ROW 1: Today + Mood ───────────────────────────────────────── */}
+        <div className="widget-grid" style={{ marginBottom: 12 }}>
+
+          {/* TODAY */}
+          <Widget accent="#6366F1" icon={CheckSquare} label="Today" onClick={() => setSidebarView('calendar')} minHeight={120}>
+            <p style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 4px' }}>
+              {todayTasks.length}
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
+              {todayTasks.length === 1 ? 'task left' : 'tasks left'}
+            </p>
+            {completedToday.length > 0 && (
+              <p style={{ fontSize: 11, color: '#6366F1', margin: '6px 0 0', fontWeight: 600 }}>
+                ✓ {completedToday.length} done today
+              </p>
+            )}
+            {todayTasks[0] && (
+              <p style={{
+                fontSize: 11, color: 'var(--text-3)', margin: '8px 0 0',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              }}>
+                Next: {todayTasks[0].title}
+              </p>
+            )}
+          </Widget>
+
+          {/* MOOD */}
+          <Widget accent="#F43F5E" icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')} minHeight={120}>
+            {todayMood ? (
+              <>
+                <p style={{ fontSize: 36, lineHeight: 1, margin: '0 0 4px' }}>
+                  {MOOD_EMOJI[todayMood.score]}
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
+                  {MOOD_LABEL[todayMood.score]} today
+                </p>
+                {yesterdayMood && (
+                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '6px 0 0' }}>
+                    Yesterday: {MOOD_EMOJI[yesterdayMood.score]}
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>
+                  Not logged yet
+                </p>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  {MOODS.map(({ score, emoji, label }) => (
+                    <button
+                      key={score}
+                      onClick={(e) => { e.stopPropagation(); onMoodLog(score) }}
+                      title={label}
+                      style={{ fontSize: 18, background: 'none', border: 'none', cursor: 'pointer', padding: 2, transition: 'transform 0.12s' }}
+                      onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.transform = 'scale(1.3)'}
+                      onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.transform = 'scale(1)'}
+                    >{emoji}</button>
+                  ))}
+                </div>
+              </>
+            )}
+          </Widget>
+        </div>
+
+        {/* ── TRADING — full width ──────────────────────────────────────── */}
+        <Widget accent={pnlColor} icon={tradingSnap && pnlPositive ? TrendingUp : TrendingDown}
+          label="Trading Portfolio" onClick={() => setSidebarView('trading')}
+          fullWidth minHeight={0}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+            <div>
+              <p style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 4px' }}>
+                {tradingSnap ? `$${tradingSnap.netWorth.toFixed(2)}` : '—'}
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
+                Net worth · {tradingSnap?.openPositions ?? 0} open positions
+              </p>
+            </div>
+            {tradingSnap && (
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 18, fontWeight: 700, color: pnlColor, margin: '0 0 2px', lineHeight: 1 }}>
+                  {pnlPositive ? '+' : ''}{tradingSnap.totalPnl.toFixed(2)}
+                </p>
+                <p style={{ fontSize: 11, color: pnlColor, margin: 0, opacity: 0.8 }}>
+                  {pnlPositive ? '+' : ''}{tradingSnap.totalPnlPct.toFixed(2)}%
+                </p>
+              </div>
+            )}
+          </div>
+          {tradingSnap && (
+            <div style={{
+              marginTop: 12, display: 'flex', gap: 8,
+            }}>
+              <span style={{
+                fontSize: 10, fontWeight: 600, padding: '3px 8px',
+                background: `${pnlColor}15`, color: pnlColor,
+                borderRadius: 99, letterSpacing: '0.04em',
+              }}>
+                {tradingSnap.totalTrades} trades
+              </span>
+              <button
+                onClick={(e) => { e.stopPropagation(); setSidebarView('strategylab') }}
                 style={{
-                  flex: 1, resize: 'none', border: 'none', background: 'transparent',
-                  fontSize: 15, color: 'var(--text)', outline: 'none', fontFamily: 'inherit',
-                  lineHeight: 1.7, overflow: 'hidden', minHeight: 28, maxHeight: 160, padding: 0,
+                  fontSize: 10, fontWeight: 600, padding: '3px 8px',
+                  background: 'var(--morning)', color: 'var(--text-3)',
+                  border: '1px solid var(--border)', borderRadius: 99,
+                  cursor: 'pointer', letterSpacing: '0.04em',
                 }}
-              />
-              <div style={{ position: 'relative', flexShrink: 0, marginBottom: 2 }}>
-                {voiceListening && (
-                  <>
-                    <span style={{ position: 'absolute', inset: -2, borderRadius: '50%', background: 'rgba(220,38,38,0.18)', animation: 'homeMicRipple 1.4s ease-out infinite', pointerEvents: 'none' }} />
-                    <span style={{ position: 'absolute', inset: -2, borderRadius: '50%', background: 'rgba(220,38,38,0.12)', animation: 'homeMicRipple 1.4s ease-out 0.55s infinite', pointerEvents: 'none' }} />
-                  </>
+              >
+                ⚗ Strategy Lab
+              </button>
+            </div>
+          )}
+        </Widget>
+
+        <div style={{ height: 12 }} />
+
+        {/* ── ROW 2: Memory + Reflect ───────────────────────────────────── */}
+        <div className="widget-grid" style={{ marginBottom: 12 }}>
+
+          <Widget accent="#F59E0B" icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')} minHeight={110}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>
+              Your second brain
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
+              Notes, insights & things worth keeping
+            </p>
+          </Widget>
+
+          <Widget accent="#8B5CF6" icon={Sparkles} label="Reflect" onClick={() => setSidebarView('reflect')} minHeight={110}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>
+              Daily reflection
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
+              Capture what the day taught you
+            </p>
+          </Widget>
+        </div>
+
+        {/* ── ROW 3: Progress + Health ──────────────────────────────────── */}
+        <div className="widget-grid" style={{ marginBottom: 12 }}>
+
+          <Widget accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')} minHeight={110}>
+            <p style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 4px' }}>
+              {profile?.growth_score ?? 0}
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
+              growth points
+            </p>
+            <div style={{ marginTop: 8, height: 4, background: 'var(--border)', borderRadius: 99 }}>
+              <div style={{
+                height: '100%', borderRadius: 99,
+                width: `${Math.min(weekPct, 100)}%`,
+                background: `linear-gradient(90deg, ${AMBER}, #E8AA6A)`,
+                transition: 'width 1s cubic-bezier(0.34,1.56,0.64,1)',
+              }} />
+            </div>
+            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '4px 0 0' }}>
+              {weekPct}% this week
+            </p>
+          </Widget>
+
+          <Widget accent="#14B8A6" icon={Stethoscope} label="Health" onClick={() => setSidebarView('health')} minHeight={110}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>
+              Insurance & meds
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
+              Coverage, appointments & records
+            </p>
+          </Widget>
+        </div>
+
+        {/* ── ROW 4: Intelligence + People ─────────────────────────────── */}
+        <div className="widget-grid" style={{ marginBottom: 12 }}>
+
+          <Widget accent="#6366F1" icon={Brain} label="Intelligence" onClick={() => setSidebarView('insights')} minHeight={110}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>
+              AI-powered insights
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
+              Patterns from your data
+            </p>
+          </Widget>
+
+          <Widget accent="#EC4899" icon={Users} label="People" onClick={() => setSidebarView('people')} minHeight={110}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>
+              Your circle
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
+              Contacts & relationships
+            </p>
+          </Widget>
+        </div>
+
+        {/* ── ROW 5: Strategy Lab + Reminders ──────────────────────────── */}
+        <div className="widget-grid" style={{ marginBottom: 14 }}>
+
+          <Widget accent="#22C55E" icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')} minHeight={100}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>
+              Win rates by setup
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
+              Enable / disable strategies
+            </p>
+          </Widget>
+
+          <Widget accent="#F97316" icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')} minHeight={100}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>
+              Never miss it
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>
+              Smart reminders & alerts
+            </p>
+          </Widget>
+        </div>
+
+        {/* ── QUICK TASKS (today, compact) ──────────────────────────────── */}
+        {(todayTasks.length > 0 || addingTask) && (
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 20, padding: '16px 18px', marginBottom: 14,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ width: 26, height: 26, borderRadius: 8, background: '#6366F115', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <CheckSquare size={13} color="#6366F1" />
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
+                  Today&apos;s tasks
+                </span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {completedToday.length > 0 && (
+                  <span style={{ fontSize: 11, color: '#6366F1', fontWeight: 600 }}>
+                    {completedToday.length} done
+                  </span>
                 )}
                 <button
-                  type="button" onClick={startHomeVoice}
-                  style={{
-                    position: 'relative', width: 28, height: 28, borderRadius: '50%',
-                    border: voiceListening ? '1.5px solid rgba(220,38,38,0.4)' : '1px solid var(--border)',
-                    background: voiceListening ? 'rgba(220,38,38,0.06)' : 'var(--surface-2)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: 'pointer', transition: 'border-color 0.2s, background 0.2s', zIndex: 1,
-                  }}
+                  onClick={() => setSidebarView('calendar')}
+                  style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
                 >
-                  {voiceListening ? <MicOff size={13} color="#DC2626" /> : <Mic size={13} color="var(--text-3)" />}
+                  see all →
                 </button>
               </div>
             </div>
-            {voiceListening && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 8, fontSize: 11, color: '#DC2626' }}>
-                <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#DC2626', flexShrink: 0, animation: 'homeMicDot 1.1s ease-in-out infinite' }} />
-                Listening — tap to stop
+
+            {todayTasks.slice(0, 4).map((task) => (
+              <div key={task.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 9 }}>
+                <button
+                  onClick={() => onToggleTask(task)}
+                  style={{
+                    width: 17, height: 17, borderRadius: '50%', marginTop: 2,
+                    border: `1.5px solid ${task.priority === 'high' ? '#DC2626' : task.priority === 'medium' ? AMBER : 'var(--border-2)'}`,
+                    background: 'transparent', cursor: 'pointer', flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, flex: 1 }}>
+                  {task.title}
+                  {task.priority === 'high' && (
+                    <span style={{ fontSize: 9, fontWeight: 700, color: '#DC2626', background: 'rgba(220,38,38,0.07)', padding: '1px 5px', borderRadius: 4, marginLeft: 6, letterSpacing: '0.05em', textTransform: 'uppercase' }}>high</span>
+                  )}
+                </span>
               </div>
-            )}
-            {input.trim() && (
-              <button onClick={sendMessage} style={{
-                marginTop: 10, fontSize: 12, color: 'var(--text-3)', background: 'none',
-                border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 3,
-              }}>
-                send → (or press Enter)
+            ))}
+
+            {addingTask ? (
+              <form onSubmit={handleAddTask} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                <div style={{ width: 17, height: 17, borderRadius: '50%', border: '1.5px solid var(--text-3)', flexShrink: 0 }} />
+                <input
+                  ref={newTaskRef}
+                  value={newTaskTitle}
+                  onChange={(e) => setNewTaskTitle(e.target.value)}
+                  placeholder="add a task…"
+                  autoFocus
+                  onBlur={() => { if (!newTaskTitle.trim()) setAddingTask(false) }}
+                  onKeyDown={(e) => { if (e.key === 'Escape') { setAddingTask(false); setNewTaskTitle('') } }}
+                  style={{
+                    flex: 1, border: 'none', background: 'transparent',
+                    fontSize: 13, color: 'var(--text)', outline: 'none',
+                    fontFamily: 'inherit', borderBottom: '1px solid var(--border-2)', paddingBottom: 2,
+                  }}
+                />
+              </form>
+            ) : (
+              <button
+                onClick={() => setAddingTask(true)}
+                style={{ fontSize: 12, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginTop: 4 }}
+              >
+                + add task
               </button>
             )}
           </div>
-        ) : (
-          <div className="fade-up" ref={replyRef}>
-            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: '0 0 12px', lineHeight: 1.5 }}>{userAnswer}</p>
+        )}
 
-            {reply && (
-              <div>
-                {reply.content ? (
+        {/* ── ASK JALAYU — chat widget ──────────────────────────────────── */}
+        <div style={{
+          background: 'var(--surface)', border: '1px solid var(--border)',
+          borderRadius: 20, padding: '16px 18px', marginBottom: 8,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+            <div style={{ width: 26, height: 26, borderRadius: 8, background: `${AMBER}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Zap size={13} color={AMBER} />
+            </div>
+            <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.09em' }}>
+              Ask Jalayu
+            </span>
+            {/* Orb state pulse dot */}
+            <div style={{
+              width: 6, height: 6, borderRadius: '50%', marginLeft: 2,
+              background: orbState === 'idle' ? 'var(--text-3)' : orbState === 'listening' ? '#EF4444' : AMBER,
+              animation: orbState !== 'idle' ? 'pulse 1.2s ease-in-out infinite' : 'none',
+            }} />
+          </div>
+
+          {!submitted ? (
+            <>
+              {focus && (
+                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 8px', fontStyle: 'italic' }}>
+                  Focus today: &ldquo;{focus}&rdquo;
+                </p>
+              )}
+              <div style={{
+                display: 'flex', alignItems: 'flex-end', gap: 8,
+                borderBottom: `1.5px solid ${voiceListening ? 'rgba(220,38,38,0.35)' : 'var(--border-2)'}`,
+                paddingBottom: 6, transition: 'border-color 0.2s',
+              }}>
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={voiceListening ? 'Listening…' : "Tell me anything — I'll handle it"}
+                  rows={1}
+                  style={{
+                    flex: 1, resize: 'none', border: 'none', background: 'transparent',
+                    fontSize: 14, color: 'var(--text)', outline: 'none',
+                    fontFamily: 'inherit', lineHeight: 1.7, overflow: 'hidden',
+                    minHeight: 28, maxHeight: 140, padding: 0,
+                  }}
+                />
+                <div style={{ position: 'relative', flexShrink: 0, marginBottom: 2 }}>
+                  {voiceListening && (
+                    <>
+                      <span style={{ position: 'absolute', inset: -2, borderRadius: '50%', background: 'rgba(220,38,38,0.18)', animation: 'homeMicRipple 1.4s ease-out infinite', pointerEvents: 'none' }} />
+                      <span style={{ position: 'absolute', inset: -2, borderRadius: '50%', background: 'rgba(220,38,38,0.12)', animation: 'homeMicRipple 1.4s ease-out 0.55s infinite', pointerEvents: 'none' }} />
+                    </>
+                  )}
+                  <button
+                    type="button" onClick={startHomeVoice}
+                    style={{
+                      position: 'relative', width: 28, height: 28, borderRadius: '50%',
+                      border: voiceListening ? '1.5px solid rgba(220,38,38,0.4)' : '1px solid var(--border)',
+                      background: voiceListening ? 'rgba(220,38,38,0.06)' : 'var(--surface-2)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      cursor: 'pointer', transition: 'all 0.2s', zIndex: 1,
+                    }}
+                  >
+                    {voiceListening ? <MicOff size={13} color="#DC2626" /> : <Mic size={13} color="var(--text-3)" />}
+                  </button>
+                </div>
+              </div>
+              {voiceListening && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 8, fontSize: 11, color: '#DC2626' }}>
+                  <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#DC2626', flexShrink: 0, animation: 'homeMicDot 1.1s ease-in-out infinite' }} />
+                  Listening — tap mic to stop
+                </div>
+              )}
+              {input.trim() && (
+                <button onClick={sendMessage} style={{
+                  marginTop: 10, fontSize: 12, color: 'var(--text-3)', background: 'none',
+                  border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 3,
+                }}>
+                  send → (or press Enter)
+                </button>
+              )}
+            </>
+          ) : (
+            <div className="fade-up" ref={replyRef}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                {userAnswer}
+              </p>
+              {reply && (
+                reply.content ? (
                   <p style={{
                     fontFamily: 'var(--font-lora), Georgia, serif',
                     fontStyle: 'italic', fontSize: 14, lineHeight: 1.85,
@@ -730,24 +877,24 @@ export default function HomeContent({
                       }} />
                     )}
                   </p>
-                ) : <Dots />}
+                ) : <Dots />
+              )}
+              {reply && !reply.streaming && (
+                <button
+                  onClick={() => setShowChatPanel(true)}
+                  style={{
+                    marginTop: 14, display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: 12, color: 'var(--text-3)', background: 'none',
+                    border: 'none', cursor: 'pointer', padding: 0,
+                  }}
+                >
+                  keep talking <ChevronRight size={12} />
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
-                {!reply.streaming && (
-                  <button
-                    onClick={() => setShowChatPanel(true)}
-                    style={{
-                      marginTop: 12, display: 'flex', alignItems: 'center', gap: 4,
-                      fontSize: 12, color: 'var(--text-3)', background: 'none',
-                      border: 'none', cursor: 'pointer', padding: 0,
-                    }}
-                  >
-                    keep talking → <ChevronRight size={12} />
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </>
   )
