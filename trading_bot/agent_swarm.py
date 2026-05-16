@@ -134,6 +134,7 @@ class AgentSwarm:
         self._running   = True
         self._bar_count = 0
         self._last_date = datetime.now().date()
+        self._pending_exits: list[dict] = []
 
     # ── Phase Detection ───────────────────────────────────────────────────────
     def _phase(self) -> str:
@@ -271,7 +272,6 @@ class AgentSwarm:
             print(f'  ◆ RAG [{wisdom_chunks[0].master}]: {top_rule}…')
 
         # ── STEP 5: Grittani Recovery sizing ─────────────────────────────
-        import numpy as np as np_local
         atr      = proposal.atr
         sl_price = self.risk.maximum_sl_price(proposal.price, atr, verdict.direction, asset_type)
         tp_price = self.risk.minimum_tp_price(proposal.price, 100, verdict.direction, asset_type)
@@ -316,14 +316,15 @@ class AgentSwarm:
             proposal.combined_score * recovery_plan.recommended_size_mult
         )
 
-        result = self.executioner.execute(proposal, historian_id)
+        trade_id = f'{symbol}_{int(time.time())}'
+
+        result = self.executioner.execute(proposal, historian_id, grittani_trade_id=trade_id)
 
         if result is None:
             self.historian.record_close(historian_id, 0.0)
             return None
 
         # Register with Grittani R-system for outcome tracking
-        trade_id = f'{symbol}_{int(time.time())}'
         self.grittani.open_trade(
             trade_id     = trade_id,
             symbol       = symbol,
@@ -340,8 +341,6 @@ class AgentSwarm:
             atr_pct      = atr / proposal.price if proposal.price > 0 else 0,
             news_score   = sentiment.news_score,
         )
-        # Store trade_id on result so exits can close the R-unit
-        result._grittani_trade_id = trade_id
 
         return {
             'symbol'         : symbol,
@@ -356,17 +355,6 @@ class AgentSwarm:
             'recovery_tier'  : recovery_plan.recovery_tier,
             'dominant_master': verdict.dominant_master,
         }
-
-    def grittani_recovery_tick(self):
-        """
-        After exits are processed, close any R-units that finished.
-        Called once per scan cycle before entries.
-        """
-        for ex in getattr(self, '_pending_exits', []):
-            trade_id = ex.get('grittani_trade_id')
-            if trade_id:
-                self.grittani.close_trade(trade_id, ex.get('net_pnl', 0.0))
-        self._pending_exits = []
 
     # ── Exit Processing ───────────────────────────────────────────────────────
     def _process_exits(self):
@@ -390,9 +378,12 @@ class AgentSwarm:
         # Let Executioner decide which to close
         exits = self.executioner.evaluate_exits()
 
-        # Record outcomes in Historian DB
+        # Record outcomes in Historian DB + Grittani R-units
         for ex in exits:
             self.historian.record_close(ex['historian_id'], ex['net_pnl'])
+            tid = ex.get('grittani_trade_id')
+            if tid:
+                self.grittani.close_trade(tid, ex.get('net_pnl', 0.0))
 
     # ── Rotation Alert ────────────────────────────────────────────────────────
     def _check_rotation(self):
@@ -415,7 +406,6 @@ class AgentSwarm:
 
         self.risk.increment_bar()
         self.executioner.tick_pause()
-        self.grittani_recovery_tick()
 
         # ── RAG hourly scrape (background, non-blocking) ──────────────────
         if time.time() - self._last_rag_scrape >= RAG_SCRAPE_INTERVAL:
@@ -542,6 +532,9 @@ class AgentSwarm:
 ║  ◈  SENTIMENT LISTENER  →  News | Reddit | Volume Spikes            ║
 ║  ◈  QUANT HISTORIAN     →  90-day pattern match | 82% veto gate     ║
 ║  ◈  EXECUTIONER         →  Martingale-Lite | ATR stops | Compound   ║
+║  ◈  LEGEND ENGINE       →  Sykes | Grittani | Kellogg | Buffett     ║
+║  ◈  GRITTANI RECOVERY   →  7-variable R-multiple sizing              ║
+║  ◈  RAG PIPELINE        →  Legend knowledge (hourly scrape)          ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║  Mode    : {self.session.state.mode:<54}║
 ║  Capital : ${self.session.state.available_cash:<53.2f}║

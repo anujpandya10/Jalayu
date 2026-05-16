@@ -271,6 +271,7 @@ class Executioner:
         self,
         proposal  : TradeProposal,
         historian_id: int,
+        grittani_trade_id: str = '',
     ) -> Optional[ExecutionResult]:
         """
         Opens a position for an approved TradeProposal.
@@ -334,12 +335,13 @@ class Executioner:
 
         # Store in open positions
         self._open[symbol] = {
-            'result'       : result,
-            'proposal'     : proposal,
-            'current_price': price,
-            'atr'          : atr,
-            'asset_type'   : asset_type,
-            'entry_time'   : time.time(),
+            'result'           : result,
+            'proposal'         : proposal,
+            'current_price'    : price,
+            'atr'              : atr,
+            'asset_type'       : asset_type,
+            'entry_time'       : time.time(),
+            'grittani_trade_id': grittani_trade_id,
         }
 
         # Deduct from bucket immediately (reserving capital)
@@ -450,13 +452,14 @@ class Executioner:
         )
 
         return {
-            'symbol'      : symbol,
-            'direction'   : result.direction,
-            'net_pnl'     : net,
-            'reason'      : reason,
-            'sizing_tier' : result.sizing_tier,
-            'historian_id': result.historian_id,
-            'asset_type'  : asset_type,
+            'symbol'           : symbol,
+            'direction'        : result.direction,
+            'net_pnl'          : net,
+            'reason'           : reason,
+            'sizing_tier'      : result.sizing_tier,
+            'historian_id'     : result.historian_id,
+            'asset_type'       : asset_type,
+            'grittani_trade_id': pos.get('grittani_trade_id', ''),
         }
 
     # ── Status ────────────────────────────────────────────────────────────────
