@@ -9,9 +9,9 @@
  *   Returns a richer signal with a setup_tag for the learning database.
  *
  * Setup tags (what gets logged to trade_setups):
- *   OVERSOLD_BOUNCE   — RSI < 32, price near VWAP floor, dip > −5%
- *   VWAP_LONG         — price below VWAP, RSI 35–55, low vol regime
- *   MOMENTUM_LONG     — volume spike ≥ 3×, RSI 45–65, EMA9 > EMA21
+ *   MOMENTUM_LONG     — 24h +5–12%, vol spike ≥ 2×, RSI 48–72, EMA9 > EMA21 (trend following)
+ *   OVERSOLD_BOUNCE   — RSI < 32, price near VWAP floor, dip > −5% (mean reversion)
+ *   VWAP_LONG         — price below VWAP, RSI 35–55, any vol regime
  *   PUMP_SHORT        — 24h > 12%, RSI ≥ 70, vol spike ≥ 2×
  *   SUPERNOVA_SHORT   — 24h > 25%, vol spike ≥ 5×, RSI ≥ 80
  *   VWAP_SHORT        — price extended above VWAP, RSI 65–80
@@ -55,14 +55,24 @@ function stage1Score(asset: AssetData): number {
     return 0
   }
 
-  if (change24h > 30)  return -9
-  if (change24h > 20)  return -7
-  if (change24h > 12)  return -5
-  if (change24h >  8)  return -3
-  if (change24h < -15) return  7
-  if (change24h <  -8) return  5
-  if (change24h <  -5) return  3.5
-  if (change24h <  -2) return  2
+  // ── CRYPTO / STOCKS ─────────────────────────────────────────────────────────
+  // SHORT signals: only the real pumps — extreme overextension
+  if (change24h > 30)  return -9   // extreme pump → hard short
+  if (change24h > 22)  return -7
+  if (change24h > 15)  return -5.5
+
+  // LONG signals: momentum breakout (ride the trend) + extreme dip (reversal)
+  // Key insight: assets up 5–12% in 24h with volume confirmation often KEEP going.
+  // Stage 2 must confirm with volume spike + RSI + EMA — this just gets them in the pool.
+  if (change24h >= 8 && change24h <= 15) return  3.5  // strong momentum — needs Stage 2
+  if (change24h >= 4 && change24h <  8)  return  2.5  // mild momentum — needs Stage 2
+  if (change24h >= 2 && change24h <  4)  return  1.5  // weak momentum — needs Stage 2
+
+  // Deep dip reversal signals — market overreacted
+  if (change24h < -18) return  7.5  // extreme crash — aggressive oversold bounce
+  if (change24h < -10) return  5.5  // strong dip — likely reversal with confirmation
+  if (change24h <  -6) return  3.5  // moderate dip — needs Stage 2 confirmation
+  // Ignore small dips (−2% to −6%) without any indicator confirmation
   return 0
 }
 
@@ -96,35 +106,36 @@ function stage2Score(
 
   // ── LONG setups ──────────────────────────────────────────────────────────
 
-  // OVERSOLD BOUNCE — highest conviction long
-  if (rsi < 32 && vwapDevPct < -1.0 && change24h < -5) {
+  // MOMENTUM LONG — trend-following breakout (highest priority for positive 24h movers)
+  // Asset already moving UP with real volume and healthy RSI — ride the wave.
+  if (change24h >= 4 && volSpike >= 2.0 && rsi >= 48 && rsi <= 74 && ema9 > ema21) {
+    score   += 2.5
+    reasons.push(`Momentum breakout: +${change24h.toFixed(1)}% 24h, ${volSpike.toFixed(1)}× vol, RSI ${rsi.toFixed(0)}, EMA9>21`)
+    setupTag = 'MOMENTUM_LONG'
+  }
+  // OVERSOLD BOUNCE — deep dip with reversal signals
+  else if (rsi < 35 && vwapDevPct < -1.0 && change24h < -5) {
     score   += 2.5
     reasons.push(`Oversold bounce: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'OVERSOLD_BOUNCE'
   }
-  // VWAP LONG — value zone scalp in calm market
-  else if (rsi >= 35 && rsi <= 55 && vwapDevPct < -0.5 && regime === 'LOW_VOL') {
+  // VWAP LONG — value zone scalp (removed low-vol requirement — fires more often)
+  else if (rsi >= 35 && rsi <= 55 && vwapDevPct < -0.5 && regime !== 'HIGH_VOL') {
     score   += 1.5
-    reasons.push(`VWAP long: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP, low vol`)
+    reasons.push(`VWAP long: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'VWAP_LONG'
   }
-  // MOMENTUM LONG — volume-confirmed breakout
-  else if (volSpike >= 3.0 && rsi >= 45 && rsi <= 68 && ema9 > ema21) {
-    score   += 2.0
-    reasons.push(`Momentum: ${volSpike.toFixed(1)}× volume, RSI ${rsi.toFixed(0)}, EMA9 > EMA21`)
-    setupTag = 'MOMENTUM_LONG'
-  }
   // Mild RSI confirmation for existing long score
-  else if (score > 0 && rsi < 45 && vwapDevPct < 0) {
-    score   += 0.8
+  else if (score > 0 && rsi < 48 && vwapDevPct < 0) {
+    score   += 1.0
     reasons.push(`RSI ${rsi.toFixed(0)} + below VWAP confirms dip`)
     if (setupTag === 'UNTAGGED') setupTag = 'MEAN_REVERT'
   }
 
-  // Kill weak longs if RSI is overbought — signal already faded
-  if (score > 0 && rsi > 75) {
-    score -= 2
-    reasons.push(`RSI ${rsi.toFixed(0)} overbought — weakening long`)
+  // Kill longs if RSI is very overbought AND no volume spike — already faded
+  if (score > 0 && rsi > 78 && volSpike < 2.0) {
+    score -= 2.5
+    reasons.push(`RSI ${rsi.toFixed(0)} overbought with no vol — fading long`)
   }
 
   // ── SHORT setups ─────────────────────────────────────────────────────────

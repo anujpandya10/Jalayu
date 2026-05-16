@@ -23,6 +23,8 @@ import {
   STALE_EXIT_SECS,
   SYMBOL_COOLDOWN_SECS,
   SEED_CAPITAL,
+  MIN_LONG_SCORE,
+  MIN_SHORT_SCORE,
 } from '@/lib/trading-config'
 
 export interface TickEvent {
@@ -473,6 +475,9 @@ export async function runTradingTick(
     // Use enriched signal if available
     const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
 
+    // Re-check score after enrichment — Stage 2 may have downgraded a Stage-1 signal
+    if (sig.score < MIN_LONG_SCORE) continue
+
     // Check if this setup is disabled by the user
     if (disabledTags.has(sig.setupTag)) continue
 
@@ -537,6 +542,9 @@ export async function runTradingTick(
 
   for (const rawSig of shortsToOpen) {
     const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
+
+    // Re-check score after enrichment — Stage 2 may have upgraded a short signal toward neutral
+    if (sig.score > MIN_SHORT_SCORE) continue
 
     if (disabledTags.has(sig.setupTag)) continue
 
