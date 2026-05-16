@@ -144,27 +144,31 @@ export function parseDashboardLayout(raw: unknown): DashboardLayout {
   const hidden = sanitizeList(o.hidden)
   const hiddenSet = new Set(hidden)
 
-  const savedLeft   = sanitizeList(columns?.left)
-  const savedCenter = sanitizeList(columns?.center)
-  const savedRight  = sanitizeList(columns?.right)
-  const savedMobile = sanitizeList(o.mobile)
+  // Global seen-set: a widget may only appear in one place.
+  // Process order = left → center → right → mobile, so earlier columns win on conflict.
+  // This cleans up any duplicates already stored in the DB, not just future ones.
+  const seen = new Set<HomeWidgetId>(hidden)
 
-  // Track every widget already placed in any column or mobile so that moving a
-  // widget between columns doesn't cause it to reappear in its old default slot.
-  const alreadyPlaced = new Set<HomeWidgetId>([
-    ...savedLeft, ...savedCenter, ...savedRight, ...savedMobile, ...hidden,
-  ])
+  function dedup(list: HomeWidgetId[]): HomeWidgetId[] {
+    const result: HomeWidgetId[] = []
+    for (const id of list) {
+      if (!seen.has(id)) { result.push(id); seen.add(id) }
+    }
+    return result.filter((id) => !hiddenSet.has(id))
+  }
 
-  // Add default widgets that are genuinely new (not placed anywhere yet).
+  const savedLeft   = dedup(sanitizeList(columns?.left))
+  const savedCenter = dedup(sanitizeList(columns?.center))
+  const savedRight  = dedup(sanitizeList(columns?.right))
+  const savedMobile = dedup(sanitizeList(o.mobile))
+
+  // Add genuinely new default widgets (not placed anywhere in the saved layout).
   function addNewDefaults(saved: HomeWidgetId[], defaults: HomeWidgetId[]): HomeWidgetId[] {
     const result = [...saved]
     for (const id of defaults) {
-      if (!alreadyPlaced.has(id)) {
-        result.push(id)
-        alreadyPlaced.add(id) // prevent the same new widget landing in multiple columns
-      }
+      if (!seen.has(id)) { result.push(id); seen.add(id) }
     }
-    return result.filter((id) => !hiddenSet.has(id))
+    return result
   }
 
   return {
