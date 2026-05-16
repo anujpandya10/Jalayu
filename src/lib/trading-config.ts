@@ -75,8 +75,13 @@ export const STALE_EXIT_SECS = 900    // 15 min: cut a dead/losing trade
  */
 export const SYMBOL_COOLDOWN_SECS = 900  // 15 min cooldown per symbol
 
-/** Minimum signal scores — raised to require real indicator confirmation */
-export const MIN_LONG_SCORE  = 4.0
-export const MIN_SHORT_SCORE = -5.0
+/**
+ * Minimum signal scores.
+ * Lower than before so Stage-2-confirmed moderate dips (e.g. -5% + RSI<35)
+ * can enter.  Crypto signals without candles are still blocked below 5.0
+ * in scoreAssetFull to prevent buying falling knives blindly.
+ */
+export const MIN_LONG_SCORE  = 3.0
+export const MIN_SHORT_SCORE = -3.5
 
 export const SEED_CAPITAL = 500

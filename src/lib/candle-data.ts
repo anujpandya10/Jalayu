@@ -35,8 +35,27 @@ const BINANCE_SYMBOL_MAP: Record<string, string> = {
   NEAR: 'NEARUSDT',
 }
 
+/** Fetch with a hard timeout so slow/blocked hosts fail fast */
+async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response | null> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      cache: 'no-store',
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    })
+    return res.ok ? res : null
+  } catch {
+    return null
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 /**
  * Fetch 1-minute Binance klines for a crypto symbol.
+ * Tries Binance US first (accessible from Vercel US), then falls back to global.
  * @param symbol  Display symbol e.g. 'BTC' or full pair 'BTCUSDT'
  * @param limit   Max candles (default 50)
  */
@@ -47,22 +66,21 @@ export async function fetchBinanceCandles(
   const pair = BINANCE_SYMBOL_MAP[symbol.toUpperCase()] ??
                (symbol.toUpperCase().endsWith('USDT') ? symbol.toUpperCase() : `${symbol.toUpperCase()}USDT`)
 
-  const url = `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=1m&limit=${limit}`
+  const path = `/api/v3/klines?symbol=${pair}&interval=1m&limit=${limit}`
+
+  // Try Binance US first (Vercel US servers can reach this), then global
+  const res = await fetchWithTimeout(`https://api.binance.us${path}`, 5000)
+          ?? await fetchWithTimeout(`https://api.binance.com${path}`, 5000)
+
+  if (!res) return []
 
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 30 },   // cache 30s on Vercel edge
-    })
-    if (!res.ok) return []
-
-    // Binance kline format:
-    // [openTime, open, high, low, close, volume, closeTime, ...]
+    // Binance kline format: [openTime, open, high, low, close, volume, closeTime, ...]
     const raw = await res.json() as Array<[
       number, string, string, string, string, string, ...unknown[]
     ]>
 
-    return raw.map(([, open, high, low, close, volume]) => ({
+    return raw.map(([, , high, low, close, volume]) => ({
       high  : parseFloat(high),
       low   : parseFloat(low),
       close : parseFloat(close),

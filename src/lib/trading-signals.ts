@@ -45,9 +45,11 @@ function stage1Score(asset: AssetData): number {
   const { change24h, assetType } = asset
 
   if (assetType === 'forex') {
+    if (change24h < -0.8) return  4.5   // strong daily dip → buy
     if (change24h < -0.5) return  3.5
     if (change24h < -0.2) return  2.0
     if (change24h < -0.1) return  1.2
+    if (change24h >  0.8) return -4.5   // strong daily pump → short
     if (change24h >  0.5) return -3.5
     if (change24h >  0.2) return -2.0
     return 0
@@ -204,9 +206,17 @@ export async function scoreAssetFull(asset: AssetData): Promise<Signal> {
     reasons  = s2.reasons
     setupTag = s2.setupTag
   } else {
-    // Fall back to 24h-only logic with a basic tag
+    // No candles — fall back to 24h-only logic
     reasons  = [`24h change ${asset.change24h.toFixed(2)}% (no candles)`]
     setupTag = s1 > 0 ? 'MEAN_REVERT' : s1 < 0 ? 'PUMP_SHORT' : 'UNTAGGED'
+
+    // For crypto: require a very strong Stage-1 signal (≥5.0 = drop >8%) before
+    // entering without candle confirmation — prevents buying falling knives blindly.
+    // Forex/stocks use reliable daily candles from Frankfurter/Yahoo so they pass through.
+    if (asset.assetType === 'crypto' && Math.abs(score) < 5.0) {
+      score = 0   // force HOLD until candles confirm
+      reasons = [`${asset.change24h.toFixed(2)}% 24h — awaiting candle confirmation`]
+    }
   }
 
   const action: Signal['action'] =
