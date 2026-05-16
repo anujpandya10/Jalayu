@@ -219,5 +219,6 @@ export type SidebarView =
   | 'insights'
   | 'health'
   | 'trading'
+  | 'strategylab'
 
 export type JourneyView = 'day1' | 'day2' | 'day7' | 'day30'

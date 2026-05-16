@@ -22,6 +22,7 @@ import InsightsView from '@/components/dashboard/views/InsightsView'
 import HealthView from '@/components/dashboard/views/HealthView'
 import UnifiedCalendarView from '@/components/dashboard/views/UnifiedCalendarView'
 import TradingView from '@/components/dashboard/views/TradingView'
+import StrategyLabView from '@/components/dashboard/views/StrategyLabView'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
 
 async function getSupabase() {
@@ -413,6 +414,8 @@ export default function DashboardPage() {
         )
       case 'trading':
         return <TradingView />
+      case 'strategylab':
+        return <StrategyLabView />
       default:
         return null
     }

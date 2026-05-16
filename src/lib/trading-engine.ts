@@ -3,7 +3,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getAllAssets, type AssetData } from '@/lib/market-data'
-import { rankLongs, rankShorts } from '@/lib/trading-signals'
+import { rankLongs, rankShorts, rankSignalsEnriched, type Signal } from '@/lib/trading-signals'
 import { getCurrentPhase, type PhaseInfo } from '@/lib/trading-phase'
 import {
   ROUND_TRIP_FEE_PCT,
@@ -154,10 +154,15 @@ export async function runTradingTick(
   let tradesExecuted = 0
 
   const assets = options.assets ?? await getAllAssets()
-  const priceMap = new Map(assets.map((a) => [a.symbol, a.price]))
+  const priceMap    = new Map(assets.map((a) => [a.symbol, a.price]))
   const assetTypeMap = new Map(assets.map((a) => [a.symbol, a.assetType]))
   const pumpCandidates = assets.filter((a) => a.isPumpCandidate).length
   const forexCount = assets.filter((a) => a.assetType === 'forex').length
+
+  // ── Enriched signals: run indicator scoring on top candidates ─────────────
+  // Enriches top 3 longs + top 3 shorts with 1m candles (Binance/Yahoo)
+  const allSignals   = await rankSignalsEnriched(assets, 3)
+  const signalMap    = new Map(allSignals.map((s) => [s.asset.symbol, s]))
 
   events.push({
     type: 'SCAN', symbol: '', name: '', price: 0, direction: 'LONG',
@@ -310,8 +315,84 @@ export async function runTradingTick(
     .filter((s) => !heldSet.has(s.asset.symbol))
     .filter(filterByPhase)
 
+  // ── Helper: check if this setup tag is disabled by user ──────────────────
+  const { data: strategyConfigs } = await supabase
+    .from('strategy_config')
+    .select('setup_tag, enabled')
+    .eq('user_id', userId)
+  const disabledTags = new Set(
+    (strategyConfigs ?? [])
+      .filter((c: { enabled: boolean }) => !c.enabled)
+      .map((c: { setup_tag: string }) => c.setup_tag)
+  )
+
+  // ── Helper: log a trade_setup snapshot ───────────────────────────────────
+  async function logSetup(sig: Signal, direction: 'LONG' | 'SHORT'): Promise<string | null> {
+    const ind = sig.indicators
+    const { data: row } = await supabase.from('trade_setups').insert({
+      user_id     : userId,
+      symbol      : sig.asset.symbol,
+      asset_type  : sig.asset.assetType,
+      direction,
+      entry_price : sig.asset.price,
+      rsi_at_entry: ind?.rsi ?? null,
+      vwap_dev_pct: ind?.vwapDevPct ?? null,
+      atr_pct     : ind?.atrPct ?? null,
+      vol_spike   : ind?.volSpike ?? null,
+      change_24h  : sig.asset.change24h,
+      initial_score: sig.score,
+      setup_tag   : sig.setupTag,
+    }).select('id').single()
+    return row?.id ?? null
+  }
+
+  // ── Helper: close a trade_setup with outcome ──────────────────────────────
+  async function closeSetup(setupId: string | null, pnl: number, heldSecs: number, exitReason: string) {
+    if (!setupId) return
+    await supabase.from('trade_setups').update({
+      outcome_pnl: pnl,
+      won        : pnl > 0,
+      held_secs  : Math.round(heldSecs),
+      exit_reason: exitReason,
+      closed_at  : new Date().toISOString(),
+    }).eq('id', setupId)
+  }
+
+  // Track open setup IDs so we can close them when positions exit
+  // Symbol → setup_id stored in position name field as JSON metadata isn't ideal;
+  // instead we query the latest open trade_setup for a symbol on exit.
+  async function getOpenSetupId(symbol: string): Promise<string | null> {
+    const { data } = await supabase
+      .from('trade_setups')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('symbol', symbol)
+      .is('closed_at', null)
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .single()
+    return data?.id ?? null
+  }
+
+  // ── Close open positions (with setup logging) ─────────────────────────────
+  // (Re-run exit logic so setup IDs can be closed)
+  // NOTE: Exit logic already ran above; here we just close setups for exited positions.
+  for (const ev of events) {
+    if (ev.type === 'LONG_SELL' || ev.type === 'SHORT_COVER') {
+      const setupId = await getOpenSetupId(ev.symbol)
+      const heldSecs = (now - new Date(positions.find(p => p.symbol === ev.symbol)?.created_at ?? now).getTime()) / 1000
+      await closeSetup(setupId, ev.pnl ?? 0, heldSecs, ev.reason)
+    }
+  }
+
   const longsToOpen = longSignals.slice(0, Math.max(0, limits.maxLongs - currentLongs))
-  for (const sig of longsToOpen) {
+  for (const rawSig of longsToOpen) {
+    // Use enriched signal if available
+    const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
+
+    // Check if this setup is disabled by the user
+    if (disabledTags.has(sig.setupTag)) continue
+
     const budget = Math.min(cash * POSITION_SIZE_PCT, cash * 0.9)
     if (budget < MIN_TRADE_USD || cash < MIN_TRADE_USD) break
     const price = sig.asset.price
@@ -319,19 +400,23 @@ export async function runTradingTick(
     const total = parseFloat((price * shares).toFixed(2))
     if (total > cash) continue
 
-    const reason = `LONG — ${sig.reason} (score ${sig.score.toFixed(1)})`
+    const indStr = sig.indicators
+      ? ` RSI:${sig.indicators.rsi.toFixed(0)} VWAP:${sig.indicators.vwapDevPct.toFixed(2)}% vol:${sig.indicators.volSpike.toFixed(1)}×`
+      : ''
+    const reason = `LONG [${sig.setupTag}] — ${sig.reason}${indStr} (score ${sig.score.toFixed(1)})`
+
     const buyPayload = {
       user_id: userId,
       symbol: sig.asset.symbol, name: sig.asset.name,
       action: 'BUY', shares, price, total, pnl: null, reason, auto: true,
-      direction: 'LONG',
+      direction: 'LONG', setup_tag: sig.setupTag,
     }
 
     let tradeError: { message: string } | null = null
     const { error: e1 } = await supabase.from('paper_trades').insert(buyPayload)
     if (e1) {
-      const { direction: _d, ...noDir } = buyPayload
-      const { error: e2 } = await supabase.from('paper_trades').insert(noDir)
+      const { direction: _d, setup_tag: _t, ...noExtra } = buyPayload
+      const { error: e2 } = await supabase.from('paper_trades').insert(noExtra)
       tradeError = e2
     }
     if (tradeError) continue
@@ -348,6 +433,9 @@ export async function runTradingTick(
       await supabase.from('paper_positions').insert(noDirPos)
     }
 
+    // Log setup snapshot for learning
+    await logSetup(sig, 'LONG')
+
     cash = parseFloat((cash - total).toFixed(2))
     heldSet.add(sig.asset.symbol)
     currentLongs++
@@ -359,7 +447,11 @@ export async function runTradingTick(
   }
 
   const shortsToOpen = shortSignals.slice(0, Math.max(0, limits.maxShorts - currentShorts))
-  for (const sig of shortsToOpen) {
+  for (const rawSig of shortsToOpen) {
+    const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
+
+    if (disabledTags.has(sig.setupTag)) continue
+
     const budget = Math.min(cash * POSITION_SIZE_PCT, cash * 0.9)
     if (budget < MIN_TRADE_USD || cash < MIN_TRADE_USD) break
     const price = sig.asset.price
@@ -367,19 +459,23 @@ export async function runTradingTick(
     const total = parseFloat((price * shares).toFixed(2))
     if (total > cash) continue
 
-    const reason = `SHORT OPEN — ${sig.reason} (score ${sig.score.toFixed(1)})`
+    const indStr = sig.indicators
+      ? ` RSI:${sig.indicators.rsi.toFixed(0)} VWAP:${sig.indicators.vwapDevPct.toFixed(2)}%`
+      : ''
+    const reason = `SHORT [${sig.setupTag}] — ${sig.reason}${indStr} (score ${sig.score.toFixed(1)})`
+
     const tradePayload = {
       user_id: userId,
       symbol: sig.asset.symbol, name: sig.asset.name,
       action: 'BUY', shares, price, total, pnl: null, reason, auto: true,
-      direction: 'SHORT',
+      direction: 'SHORT', setup_tag: sig.setupTag,
     }
 
     let tradeError: { message: string } | null = null
     const { error: e1 } = await supabase.from('paper_trades').insert(tradePayload)
     if (e1) {
-      const { direction: _d, ...noDir } = tradePayload
-      const { error: e2 } = await supabase.from('paper_trades').insert(noDir)
+      const { direction: _d, setup_tag: _t, ...noExtra } = tradePayload
+      const { error: e2 } = await supabase.from('paper_trades').insert(noExtra)
       tradeError = e2
     }
     if (tradeError) continue
@@ -395,6 +491,8 @@ export async function runTradingTick(
       const { direction: _d, ...noDirPos } = posPayload
       await supabase.from('paper_positions').insert(noDirPos)
     }
+
+    await logSetup(sig, 'SHORT')
 
     cash = parseFloat((cash - total).toFixed(2))
     heldSet.add(sig.asset.symbol)
