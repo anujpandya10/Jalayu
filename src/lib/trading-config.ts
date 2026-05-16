@@ -35,19 +35,63 @@ export const MIN_TRADE_USD = 10        // skip micro positions that fees eat ent
  * Higher-quality setups get a larger slice of capital.
  * Fallback is DEFAULT_POSITION_SIZE_PCT for any unrecognized tag.
  */
+/**
+ * Conviction multipliers (not % of cash — used with slot-based sizing below).
+ * 1.0 = full slot; 0.5 = half slot for low-conviction setups.
+ */
 export const POSITION_SIZES: Record<string, number> = {
-  OVERSOLD_BOUNCE  : 0.40,   // strongest reversal setup — put real money here
-  SUPERNOVA_SHORT  : 0.35,   // extreme pump exhaustion — high confidence short
-  MOMENTUM_LONG    : 0.35,   // volume-confirmed breakout — ride the trend
-  PUMP_SHORT       : 0.28,
-  VWAP_LONG        : 0.20,
-  VWAP_SHORT       : 0.20,
-  FOREX_DIP        : 0.15,
-  FOREX_FADE       : 0.15,
-  MEAN_REVERT      : 0.15,
-  UNTAGGED         : 0.10,   // lowest conviction — smallest bet
+  OVERSOLD_BOUNCE  : 1.0,
+  SUPERNOVA_SHORT  : 1.0,
+  MOMENTUM_LONG    : 1.0,
+  PUMP_SHORT       : 0.85,
+  VWAP_LONG        : 0.75,
+  VWAP_SHORT       : 0.75,
+  FOREX_DIP        : 0.55,
+  FOREX_FADE       : 0.55,
+  MEAN_REVERT      : 0.50,
+  UNTAGGED         : 0.35,
 }
-export const DEFAULT_POSITION_SIZE_PCT = 0.20  // fallback for new tags
+export const DEFAULT_POSITION_SIZE_PCT = 0.70  // relative conviction vs best setups
+
+/** Target % of portfolio equity deployed across all open slots */
+export const TARGET_DEPLOY_PCT = 0.78
+
+/** Always keep a small cash buffer for fees / next entry */
+export const CASH_RESERVE_PCT = 0.08
+
+/** Max capital in a single position (% of equity) */
+export const MAX_SINGLE_POSITION_PCT = 0.42
+
+/**
+ * Compute $ budget for next entry from total equity (not leftover cash × 15%).
+ */
+export function computeEntryBudget(
+  cash: number,
+  equity: number,
+  slotsRemaining: number,
+  setupTag: string,
+): number {
+  if (slotsRemaining <= 0 || cash < MIN_TRADE_USD || equity < MIN_TRADE_USD) return 0
+
+  const reserve = equity * CASH_RESERVE_PCT
+  const investableCash = Math.max(0, cash - reserve)
+
+  const deployed = Math.max(0, equity - cash)
+  const deployTarget = equity * TARGET_DEPLOY_PCT
+  const room = Math.max(0, deployTarget - deployed)
+  const slotBase = room / slotsRemaining
+
+  const conviction = POSITION_SIZES[setupTag] ?? DEFAULT_POSITION_SIZE_PCT
+  const mult = conviction / 1.0 // 1.0 = full slot for top setups
+
+  const budget = Math.min(
+    slotBase * mult,
+    investableCash,
+    equity * MAX_SINGLE_POSITION_PCT,
+  )
+
+  return parseFloat(Math.max(0, budget).toFixed(2))
+}
 
 /**
  * Daily loss circuit breaker.

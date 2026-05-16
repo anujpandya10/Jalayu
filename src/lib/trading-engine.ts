@@ -12,8 +12,7 @@ import {
 import { getCurrentPhase, type PhaseInfo } from '@/lib/trading-phase'
 import {
   ROUND_TRIP_FEE_PCT,
-  POSITION_SIZES,
-  DEFAULT_POSITION_SIZE_PCT,
+  computeEntryBudget,
   DAILY_LOSS_LIMIT_PCT,
   CRYPTO_HOT_WINDOWS_UTC,
   STOCK_HOT_WINDOWS_UTC,
@@ -76,12 +75,33 @@ function applyFees(notional: number, rawPnl: number): number {
 
 function getPositionLimits(phase: PhaseInfo) {
   if (phase.phase === 'STOCK_MARKET') {
-    return { maxLongs: 2, maxShorts: 2 }
+    return { maxLongs: 3, maxShorts: 2 }
   }
   if (phase.phase === 'PREMARKET') {
-    return { maxLongs: 2, maxShorts: 1 }
+    return { maxLongs: 3, maxShorts: 1 }
   }
-  return { maxLongs: 2, maxShorts: 2 }
+  return { maxLongs: 3, maxShorts: 2 }
+}
+
+function computePortfolioEquity(
+  cash: number,
+  positions: PositionRow[],
+  priceMap: Map<string, number>,
+): number {
+  let positionsEquity = 0
+  for (const pos of positions) {
+    const shares = Number(pos.shares)
+    const avgCost = Number(pos.avg_buy_price)
+    const current = priceMap.get(pos.symbol) ?? avgCost
+    const isShort = pos.direction === 'SHORT'
+    if (isShort) {
+      const pnl = (avgCost - current) * shares
+      positionsEquity += avgCost * shares + pnl
+    } else {
+      positionsEquity += current * shares
+    }
+  }
+  return cash + positionsEquity
 }
 
 export interface RunTradingTickOptions {
@@ -485,6 +505,9 @@ export async function runTradingTick(
     }
   }
 
+  const maxSlots = limits.maxLongs + limits.maxShorts
+  let openSlots = currentLongs + currentShorts
+
   const longsToOpen = circuitBreakerOn
     ? []
     : longSignals.slice(0, Math.max(0, limits.maxLongs - currentLongs))
@@ -495,10 +518,10 @@ export async function runTradingTick(
     // Check if this setup is disabled by the user
     if (disabledTags.has(sig.setupTag)) continue
 
-    // Variable position size by setup conviction
-    const sizePct = POSITION_SIZES[sig.setupTag] ?? DEFAULT_POSITION_SIZE_PCT
-    const budget = Math.min(cash * sizePct, cash * 0.9)
-    if (budget < MIN_TRADE_USD || cash < MIN_TRADE_USD) break
+    const slotsRemaining = maxSlots - openSlots
+    const equity = computePortfolioEquity(cash, positions, priceMap)
+    const budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag)
+    if (budget < MIN_TRADE_USD) break
     const price = sig.asset.price
     const shares = parseFloat((budget / price).toFixed(8))
     const total = parseFloat((price * shares).toFixed(2))
@@ -543,10 +566,13 @@ export async function runTradingTick(
     cash = parseFloat((cash - total).toFixed(2))
     heldSet.add(sig.asset.symbol)
     currentLongs++
+    openSlots++
     tradesExecuted++
     events.push({
       type: 'LONG_BUY', symbol: sig.asset.symbol, name: sig.asset.name,
-      price, direction: 'LONG', shares, total, reason, urgency: sig.urgency, ts: now,
+      price, direction: 'LONG', shares, total,
+      reason: `${reason} · $${total.toFixed(0)} (${((total / equity) * 100).toFixed(0)}% of portfolio)`,
+      urgency: sig.urgency, ts: now,
     })
   }
 
@@ -560,9 +586,10 @@ export async function runTradingTick(
 
     if (disabledTags.has(sig.setupTag)) continue
 
-    const sizePct = POSITION_SIZES[sig.setupTag] ?? DEFAULT_POSITION_SIZE_PCT
-    const budget = Math.min(cash * sizePct, cash * 0.9)
-    if (budget < MIN_TRADE_USD || cash < MIN_TRADE_USD) break
+    const slotsRemaining = maxSlots - openSlots
+    const equity = computePortfolioEquity(cash, positions, priceMap)
+    const budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag)
+    if (budget < MIN_TRADE_USD) break
     const price = sig.asset.price
     const shares = parseFloat((budget / price).toFixed(8))
     const total = parseFloat((price * shares).toFixed(2))
@@ -606,10 +633,13 @@ export async function runTradingTick(
     cash = parseFloat((cash - total).toFixed(2))
     heldSet.add(sig.asset.symbol)
     currentShorts++
+    openSlots++
     tradesExecuted++
     events.push({
       type: 'SHORT_OPEN', symbol: sig.asset.symbol, name: sig.asset.name,
-      price, direction: 'SHORT', shares, total, reason, urgency: sig.urgency, ts: now,
+      price, direction: 'SHORT', shares, total,
+      reason: `${reason} · $${total.toFixed(0)} (${((total / equity) * 100).toFixed(0)}% of portfolio)`,
+      urgency: sig.urgency, ts: now,
     })
   }
 
