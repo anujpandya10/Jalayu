@@ -76,7 +76,7 @@ export async function POST(request: Request) {
     const today = new Date().toISOString().split('T')[0]
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
 
-    const [profileRes, moodsRes, tasksRes, notesRes, factsRes, threadRes, healthRes, medsRes] = await Promise.all([
+    const [profileRes, moodsRes, tasksRes, notesRes, factsRes, threadRes, healthRes, medsRes, portfolioRes, positionsRes, recentTradesRes] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('moods').select('*').eq('user_id', user.id).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(14),
       supabase.from('tasks').select('*').eq('user_id', user.id).eq('completed', false).gte('due_date', today).limit(10),
@@ -85,6 +85,9 @@ export async function POST(request: Request) {
       supabase.from('chat_messages').select('role, content').eq('user_id', user.id).order('created_at', { ascending: false }).limit(20),
       supabase.from('health_profiles').select('*').eq('user_id', user.id).order('created_at', { ascending: true }).limit(10),
       supabase.from('medications').select('name, dosage_mg, frequency, purpose').eq('user_id', user.id).eq('is_active', true).limit(20),
+      supabase.from('paper_portfolio').select('cash, total_trades_run, updated_at').eq('user_id', user.id).single(),
+      supabase.from('paper_positions').select('symbol, name, shares, avg_buy_price, direction, asset_type, created_at').eq('user_id', user.id).limit(10),
+      supabase.from('paper_trades').select('symbol, action, price, total, pnl, reason, direction, created_at').eq('user_id', user.id).order('created_at', { ascending: false }).limit(8),
     ])
 
     const profile = profileRes.data
@@ -95,6 +98,9 @@ export async function POST(request: Request) {
     const thread = (threadRes.data || []).reverse()
     const healthProfiles: any[] = healthRes.data || []
     const activeMeds = medsRes.data || []
+    const portfolio = portfolioRes.data
+    const openPositions: any[] = positionsRes.data || []
+    const recentTrades: any[] = recentTradesRes.data || []
 
     // Language detection: check last 5 user messages
     const recentUserMessages = messages.filter((m) => m.role === 'user').slice(-5).map((m) => m.content)
@@ -150,6 +156,63 @@ ${firstProfile ? `\nPrimary Care Physician: ${firstProfile.primary_care_name || 
 Conditions: ${firstProfile.conditions?.join(', ') || 'none listed'}
 Allergies: ${firstProfile.allergies?.join(', ') || 'none listed'}` : ''}${activeMeds.length > 0 ? `\nActive medications: ${activeMeds.map((m) => `${m.name}${m.dosage_mg ? ` ${m.dosage_mg}mg` : ''}${m.frequency ? ` (${m.frequency})` : ''}`).join(', ')}` : ''}`
       : ''
+
+    // ── Trading context block ──────────────────────────────────────────────────
+    let tradingBlock = ''
+    if (portfolio || openPositions.length > 0 || recentTrades.length > 0) {
+      const cash = portfolio ? Number(portfolio.cash) : 500
+      const totalTrades = portfolio?.total_trades_run ?? recentTrades.length
+      const seedCapital = 500
+
+      // Calculate net worth from open positions + cash
+      const positionValue = openPositions.reduce((sum: number, p: any) => {
+        return sum + (Number(p.shares) * Number(p.avg_buy_price))
+      }, 0)
+      const netWorth = cash + positionValue
+      const totalPnl = netWorth - seedCapital
+      const totalPnlPct = ((totalPnl / seedCapital) * 100).toFixed(2)
+
+      const positionsText = openPositions.length > 0
+        ? openPositions.map((p: any) => {
+            const dir = p.direction || 'LONG'
+            const held = p.created_at ? Math.round((Date.now() - new Date(p.created_at).getTime()) / 60000) : 0
+            return `  ${p.symbol} ${dir} — ${Number(p.shares).toFixed(4)} shares @ $${Number(p.avg_buy_price).toFixed(4)} (held ${held}m)`
+          }).join('\n')
+        : '  None'
+
+      const recentTradesText = recentTrades.length > 0
+        ? recentTrades.slice(0, 6).map((t: any) => {
+            const pnl = t.pnl != null ? (Number(t.pnl) >= 0 ? `+$${Number(t.pnl).toFixed(2)}` : `-$${Math.abs(Number(t.pnl)).toFixed(2)}`) : 'open'
+            const age = t.created_at ? Math.round((Date.now() - new Date(t.created_at).getTime()) / 60000) : 0
+            return `  ${t.action} ${t.symbol} ${t.direction || ''} ${age}m ago — P&L: ${pnl} — ${(t.reason || '').slice(0, 60)}`
+          }).join('\n')
+        : '  No trades yet'
+
+      tradingBlock = `
+━━━ TRADING PORTFOLIO ━━━
+Net Worth: $${netWorth.toFixed(2)} (started at $${seedCapital})
+Total P&L: ${Number(totalPnlPct) >= 0 ? '+' : ''}${totalPnlPct}% (${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)})
+Cash Available: $${cash.toFixed(2)}
+Total Trades Run: ${totalTrades}
+
+OPEN POSITIONS (${openPositions.length}):
+${positionsText}
+
+RECENT TRADE HISTORY:
+${recentTradesText}
+
+TRADING RULES (when the user asks about their trades or strategy):
+- You have full access to their paper trading portfolio above — use real numbers in your answers
+- The engine runs 24/7: crypto at night, stocks during market hours (9:30am–4pm ET)
+- Setups: OVERSOLD_BOUNCE (RSI<30, dip>5%), MOMENTUM_LONG (vol spike 3x+), PUMP_SHORT (24h gain>12%, RSI>70), VWAP_LONG/SHORT (price vs fair value), SUPERNOVA_SHORT (extreme pumps)
+- TP: 0.80%, SL: 0.40%, fee: 0.20% round-trip — net win: +0.60%, net loss: -0.60%
+- Variable position size: OVERSOLD_BOUNCE=35%, MOMENTUM/PUMP=25%, others=15-20%
+- Circuit breaker: stops new entries if daily loss > 3% ($15 on $500)
+- Signal score threshold: LONG ≥ 4.0, SHORT ≤ -5.0
+- If asked "why isn't it making money": check daily P&L, open position count, and whether the market is in a volatile window right now
+- If asked to explain a trade: use the reason field from RECENT TRADE HISTORY above
+- You can suggest the user visit the Strategy Lab to see win rates by setup and disable underperforming ones`
+    }
 
     // Build community patterns block if patterns were provided
     const positivePatterns = (patterns ?? []).filter(
@@ -208,6 +271,7 @@ SAVED FACTS: ${factsBlock}
 RECENT CONVERSATION:
 ${threadBlock}
 ${healthBlock}
+${tradingBlock}
 
 ━━━ ANTI-REPETITION LAW ━━━
 You have already said things like: ${previousSuggestions.length > 20 ? `"${previousSuggestions.slice(0, 400)}..."` : '(nothing yet)'}

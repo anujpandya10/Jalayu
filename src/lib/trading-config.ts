@@ -24,24 +24,59 @@ export const SHORT_SL_PCT = 0.004
 export const FOREX_TP_PCT = 0.004   // forex moves slower — tighter is OK for TP
 export const FOREX_SL_PCT = 0.002
 
-export const POSITION_SIZE_PCT = 0.20  // 20% per position — fewer, higher-conviction
 export const MIN_TRADE_USD = 10        // skip micro positions that fees eat entirely
 
 /**
- * Time exits — only leave a position early if it's already halfway to TP.
- * This stops "take a 0.01% winner at 60s" which was costing more in fees than it earned.
+ * Variable position sizing by setup conviction.
+ * Higher-quality setups (OVERSOLD_BOUNCE) get a larger slice of capital.
+ * Fallback is DEFAULT_POSITION_SIZE_PCT for any unrecognized tag.
  */
-export const TIME_EXIT_SECS  = 300    // 5 min: minimum hold before any time exit
-export const STALE_EXIT_SECS = 900    // 15 min: cut a dead/losing trade, give it time first
+export const POSITION_SIZES: Record<string, number> = {
+  OVERSOLD_BOUNCE : 0.35,   // strongest reversal setup — put real money here
+  SUPERNOVA_SHORT : 0.30,   // extreme pump exhaustion — high confidence
+  MOMENTUM_LONG   : 0.25,
+  PUMP_SHORT      : 0.25,
+  VWAP_LONG       : 0.18,
+  VWAP_SHORT      : 0.18,
+  FOREX_DIP       : 0.15,
+  FOREX_FADE      : 0.15,
+  MEAN_REVERT     : 0.15,
+  UNTAGGED        : 0.12,   // lowest conviction — smallest bet
+}
+export const DEFAULT_POSITION_SIZE_PCT = 0.20  // fallback for new tags
 
 /**
- * How long (seconds) before the engine can re-enter the same symbol after an exit.
- * Prevents the "LINK lost → immediately re-enter LINK" loop seen in practice.
+ * Daily loss circuit breaker.
+ * If total realized P&L for today hits this level (as % of seed), stop all new entries.
+ * Prevents compounding losses on bad market days.
  */
-export const SYMBOL_COOLDOWN_SECS = 900  // 15 min cooldown per symbol after any exit
+export const DAILY_LOSS_LIMIT_PCT = 0.03   // 3% of SEED_CAPITAL = $15 max daily loss
+
+/**
+ * High-volatility time windows (UTC hours, inclusive start, exclusive end).
+ * Only open NEW positions during these windows — exit logic runs any time.
+ *
+ * Crypto peak: 8pm–2am ET  = 00:00–06:00 UTC  (Binance US / Asia session)
+ *              6am–9am ET  = 10:00–13:00 UTC  (Europe open)
+ * Stock peak:  9:30–11am ET = 13:30–15:00 UTC (open momentum)
+ *              3pm–4pm ET  = 19:00–20:00 UTC  (close momentum)
+ */
+export const CRYPTO_HOT_WINDOWS_UTC: [number, number][] = [[0, 6], [10, 13]]
+export const STOCK_HOT_WINDOWS_UTC:  [number, number][] = [[13, 15], [19, 20]]
+
+/**
+ * Time exits — only leave a position early if it's already halfway to TP.
+ */
+export const TIME_EXIT_SECS  = 300    // 5 min: minimum hold before any time exit
+export const STALE_EXIT_SECS = 900    // 15 min: cut a dead/losing trade
+
+/**
+ * How long before the engine can re-enter the same symbol after an exit.
+ */
+export const SYMBOL_COOLDOWN_SECS = 900  // 15 min cooldown per symbol
 
 /** Minimum signal scores — raised to require real indicator confirmation */
-export const MIN_LONG_SCORE  = 4.0   // was 2.5 — now requires -5%+ dip + indicator edge
-export const MIN_SHORT_SCORE = -5.0  // was -4  — now requires strong overextension signal
+export const MIN_LONG_SCORE  = 4.0
+export const MIN_SHORT_SCORE = -5.0
 
 export const SEED_CAPITAL = 500

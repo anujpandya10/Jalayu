@@ -13,7 +13,11 @@ import {
   SHORT_SL_PCT,
   FOREX_TP_PCT,
   FOREX_SL_PCT,
-  POSITION_SIZE_PCT,
+  POSITION_SIZES,
+  DEFAULT_POSITION_SIZE_PCT,
+  DAILY_LOSS_LIMIT_PCT,
+  CRYPTO_HOT_WINDOWS_UTC,
+  STOCK_HOT_WINDOWS_UTC,
   MIN_TRADE_USD,
   TIME_EXIT_SECS,
   STALE_EXIT_SECS,
@@ -313,11 +317,47 @@ export async function runTradingTick(
     else currentLongs++
   }
 
+  // ── Daily loss circuit breaker ───────────────────────────────────────────────
+  // If realized P&L today already hit -DAILY_LOSS_LIMIT_PCT, stop all new entries.
+  const todayStart = new Date()
+  todayStart.setUTCHours(0, 0, 0, 0)
+  const { data: todayTrades } = await supabase
+    .from('paper_trades')
+    .select('pnl')
+    .eq('user_id', userId)
+    .neq('pnl', null)
+    .gte('created_at', todayStart.toISOString())
+  const dailyRealizedPnl = (todayTrades ?? []).reduce((sum, t: { pnl: number | null }) => sum + (t.pnl ?? 0), 0)
+  const dailyLossLimit   = SEED_CAPITAL * DAILY_LOSS_LIMIT_PCT
+  const circuitBreakerOn = dailyRealizedPnl <= -dailyLossLimit
+
+  if (circuitBreakerOn) {
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `⛔ Daily loss limit hit ($${dailyRealizedPnl.toFixed(2)} today). No new entries until tomorrow.`,
+      ts: now,
+    })
+  }
+
+  // ── Time-of-day filter: only open in high-volatility windows ────────────────
+  const utcHour = new Date(now).getUTCHours()
+  const utcMin  = new Date(now).getUTCMinutes()
+  const utcDecimal = utcHour + utcMin / 60
+
+  function inHotWindow(windows: [number, number][]): boolean {
+    return windows.some(([start, end]) => utcDecimal >= start && utcDecimal < end)
+  }
+  const cryptoHot = inHotWindow(CRYPTO_HOT_WINDOWS_UTC)
+  const stockHot  = inHotWindow(STOCK_HOT_WINDOWS_UTC)
+
   const filterByPhase = (s: ReturnType<typeof rankLongs>[0]) => {
     const t = s.asset.assetType
     if (t === 'stock' && !phaseInfo.stocksActive) return false
     if (t === 'forex' && !phaseInfo.forexActive) return false
     if (t === 'crypto' && !phaseInfo.cryptoActive) return false
+    // Only enter during high-volatility windows (exit logic ignores this)
+    if (t === 'crypto' && !cryptoHot) return false
+    if (t === 'stock'  && !stockHot)  return false
     return true
   }
 
@@ -401,7 +441,10 @@ export async function runTradingTick(
     }
   }
 
-  const longsToOpen = longSignals.slice(0, Math.max(0, limits.maxLongs - currentLongs))
+  const longsToOpen = circuitBreakerOn
+    ? []
+    : longSignals.slice(0, Math.max(0, limits.maxLongs - currentLongs))
+
   for (const rawSig of longsToOpen) {
     // Use enriched signal if available
     const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
@@ -409,7 +452,9 @@ export async function runTradingTick(
     // Check if this setup is disabled by the user
     if (disabledTags.has(sig.setupTag)) continue
 
-    const budget = Math.min(cash * POSITION_SIZE_PCT, cash * 0.9)
+    // Variable position size by setup conviction
+    const sizePct = POSITION_SIZES[sig.setupTag] ?? DEFAULT_POSITION_SIZE_PCT
+    const budget = Math.min(cash * sizePct, cash * 0.9)
     if (budget < MIN_TRADE_USD || cash < MIN_TRADE_USD) break
     const price = sig.asset.price
     const shares = parseFloat((budget / price).toFixed(8))
@@ -462,13 +507,17 @@ export async function runTradingTick(
     })
   }
 
-  const shortsToOpen = shortSignals.slice(0, Math.max(0, limits.maxShorts - currentShorts))
+  const shortsToOpen = circuitBreakerOn
+    ? []
+    : shortSignals.slice(0, Math.max(0, limits.maxShorts - currentShorts))
+
   for (const rawSig of shortsToOpen) {
     const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
 
     if (disabledTags.has(sig.setupTag)) continue
 
-    const budget = Math.min(cash * POSITION_SIZE_PCT, cash * 0.9)
+    const sizePct = POSITION_SIZES[sig.setupTag] ?? DEFAULT_POSITION_SIZE_PCT
+    const budget = Math.min(cash * sizePct, cash * 0.9)
     if (budget < MIN_TRADE_USD || cash < MIN_TRADE_USD) break
     const price = sig.asset.price
     const shares = parseFloat((budget / price).toFixed(8))

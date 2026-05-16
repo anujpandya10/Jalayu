@@ -1,12 +1,93 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Mic, MicOff, ChevronRight } from 'lucide-react'
+import { Mic, MicOff, ChevronRight, TrendingUp, TrendingDown } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile, Task, Mood } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 import { getDayNumber } from '@/lib/utils'
 import GalaxyOrb from '@/components/GalaxyOrb'
+
+// ── Trading P&L mini-widget ────────────────────────────────────────────────────
+interface TradingSnap {
+  cash: number
+  netWorth: number
+  totalPnl: number
+  totalPnlPct: number
+  openPositions: number
+  totalTrades: number
+}
+
+function TradingPnlWidget({ onNavigate }: { onNavigate: () => void }) {
+  const [snap, setSnap] = useState<TradingSnap | null>(null)
+
+  useEffect(() => {
+    const SEED = 500
+    Promise.all([
+      fetch('/api/trading/portfolio').then(r => r.ok ? r.json() : null),
+    ]).then(([data]) => {
+      if (!data) return
+      const cash = Number(data.cash ?? SEED)
+      const positions: Array<{ shares: number; currentPrice: number; avgBuyPrice: number }> = data.positions ?? []
+      const posValue = positions.reduce((s, p) => s + Number(p.shares) * Number(p.currentPrice || p.avgBuyPrice), 0)
+      const netWorth = cash + posValue
+      const totalPnl = netWorth - SEED
+      setSnap({
+        cash,
+        netWorth,
+        totalPnl,
+        totalPnlPct: (totalPnl / SEED) * 100,
+        openPositions: positions.length,
+        totalTrades: data.totalTrades ?? 0,
+      })
+    }).catch(() => {})
+  }, [])
+
+  if (!snap) return null
+
+  const positive = snap.totalPnl >= 0
+  const color = positive ? '#22C55E' : '#EF4444'
+  const Icon  = positive ? TrendingUp : TrendingDown
+
+  return (
+    <button
+      onClick={onNavigate}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        width: '100%', textAlign: 'left', cursor: 'pointer',
+        background: 'var(--surface)', border: '1px solid var(--border)',
+        borderRadius: 14, padding: '13px 16px', marginBottom: 18,
+        transition: 'border-color 0.15s',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: 10,
+          background: `${color}18`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Icon size={16} color={color} />
+        </div>
+        <div>
+          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 500 }}>
+            TRADING · {snap.openPositions} open · {snap.totalTrades} trades
+          </p>
+          <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '1px 0 0', lineHeight: 1 }}>
+            ${snap.netWorth.toFixed(2)}
+          </p>
+        </div>
+      </div>
+      <div style={{ textAlign: 'right' }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color, margin: 0 }}>
+          {positive ? '+' : ''}{snap.totalPnl.toFixed(2)}
+        </p>
+        <p style={{ fontSize: 11, color, margin: '1px 0 0', opacity: 0.8 }}>
+          {positive ? '+' : ''}{snap.totalPnlPct.toFixed(2)}%
+        </p>
+      </div>
+    </button>
+  )
+}
 
 declare global {
   interface Window {
@@ -79,6 +160,7 @@ export default function HomeContent({
   onAction?: (actions: Array<{ type: string; data: Record<string, unknown>; message: string }>) => void
 }) {
   const setShowChatPanel = useStore((s) => s.setShowChatPanel)
+  const setSidebarView   = useStore((s) => s.setSidebarView)
 
   const [morningNote, setMorningNote] = useState<string | null>(null)
   const [focus, setFocus] = useState<string | null>(null)
@@ -348,6 +430,9 @@ export default function HomeContent({
             </div>
           )}
         </div>
+
+        {/* ── Trading P&L widget ── */}
+        <TradingPnlWidget onNavigate={() => setSidebarView('trading')} />
 
         {/* ── Yesterday snapshot ── */}
         {hasYesterdayData && (
