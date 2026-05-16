@@ -633,17 +633,18 @@ export default function HomeContent({
                 color: AMBER, opacity: 0.07, lineHeight: 1, pointerEvents: 'none',
                 fontFamily: 'Georgia, serif', fontStyle: 'italic',
               }}>&ldquo;</div>
-              <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px' }}>
+              <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px', textAlign: 'center' }}>
                 ✦ Daily Inspiration
               </p>
               <p style={{
                 fontFamily: 'var(--font-lora), Georgia, serif',
                 fontStyle: 'italic', fontSize: 14, lineHeight: 1.75,
                 color: 'var(--text)', margin: '0 0 8px', fontWeight: 500,
+                textAlign: 'center',
               }}>
                 &ldquo;{quote.text}&rdquo;
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 600 }}>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 600, textAlign: 'center' }}>
                 — {quote.author}
               </p>
             </div>
@@ -687,45 +688,6 @@ export default function HomeContent({
                 )}
               </W>
             </div>
-
-            {/* Calendar & Upcoming events — center column prominence */}
-            <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')} className="w-full">
-              {calConnected === false ? (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 2px' }}>No calendar connected</p>
-                    <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Link Google Calendar to see what&apos;s coming up today</p>
-                  </div>
-                  <button onClick={(e) => { e.stopPropagation(); setSidebarView('calendar') }}
-                    style={{ fontSize: 10, fontWeight: 700, padding: '4px 12px', background: '#6366F1', color: '#fff', border: 'none', borderRadius: 99, cursor: 'pointer', flexShrink: 0 }}>
-                    Connect →
-                  </button>
-                </div>
-              ) : calConnected === null ? (
-                <Dots />
-              ) : calEvents.length === 0 ? (
-                <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0 }}>Nothing on the calendar — you&apos;re clear ✓</p>
-              ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '6px 16px' }}>
-                  {calEvents.map((ev, i) => {
-                    const { label, isToday, isTomorrow } = formatEventTime(ev.start, todayStr)
-                    const dotColor = isToday ? '#6366F1' : isTomorrow ? AMBER : 'var(--border-2)'
-                    return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0, marginTop: 4 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
-                          <p style={{ fontSize: 10, color: isToday ? '#6366F1' : 'var(--text-3)', margin: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                            <Clock size={8} />
-                            {label}
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </W>
 
             {/* Trading — full width */}
             <W accent={pnlColor} icon={tradingSnap && pnlPositive ? TrendingUp : TrendingDown}
