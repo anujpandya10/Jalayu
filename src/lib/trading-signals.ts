@@ -1,87 +1,65 @@
-import type { AssetQuote } from './market-data'
+import type { AssetData } from './market-data'
 
 export interface Signal {
-  asset: AssetQuote
-  score: number        // -10 to +10
+  asset: AssetData
+  score: number       // positive = buy opportunity, negative = sell
   action: 'BUY' | 'SELL' | 'HOLD'
-  rsi: number
-  bbPosition: number   // -1 (below lower) to +1 (above upper)
-  momentum1h: number   // % change last candle
   reason: string
 }
 
-function calcRSI(closes: number[], period = 14): number {
-  if (closes.length < period + 1) return 50
-  let gains = 0, losses = 0
-  for (let i = closes.length - period; i < closes.length; i++) {
-    const diff = closes[i] - closes[i - 1]
-    if (diff > 0) gains += diff
-    else losses -= diff
-  }
-  const avgGain = gains / period
-  const avgLoss = losses / period
-  if (avgLoss === 0) return 100
-  const rs = avgGain / avgLoss
-  return 100 - 100 / (1 + rs)
-}
-
-function calcBollingerBands(closes: number[], period = 20, stdMult = 2): { upper: number; middle: number; lower: number } {
-  const slice = closes.slice(-period)
-  const middle = slice.reduce((a, b) => a + b, 0) / slice.length
-  const variance = slice.reduce((a, b) => a + Math.pow(b - middle, 2), 0) / slice.length
-  const std = Math.sqrt(variance)
-  return { upper: middle + stdMult * std, middle, lower: middle - stdMult * std }
-}
-
-export function scoreAsset(asset: AssetQuote): Signal {
-  const closes = asset.candles.map((c) => c.close)
-  const price = asset.price
-
-  const rsi = calcRSI(closes)
-  const bb = calcBollingerBands(closes)
-  const bbRange = bb.upper - bb.lower
-  const bbPosition = bbRange > 0 ? (price - bb.middle) / (bbRange / 2) : 0
-  const prev = closes[closes.length - 2] ?? price
-  const momentum1h = prev > 0 ? ((price - prev) / prev) * 100 : 0
-
+/**
+ * Score an asset based on momentum and mean-reversion signals.
+ *
+ * Strategy: buy assets that dipped in the last 24h but are in a healthy 7d trend
+ * (dip-buy in an uptrend). Sell assets that are overbought on both timeframes.
+ *
+ * Score ranges -10 to +10. BUY threshold: ≥ 1.5. SELL threshold: ≤ -2.
+ *
+ * We ALWAYS produce a ranked list — no asset gets score 0 unless perfectly neutral.
+ * This ensures the algo always finds something to trade.
+ */
+export function scoreAsset(asset: AssetData): Signal {
+  const { change24h, change7d } = asset
   let score = 0
+  const reasons: string[] = []
 
-  // RSI scoring
-  if (rsi < 25) score += 4
-  else if (rsi < 35) score += 2.5
-  else if (rsi < 45) score += 1
-  else if (rsi > 75) score -= 4
-  else if (rsi > 65) score -= 2.5
-  else if (rsi > 55) score -= 1
+  // ── 24h momentum (primary signal) ─────────────────────────────────────────
+  // Extreme drop in 24h → strong buy (mean reversion)
+  if (change24h <= -8)       { score += 4.5; reasons.push(`${change24h.toFixed(1)}% 24h drop`) }
+  else if (change24h <= -5)  { score += 3.5; reasons.push(`${change24h.toFixed(1)}% 24h dip`) }
+  else if (change24h <= -3)  { score += 2.5; reasons.push(`${change24h.toFixed(1)}% 24h dip`) }
+  else if (change24h <= -1.5){ score += 1.5; reasons.push(`${change24h.toFixed(1)}% 24h pullback`) }
+  else if (change24h <= -0.5){ score += 0.8; reasons.push(`${change24h.toFixed(1)}% 24h pullback`) }
+  else if (change24h >= 8)   { score -= 4.0; reasons.push(`${change24h.toFixed(1)}% 24h spike`) }
+  else if (change24h >= 5)   { score -= 2.5; reasons.push(`${change24h.toFixed(1)}% 24h spike`) }
+  else if (change24h >= 3)   { score -= 1.5; reasons.push(`${change24h.toFixed(1)}% 24h rise`) }
+  else if (change24h >= 1.5) { score -= 0.8; reasons.push(`${change24h.toFixed(1)}% 24h rise`) }
 
-  // Bollinger Band scoring
-  if (bbPosition < -0.9) score += 3
-  else if (bbPosition < -0.5) score += 1.5
-  else if (bbPosition > 0.9) score -= 3
-  else if (bbPosition > 0.5) score -= 1.5
-
-  // Momentum (slight contrarian + slight follow)
-  if (momentum1h < -2) score += 1.5    // big drop = potential bounce
-  else if (momentum1h > 2) score -= 1  // big spike = potential reversal
-  else if (momentum1h > 0.5) score += 0.5  // mild uptrend = follow
-  else if (momentum1h < -0.5) score -= 0.5
+  // ── 7d trend context (secondary signal) ───────────────────────────────────
+  // Dip-buy: 24h down but 7d up = healthy pullback in uptrend → buy more
+  if (change24h < 0 && change7d > 3)  { score += 1.5; reasons.push(`7d +${change7d.toFixed(1)}% uptrend`) }
+  if (change24h < 0 && change7d > 0)  { score += 0.5 }
+  // Extended rally: both 24h and 7d up = potentially overbought
+  if (change24h > 2 && change7d > 10) { score -= 1.5; reasons.push(`7d +${change7d.toFixed(1)}% extended`) }
+  // Deep correction: 7d also down = might go lower → reduce score
+  if (change24h < -5 && change7d < -10) { score -= 1.0; reasons.push('deep correction') }
 
   score = Math.max(-10, Math.min(10, score))
 
-  const reasons: string[] = []
-  if (rsi < 35) reasons.push(`RSI ${rsi.toFixed(0)} (oversold)`)
-  else if (rsi > 65) reasons.push(`RSI ${rsi.toFixed(0)} (overbought)`)
-  if (bbPosition < -0.5) reasons.push(`below BB midline`)
-  else if (bbPosition > 0.5) reasons.push(`above BB midline`)
-  if (Math.abs(momentum1h) > 0.5) reasons.push(`${momentum1h > 0 ? '+' : ''}${momentum1h.toFixed(2)}% last candle`)
+  // Always floor to a small non-zero value so ranking produces variety
+  if (score === 0) score = -change24h * 0.1
 
-  let action: 'BUY' | 'SELL' | 'HOLD' = 'HOLD'
-  if (score >= 3) action = 'BUY'
-  else if (score <= -2) action = 'SELL'
+  const action: Signal['action'] = score >= 1.5 ? 'BUY' : score <= -2 ? 'SELL' : 'HOLD'
 
-  return { asset, score, action, rsi, bbPosition, momentum1h, reason: reasons.join(', ') || 'neutral' }
+  return {
+    asset,
+    score,
+    action,
+    reason: reasons.join(', ') || `neutral (${change24h.toFixed(2)}% 24h)`,
+  }
 }
 
-export function rankSignals(assets: AssetQuote[]): Signal[] {
+/** Rank all assets by score descending. */
+export function rankSignals(assets: AssetData[]): Signal[] {
   return assets.map(scoreAsset).sort((a, b) => b.score - a.score)
 }

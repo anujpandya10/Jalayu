@@ -1,106 +1,52 @@
-// Unified market data: Binance (crypto, no key) + Yahoo Finance (stocks)
+/**
+ * Market data — CoinGecko (crypto, no key, no geo-blocking) + Yahoo Finance (stocks, market hours)
+ */
 
-export interface Candle {
-  time: number
-  open: number
-  high: number
-  low: number
-  close: number
-  volume: number
-}
-
-export interface AssetQuote {
-  symbol: string
+export interface AssetData {
+  symbol: string      // e.g. BTC or AAPL
+  coinId?: string     // CoinGecko id, e.g. "bitcoin"
   name: string
   price: number
+  change24h: number   // % change last 24h
+  change7d: number    // % change last 7d
   assetType: 'crypto' | 'stock'
-  candles: Candle[] // last 50 hourly (crypto) or daily (stock)
 }
 
-// CRYPTO — Binance public API, no key, 1-hour candles
-const CRYPTO_SYMBOLS = [
-  { symbol: 'BTCUSDT', name: 'Bitcoin' },
-  { symbol: 'ETHUSDT', name: 'Ethereum' },
-  { symbol: 'SOLUSDT', name: 'Solana' },
-  { symbol: 'BNBUSDT', name: 'BNB' },
-  { symbol: 'XRPUSDT', name: 'XRP' },
-  { symbol: 'ADAUSDT', name: 'Cardano' },
-  { symbol: 'DOGEUSDT', name: 'Dogecoin' },
-  { symbol: 'AVAXUSDT', name: 'Avalanche' },
+// Legacy Candle type kept so existing imports don't break
+export interface Candle {
+  time: number; open: number; high: number; low: number; close: number; volume: number
+}
+
+// ── CoinGecko ids → display symbols ──────────────────────────────────────────
+const CRYPTO_LIST: { id: string; symbol: string; name: string }[] = [
+  { id: 'bitcoin',       symbol: 'BTC',  name: 'Bitcoin'   },
+  { id: 'ethereum',      symbol: 'ETH',  name: 'Ethereum'  },
+  { id: 'solana',        symbol: 'SOL',  name: 'Solana'    },
+  { id: 'binancecoin',   symbol: 'BNB',  name: 'BNB'       },
+  { id: 'ripple',        symbol: 'XRP',  name: 'XRP'       },
+  { id: 'cardano',       symbol: 'ADA',  name: 'Cardano'   },
+  { id: 'dogecoin',      symbol: 'DOGE', name: 'Dogecoin'  },
+  { id: 'avalanche-2',   symbol: 'AVAX', name: 'Avalanche' },
+  { id: 'polkadot',      symbol: 'DOT',  name: 'Polkadot'  },
+  { id: 'chainlink',     symbol: 'LINK', name: 'Chainlink' },
+  { id: 'litecoin',      symbol: 'LTC',  name: 'Litecoin'  },
+  { id: 'uniswap',       symbol: 'UNI',  name: 'Uniswap'   },
+  { id: 'stellar',       symbol: 'XLM',  name: 'Stellar'   },
+  { id: 'cosmos',        symbol: 'ATOM', name: 'Cosmos'    },
+  { id: 'near',          symbol: 'NEAR', name: 'NEAR'      },
 ]
 
-// STOCKS — Yahoo Finance, daily candles (market hours only)
-const STOCK_SYMBOLS = [
-  { symbol: 'AAPL', name: 'Apple' },
-  { symbol: 'NVDA', name: 'Nvidia' },
-  { symbol: 'TSLA', name: 'Tesla' },
-  { symbol: 'MSFT', name: 'Microsoft' },
-  { symbol: 'SPY', name: 'S&P 500 ETF' },
-  { symbol: 'AMZN', name: 'Amazon' },
+// ── Stocks ────────────────────────────────────────────────────────────────────
+const STOCK_LIST: { symbol: string; name: string }[] = [
+  { symbol: 'AAPL',  name: 'Apple'     },
+  { symbol: 'NVDA',  name: 'Nvidia'    },
+  { symbol: 'TSLA',  name: 'Tesla'     },
+  { symbol: 'MSFT',  name: 'Microsoft' },
+  { symbol: 'AMZN',  name: 'Amazon'    },
+  { symbol: 'META',  name: 'Meta'      },
+  { symbol: 'SPY',   name: 'S&P 500'   },
+  { symbol: 'QQQ',   name: 'Nasdaq'    },
 ]
-
-async function fetchBinanceCandles(binanceSymbol: string): Promise<Candle[]> {
-  const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=1h&limit=50`
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    signal: AbortSignal.timeout(8000),
-  })
-  if (!res.ok) return []
-  const data = await res.json() as unknown[][]
-  return data.map((k) => ({
-    time: Number(k[0]),
-    open: parseFloat(String(k[1])),
-    high: parseFloat(String(k[2])),
-    low: parseFloat(String(k[3])),
-    close: parseFloat(String(k[4])),
-    volume: parseFloat(String(k[5])),
-  }))
-}
-
-interface YahooResult {
-  meta?: { regularMarketPrice?: number; shortName?: string }
-  timestamp?: number[]
-  indicators?: {
-    quote?: Array<{
-      open?: number[]
-      high?: number[]
-      low?: number[]
-      close?: number[]
-      volume?: number[]
-    }>
-  }
-}
-
-interface YahooChart {
-  chart?: {
-    result?: YahooResult[]
-  }
-}
-
-async function fetchYahooCandles(yahooSymbol: string): Promise<{ candles: Candle[]; price: number; name: string }> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=3mo`
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0' },
-    signal: AbortSignal.timeout(8000),
-  })
-  if (!res.ok) return { candles: [], price: 0, name: yahooSymbol }
-  const json = await res.json() as YahooChart
-  const result = json?.chart?.result?.[0]
-  if (!result) return { candles: [], price: 0, name: yahooSymbol }
-  const price = result.meta?.regularMarketPrice ?? 0
-  const name = result.meta?.shortName ?? yahooSymbol
-  const times = result.timestamp ?? []
-  const q = result.indicators?.quote?.[0]
-  const candles: Candle[] = times.map((t, i) => ({
-    time: t * 1000,
-    open: q?.open?.[i] ?? 0,
-    high: q?.high?.[i] ?? 0,
-    low: q?.low?.[i] ?? 0,
-    close: q?.close?.[i] ?? 0,
-    volume: q?.volume?.[i] ?? 0,
-  })).filter((c) => c.close > 0)
-  return { candles, price, name }
-}
 
 export function isUsMarketOpen(): boolean {
   const now = new Date()
@@ -110,33 +56,90 @@ export function isUsMarketOpen(): boolean {
   return total >= 13 * 60 + 30 && total < 20 * 60
 }
 
-export async function getAllAssets(): Promise<AssetQuote[]> {
-  const results: AssetQuote[] = []
+// ── CoinGecko — one API call returns ALL crypto prices + changes ──────────────
+async function fetchCryptoPrices(): Promise<AssetData[]> {
+  const ids = CRYPTO_LIST.map((c) => c.id).join(',')
+  const url =
+    `https://api.coingecko.com/api/v3/simple/price` +
+    `?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_7d_change=true`
 
-  // Always fetch crypto
-  const cryptoFetches = CRYPTO_SYMBOLS.map(async ({ symbol, name }) => {
-    try {
-      const candles = await fetchBinanceCandles(symbol)
-      if (candles.length < 20) return
-      const price = candles[candles.length - 1].close
-      results.push({ symbol, name, price, assetType: 'crypto', candles })
-    } catch { /* skip */ }
-  })
-
-  const fetches: Promise<void>[] = [...cryptoFetches]
-
-  // Fetch stocks only during market hours
-  if (isUsMarketOpen()) {
-    const stockFetches = STOCK_SYMBOLS.map(async ({ symbol, name }) => {
-      try {
-        const { candles, price, name: fetchedName } = await fetchYahooCandles(symbol)
-        if (candles.length < 20 || price === 0) return
-        results.push({ symbol, name: fetchedName || name, price, assetType: 'stock', candles })
-      } catch { /* skip */ }
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      cache: 'no-store',
     })
-    fetches.push(...stockFetches)
+    if (!res.ok) {
+      console.error('[market-data] CoinGecko HTTP', res.status)
+      return []
+    }
+    const json = await res.json() as Record<string, {
+      usd?: number; usd_24h_change?: number; usd_7d_change?: number
+    }>
+    return CRYPTO_LIST.flatMap(({ id, symbol, name }) => {
+      const d = json[id]
+      if (!d?.usd) return []
+      return [{
+        symbol, coinId: id, name,
+        price: d.usd,
+        change24h: d.usd_24h_change ?? 0,
+        change7d: d.usd_7d_change ?? 0,
+        assetType: 'crypto' as const,
+      }]
+    })
+  } catch (err) {
+    console.error('[market-data] CoinGecko fetch failed:', err)
+    return []
+  }
+}
+
+// ── Yahoo Finance for a single stock ─────────────────────────────────────────
+async function fetchStockPrice(symbol: string, fallbackName: string): Promise<AssetData | null> {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`,
+      { headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store' }
+    )
+    if (!res.ok) return null
+    const json = await res.json() as {
+      chart?: { result?: Array<{ meta?: { regularMarketPrice?: number; previousClose?: number; shortName?: string } }> }
+    }
+    const meta = json?.chart?.result?.[0]?.meta
+    if (!meta?.regularMarketPrice) return null
+    const price = meta.regularMarketPrice
+    const prev = meta.previousClose ?? price
+    return {
+      symbol, name: meta.shortName || fallbackName,
+      price,
+      change24h: prev > 0 ? ((price - prev) / prev) * 100 : 0,
+      change7d: 0,
+      assetType: 'stock',
+    }
+  } catch { return null }
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
+export async function getAllAssets(): Promise<AssetData[]> {
+  const results: AssetData[] = []
+
+  // Crypto is 24/7 — always fetch
+  const crypto = await fetchCryptoPrices()
+  results.push(...crypto)
+
+  // Stocks only during US market hours
+  if (isUsMarketOpen()) {
+    const settled = await Promise.allSettled(
+      STOCK_LIST.map(({ symbol, name }) => fetchStockPrice(symbol, name))
+    )
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value) results.push(r.value)
+    }
   }
 
-  await Promise.allSettled(fetches)
+  console.log(`[market-data] fetched ${results.length} assets (${crypto.length} crypto)`)
   return results
+}
+
+// ── Legacy helper kept for compatibility ──────────────────────────────────────
+export async function getOHLC(_symbol: string, _range: string): Promise<{ closes: number[]; price: number; name: string }> {
+  return { closes: [], price: 0, name: _symbol }
 }

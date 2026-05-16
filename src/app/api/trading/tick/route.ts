@@ -8,7 +8,7 @@ const TAKE_PROFIT_PCT = 0.005  // +0.5%
 const STOP_LOSS_PCT   = 0.008  // -0.8%
 const POSITION_SIZE_PCT = 0.22 // 22% of cash per trade
 const MIN_TRADE_USD = 3
-const BUY_SCORE_MIN = 2.0      // lower = more trades fire
+const BUY_SCORE_MIN = 1.5      // fire on any meaningful dip signal
 
 export interface TickEvent {
   type: 'BUY' | 'SELL' | 'SCAN' | 'SKIP'
