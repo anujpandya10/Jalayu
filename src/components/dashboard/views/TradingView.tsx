@@ -46,7 +46,7 @@ interface NewsItem {
 }
 
 interface TickEvent {
-  type: 'BUY' | 'SELL' | 'SCAN' | 'SKIP'
+  type: 'BUY' | 'SELL' | 'ROTATE' | 'SCAN' | 'SKIP' | 'HOLD'
   symbol: string
   name: string
   price: number
@@ -141,13 +141,14 @@ function ActivityFeed({ items, scanning }: { items: ActivityItem[]; scanning: bo
           color = '#86efac'
           prefix = '▲ BUY'
           line = `${event.symbol} ${event.shares?.toFixed(6)} @ ${fmtPrice(event.price)} = ${fmtMoney(event.total ?? 0)} — ${event.reason}`
-        } else if (event.type === 'SELL') {
+        } else if (event.type === 'SELL' || event.type === 'ROTATE') {
           const pnlPos = (event.pnl ?? 0) >= 0
           color = pnlPos ? '#fcd34d' : '#f87171'
-          prefix = pnlPos ? '▼ SELL ✓' : '▼ SELL ✗'
-          const pnlStr = (event.pnl ?? 0) >= 0
-            ? `+${fmtMoney(event.pnl ?? 0)} profit`
-            : `-${fmtMoney(Math.abs(event.pnl ?? 0))} loss`
+          prefix = event.type === 'ROTATE' ? '↩ ROTATE' : pnlPos ? '▼ SELL ✓' : '▼ SELL ✗'
+          const pnlVal = event.pnl ?? 0
+          const pnlStr = pnlVal >= 0
+            ? `+$${Math.abs(pnlVal).toFixed(3)} profit`
+            : `-$${Math.abs(pnlVal).toFixed(3)} loss`
           line = `${event.symbol} — ${pnlStr} — ${event.reason}`
         } else if (event.type === 'SCAN') {
           color = '#60a5fa'
@@ -225,7 +226,7 @@ function PositionRow({ pos }: { pos: Position }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-const TICK_INTERVAL = 20000 // 20 seconds
+const TICK_INTERVAL = 12000 // 12 seconds
 
 export default function TradingView() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
