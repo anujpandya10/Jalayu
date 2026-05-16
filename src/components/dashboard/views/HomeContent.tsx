@@ -724,15 +724,42 @@ export default function HomeContent({
               </div>
             </W>
 
-            {/* Row: Memory + Reflect */}
+            {/* Row: Upcoming + Reminders */}
             <div className="w2">
-              <W accent="#F59E0B" icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>Second brain</p>
-                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Notes & insights</p>
+              <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
+                {calConnected === false ? (
+                  <>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>No calendar linked</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.5 }}>Connect Google Calendar</p>
+                    <button onClick={(e) => { e.stopPropagation(); setSidebarView('calendar') }}
+                      style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', background: '#6366F115', color: '#6366F1', border: '1px solid #6366F130', borderRadius: 99, cursor: 'pointer' }}>
+                      Connect →
+                    </button>
+                  </>
+                ) : calConnected === null ? (
+                  <Dots />
+                ) : calEvents.length === 0 ? (
+                  <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>Clear ahead ✓</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                    {calEvents.slice(0, 3).map((ev, i) => {
+                      const { label, isToday } = formatEventTime(ev.start, todayStr)
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 7 }}>
+                          <div style={{ width: 6, height: 6, borderRadius: '50%', background: isToday ? '#6366F1' : AMBER, flexShrink: 0, marginTop: 4 }} />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
+                            <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>{label}</p>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </W>
-              <W accent="#8B5CF6" icon={Sparkles} label="Reflect" onClick={() => setSidebarView('reflect')}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>Daily reflection</p>
-                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>What today taught you</p>
+              <W accent="#F97316" icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
+                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>Never miss it</p>
+                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Smart alerts & nudges</p>
               </W>
             </div>
 
@@ -870,47 +897,15 @@ export default function HomeContent({
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>
             </W>
 
-            {/* Calendar & Reminders */}
-            <W accent="#6366F1" icon={CalendarDays} label="Upcoming" onClick={() => setSidebarView('calendar')}>
-              {calConnected === false ? (
-                <>
-                  <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>No calendar linked</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px', lineHeight: 1.5 }}>Connect Google Calendar to see events here</p>
-                  <button onClick={(e) => { e.stopPropagation(); setSidebarView('calendar') }}
-                    style={{ fontSize: 10, fontWeight: 600, padding: '3px 10px', background: '#6366F115', color: '#6366F1', border: '1px solid #6366F130', borderRadius: 99, cursor: 'pointer' }}>
-                    Connect →
-                  </button>
-                </>
-              ) : calConnected === null ? (
-                <Dots />
-              ) : calEvents.length === 0 ? (
-                <p style={{ fontSize: 12, color: 'var(--text-3)', margin: 0, lineHeight: 1.6 }}>Nothing scheduled — clear ahead ✓</p>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {calEvents.map((ev, i) => {
-                    const { label, isToday, isTomorrow } = formatEventTime(ev.start, todayStr)
-                    const dotColor = isToday ? '#6366F1' : isTomorrow ? AMBER : 'var(--border-2)'
-                    return (
-                      <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                        <div style={{ width: 7, height: 7, borderRadius: '50%', background: dotColor, flexShrink: 0, marginTop: 4 }} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--text)', margin: '0 0 1px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</p>
-                          <p style={{ fontSize: 10, color: isToday ? '#6366F1' : 'var(--text-3)', margin: 0, display: 'flex', alignItems: 'center', gap: 3 }}>
-                            <Clock size={8} />
-                            {label}
-                          </p>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+            {/* Reflect + Memory (swapped: Reflect first) */}
+            <W accent="#8B5CF6" icon={Sparkles} label="Reflect" onClick={() => setSidebarView('reflect')}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Daily reflection</p>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>What today taught you</p>
             </W>
 
-            {/* Reminders */}
-            <W accent="#F97316" icon={Bell} label="Reminders" onClick={() => setSidebarView('reminders')}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Never miss it</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Smart alerts & nudges</p>
+            <W accent="#F59E0B" icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')}>
+              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Second brain</p>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Notes & insights</p>
             </W>
           </div>
 

@@ -35,19 +35,29 @@ export function getCurrentPhase(): PhaseInfo {
   const PREMARKET_START  = 8 * 60        // 08:00 UTC = 4am ET
   const MARKET_OPEN      = 13 * 60 + 30  // 13:30 UTC = 9:30am ET
   const MARKET_CLOSE     = 20 * 60       // 20:00 UTC = 4pm ET
-  const AFTER_HOURS_END  = 24 * 60       // 00:00 UTC next day = 8pm ET
 
   function minsUntil(target: number): number {
     return target > totalMinutes ? target - totalMinutes : (1440 - totalMinutes) + target
   }
 
-  if (!isWeekday || totalMinutes >= AFTER_HOURS_END || totalMinutes < PREMARKET_START) {
+  // Minutes until next Monday 08:00 UTC (used over weekends)
+  function minsUntilMondayPremarket(): number {
+    const daysUntilMon = dayOfWeek === 0 ? 1 : (8 - dayOfWeek) % 7 || 7 // Sun→1, Sat→2
+    const minsToMidnight = 1440 - totalMinutes
+    return minsToMidnight + (daysUntilMon - 1) * 1440 + PREMARKET_START
+  }
+
+  if (!isWeekday || totalMinutes >= MARKET_CLOSE || totalMinutes < PREMARKET_START) {
+    // On weekends, count to next Monday pre-market instead of next midnight cycle
+    const minsUntilNext = !isWeekday
+      ? minsUntilMondayPremarket()
+      : minsUntil(PREMARKET_START)
     return {
       phase: 'CRYPTO_NIGHT',
       label: 'Crypto Night Mode',
       emoji: '🌙',
       description: 'Building capital overnight. Crypto scalping 24/7.',
-      minutesUntilNext: minsUntil(PREMARKET_START),
+      minutesUntilNext: minsUntilNext,
       nextPhaseName: 'Pre-Market',
       cryptoActive: true, stocksActive: false, forexActive: true,
     }
@@ -57,10 +67,11 @@ export function getCurrentPhase(): PhaseInfo {
       phase: 'PREMARKET',
       label: 'Pre-Market',
       emoji: '🌅',
-      description: 'Market opens soon. Crypto running, scanning for opening plays.',
+      description: 'US pre-market open. Scanning stocks, crypto & forex for opening plays.',
       minutesUntilNext: MARKET_OPEN - totalMinutes,
       nextPhaseName: 'Market Open',
-      cryptoActive: true, stocksActive: false, forexActive: true,
+      // Stocks ARE fetched and scanned during pre-market — reflect that in the badge
+      cryptoActive: true, stocksActive: true, forexActive: true,
     }
   }
   if (totalMinutes >= MARKET_OPEN && totalMinutes < MARKET_CLOSE) {
@@ -68,19 +79,19 @@ export function getCurrentPhase(): PhaseInfo {
       phase: 'STOCK_MARKET',
       label: 'Market Hours',
       emoji: '📈',
-      description: 'US market open. Stocks, penny stocks, pump & dump shorts, crypto & forex all active.',
+      description: 'US market open. Stocks, crypto & forex all active.',
       minutesUntilNext: MARKET_CLOSE - totalMinutes,
       nextPhaseName: 'After Hours',
       cryptoActive: true, stocksActive: true, forexActive: true,
     }
   }
-  // After hours
+  // After hours (20:00–00:00 UTC)
   return {
     phase: 'AFTER_HOURS',
     label: 'After Hours',
     emoji: '🌆',
     description: 'Market closed. After-hours movers, crypto & forex active.',
-    minutesUntilNext: minsUntil(AFTER_HOURS_END % 1440 === 0 ? 0 : AFTER_HOURS_END),
+    minutesUntilNext: 1440 - totalMinutes, // mins until midnight → CRYPTO_NIGHT
     nextPhaseName: 'Crypto Night',
     cryptoActive: true, stocksActive: false, forexActive: true,
   }
