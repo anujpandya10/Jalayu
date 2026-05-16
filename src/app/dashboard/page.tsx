@@ -56,6 +56,8 @@ export default function DashboardPage() {
     removeTask,
     addNote,
     setTodayReflection,
+    setReflectionsRecent,
+    setProfile,
     addReminder,
     updateReminder,
   } = useStore()
@@ -297,35 +299,30 @@ export default function DashboardPage() {
 
   const handleSaveReflection = useCallback(
     async (reflData: { one_word: string; win_of_day: string; tomorrow_note: string }) => {
-      const supabase = await getSupabase()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) return
-      const { data: saved, error } = await supabase
-        .from('reflections')
-        .upsert(
-          {
-            user_id: user.id,
-            date: todayString(),
-            ...reflData,
-          },
-          { onConflict: 'user_id,date' },
-        )
-        .select()
-        .single()
-      if (!error && saved) {
-        setTodayReflection(saved as Reflection)
-        await supabase
-          .from('profiles')
-          .update({ growth_score: (profile?.growth_score || 0) + 10 })
-          .eq('id', user.id)
-        toast.success('Reflection saved ✦ +10 growth')
-      } else {
+      try {
+        const res = await fetch('/api/reflections', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reflData),
+        })
+        const data = await res.json()
+        if (!res.ok || !data.reflection) {
+          toast.error(data.error ?? 'Could not save. Try again.')
+          return
+        }
+        const saved = data.reflection as Reflection
+        setTodayReflection(saved)
+        const recent = useStore.getState().reflectionsRecent
+        setReflectionsRecent([saved, ...recent.filter((r) => r.date !== saved.date)])
+        if (profile && data.growth_score != null) {
+          setProfile({ ...profile, growth_score: data.growth_score })
+        }
+        toast.success(data.is_update ? 'Reflection updated ✦' : 'Reflection saved ✦ +10 growth')
+      } catch {
         toast.error('Could not save. Try again.')
       }
     },
-    [profile, setTodayReflection],
+    [profile, setTodayReflection, setReflectionsRecent, setProfile],
   )
 
   const viewContent = (() => {
