@@ -16,6 +16,7 @@ const PROFILE_FIELDS = [
   'biggest_goal',
   'peak_hours',
   'wake_time',
+  'dashboard_layout',
 ] as const
 
 export async function GET() {
@@ -59,7 +60,11 @@ export async function PATCH(req: NextRequest) {
     for (const key of PROFILE_FIELDS) {
       if (key in body) {
         const v = body[key]
-        updates[key] = typeof v === 'string' ? v.trim() || null : v == null ? null : String(v)
+        if (key === 'dashboard_layout') {
+          updates[key] = v && typeof v === 'object' ? v : null
+        } else {
+          updates[key] = typeof v === 'string' ? v.trim() || null : v == null ? null : String(v)
+        }
       }
     }
 

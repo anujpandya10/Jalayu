@@ -24,6 +24,7 @@ export interface Profile {
   state: string | null
   postal_code: string | null
   country: string | null
+  dashboard_layout: Record<string, unknown> | null
 }
 
 export interface Mood {

@@ -1,20 +1,12 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
-import {
-  Mic, MicOff, ChevronRight,
-  TrendingUp, TrendingDown, Heart,
-  BookOpen, Sparkles, Brain,
-  Users, FlaskConical, BarChart2, Zap, Target,
-} from 'lucide-react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import toast from 'react-hot-toast'
 import type { Profile, Task, Mood, Reminder } from '@/lib/types'
-import ScheduleCompact from '@/components/dashboard/ScheduleCompact'
-import HealthCompact from '@/components/dashboard/HealthCompact'
-import ReflectionCompact from '@/components/dashboard/ReflectionCompact'
 import { useStore } from '@/store/useStore'
-import GalaxyOrb from '@/components/GalaxyOrb'
-import PorscheClock from '@/components/dashboard/PorscheClock'
+import CustomizableHomeGrid from '@/components/dashboard/home/CustomizableHomeGrid'
+import { renderHomeWidget, type HomeWidgetContext } from '@/components/dashboard/home/home-widgets'
+import type { HomeWidgetId } from '@/lib/dashboard-layout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -123,95 +115,6 @@ function Dots() {
         }} />
       ))}
     </div>
-  )
-}
-
-// ── Compact nav rows (sidebar / secondary) ───────────────────────────────────
-
-function ExploreLinks({
-  items,
-}: {
-  items: { icon: React.ComponentType<{ size?: number; color?: string }>; label: string; sub: string; onClick: () => void }[]
-}) {
-  return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden' }}>
-      <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, padding: '12px 16px 8px' }}>
-        Explore
-      </p>
-      {items.map((item, i) => {
-        const Icon = item.icon
-        return (
-          <button
-            key={item.label}
-            type="button"
-            onClick={item.onClick}
-            className="hwidget"
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
-              padding: '11px 16px', background: 'none', border: 'none', borderTop: i > 0 ? '1px solid var(--border)' : 'none',
-              cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-            }}
-          >
-            <span style={{
-              width: 28, height: 28, borderRadius: 8, background: `${AMBER}14`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-            }}>
-              <Icon size={13} color={AMBER} />
-            </span>
-            <span style={{ flex: 1, minWidth: 0 }}>
-              <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{item.label}</span>
-              <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{item.sub}</span>
-            </span>
-            <ChevronRight size={14} color="var(--text-3)" style={{ flexShrink: 0 }} />
-          </button>
-        )
-      })}
-    </div>
-  )
-}
-
-// ── Widget card ───────────────────────────────────────────────────────────────
-
-function W({
-  accent, icon: Icon, label, onClick, children, className = '',
-}: {
-  accent: string; icon: React.ComponentType<{ size?: number; color?: string }>
-  label: string; onClick?: () => void; children: React.ReactNode; className?: string
-}) {
-  const Tag = onClick ? 'button' : 'div'
-  return (
-    <Tag
-      onClick={onClick}
-      className={`hwidget ${className}`}
-      style={{
-        display: 'block', width: '100%', textAlign: 'left',
-        background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 18, padding: '14px 16px',
-        cursor: onClick ? 'pointer' : 'default',
-        position: 'relative', overflow: 'hidden',
-      } as React.CSSProperties}
-    >
-      <div style={{
-        position: 'absolute', top: 0, right: 0, width: 90, height: 90,
-        background: `radial-gradient(circle at 100% 0%, ${accent}1A 0%, transparent 65%)`,
-        pointerEvents: 'none',
-      }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{
-            width: 24, height: 24, borderRadius: 7,
-            background: `${accent}18`, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
-            <Icon size={12} color={accent} />
-          </div>
-          <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-            {label}
-          </span>
-        </div>
-        {onClick && <ChevronRight size={12} color="var(--text-3)" />}
-      </div>
-      {children}
-    </Tag>
   )
 }
 
@@ -407,6 +310,86 @@ export default function HomeContent({
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
+  const widgetCtx = useMemo<HomeWidgetContext>(
+    () => ({
+      profile,
+      tasks,
+      reminders,
+      todayMood,
+      yesterdayMood,
+      healthProfiles,
+      medications,
+      healthAppointments,
+      todayReflection,
+      quote,
+      tradingSnap,
+      weekPct,
+      greeting,
+      firstName,
+      chapter,
+      morningNote,
+      noteLoading,
+      focus,
+      orbState,
+      clockSize,
+      voiceListening,
+      input,
+      submitted,
+      userAnswer,
+      reply,
+      inputRef,
+      replyRef,
+      onMoodLog,
+      onAddTask,
+      onToggleTask,
+      setSidebarView,
+      setShowChatPanel,
+      setInput,
+      sendMessage,
+      handleKeyDown,
+      startHomeVoice,
+    }),
+    [
+      profile,
+      tasks,
+      reminders,
+      todayMood,
+      yesterdayMood,
+      healthProfiles,
+      medications,
+      healthAppointments,
+      todayReflection,
+      quote,
+      tradingSnap,
+      weekPct,
+      greeting,
+      firstName,
+      chapter,
+      morningNote,
+      noteLoading,
+      focus,
+      orbState,
+      clockSize,
+      voiceListening,
+      input,
+      submitted,
+      userAnswer,
+      reply,
+      onMoodLog,
+      onAddTask,
+      onToggleTask,
+      setSidebarView,
+      setShowChatPanel,
+      sendMessage,
+      startHomeVoice,
+    ],
+  )
+
+  const renderWidget = useCallback(
+    (id: HomeWidgetId, column: 'left' | 'center' | 'right' | 'mobile') => renderHomeWidget(id, column, widgetCtx),
+    [widgetCtx],
+  )
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -486,368 +469,7 @@ export default function HomeContent({
       `}</style>
 
       <div className="home-outer">
-        <div className="home-3col">
-
-          {/* ═══════════════════════════════════════
-              LEFT COLUMN — orb, identity, chat
-          ══════════════════════════════════════════ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-            {/* Identity card */}
-            <div style={{
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 20, padding: '20px 18px 16px',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
-            }}>
-              <GalaxyOrb state={orbState} size={100} />
-              <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '10px 0 8px', letterSpacing: '-0.02em' }}>
-                {greeting}{firstName ? `, ${firstName}` : ''}
-              </p>
-              <div className="porsche-clock-wrap">
-                <PorscheClock size={clockSize} />
-              </div>
-              {chapter && (
-                <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '3px 0 0', fontStyle: 'italic', opacity: 0.8 }}>
-                  {chapter}
-                </p>
-              )}
-              {(profile?.streak_count ?? 0) > 0 && (
-                <div style={{
-                  marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 4,
-                  background: `${AMBER}18`, border: `1px solid ${AMBER}30`,
-                  borderRadius: 99, padding: '3px 10px',
-                }}>
-                  <span style={{ fontSize: 12 }}>🔥</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: AMBER }}>{profile?.streak_count} day streak</span>
-                </div>
-              )}
-            </div>
-
-            {/* Morning note */}
-            <div style={{
-              background: 'var(--morning)', border: `1px solid ${AMBER}28`,
-              borderRadius: 18, padding: '14px 16px',
-              boxShadow: `0 0 20px ${AMBER}0A`,
-            }}>
-              <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px' }}>
-                ✦ From Jalayu
-              </p>
-              {noteLoading ? <Dots /> : (
-                <p style={{
-                  fontFamily: 'var(--font-lora), Georgia, serif',
-                  fontStyle: 'italic', fontSize: 13, lineHeight: 1.8,
-                  color: 'var(--text-2)', margin: 0,
-                }}>
-                  {morningNote || 'A new day to work toward what matters.'}
-                </p>
-              )}
-              {!noteLoading && (
-                <button onClick={() => setShowChatPanel(true)} style={{
-                  marginTop: 8, fontSize: 11, color: 'var(--text-3)', background: 'none',
-                  border: 'none', cursor: 'pointer', padding: 0,
-                  display: 'flex', alignItems: 'center', gap: 3,
-                }}>
-                  keep talking <ChevronRight size={10} />
-                </button>
-              )}
-            </div>
-
-            {/* Ask Jalayu */}
-            <div style={{
-              background: 'var(--surface)', border: '1px solid var(--border)',
-              borderRadius: 18, padding: '14px 16px',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
-                <div style={{ width: 22, height: 22, borderRadius: 6, background: `${AMBER}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Zap size={11} color={AMBER} />
-                </div>
-                <span style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Ask Jalayu</span>
-                <div style={{
-                  width: 6, height: 6, borderRadius: '50%', marginLeft: 'auto',
-                  background: orbState === 'idle' ? 'var(--border-2)' : orbState === 'listening' ? '#EF4444' : AMBER,
-                  animation: orbState !== 'idle' ? 'pulse 1.2s ease-in-out infinite' : 'none',
-                }} />
-              </div>
-
-              {!submitted ? (
-                <>
-                  {focus && (
-                    <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 6px', fontStyle: 'italic', lineHeight: 1.5 }}>
-                      &ldquo;{focus}&rdquo;
-                    </p>
-                  )}
-                  <div style={{
-                    display: 'flex', alignItems: 'flex-end', gap: 8,
-                    borderBottom: `1.5px solid ${voiceListening ? 'rgba(220,38,38,0.35)' : 'var(--border-2)'}`,
-                    paddingBottom: 6, transition: 'border-color .2s',
-                  }}>
-                    <textarea
-                      ref={inputRef} value={input}
-                      onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown}
-                      placeholder={voiceListening ? 'Listening…' : "Tell me anything…"}
-                      rows={1}
-                      style={{
-                        flex: 1, resize: 'none', border: 'none', background: 'transparent',
-                        fontSize: 13, color: 'var(--text)', outline: 'none',
-                        fontFamily: 'inherit', lineHeight: 1.7, overflow: 'hidden',
-                        minHeight: 26, maxHeight: 100, padding: 0,
-                      }}
-                    />
-                    <div style={{ position: 'relative', flexShrink: 0, marginBottom: 2 }}>
-                      {voiceListening && (
-                        <>
-                          <span style={{ position: 'absolute', inset: -2, borderRadius: '50%', background: 'rgba(220,38,38,.18)', animation: 'micripple 1.4s ease-out infinite', pointerEvents: 'none' }} />
-                          <span style={{ position: 'absolute', inset: -2, borderRadius: '50%', background: 'rgba(220,38,38,.12)', animation: 'micripple 1.4s ease-out .55s infinite', pointerEvents: 'none' }} />
-                        </>
-                      )}
-                      <button type="button" onClick={startHomeVoice} style={{
-                        position: 'relative', width: 26, height: 26, borderRadius: '50%',
-                        border: voiceListening ? '1.5px solid rgba(220,38,38,.4)' : '1px solid var(--border)',
-                        background: voiceListening ? 'rgba(220,38,38,.06)' : 'var(--surface-2)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: 'pointer', transition: 'all .2s', zIndex: 1,
-                      }}>
-                        {voiceListening ? <MicOff size={12} color="#DC2626" /> : <Mic size={12} color="var(--text-3)" />}
-                      </button>
-                    </div>
-                  </div>
-                  {input.trim() && (
-                    <button onClick={sendMessage} style={{
-                      marginTop: 8, fontSize: 11, color: 'var(--text-3)', background: 'none',
-                      border: 'none', cursor: 'pointer', padding: 0, textDecoration: 'underline', textUnderlineOffset: 2,
-                    }}>send → (or Enter)</button>
-                  )}
-                </>
-              ) : (
-                <div className="fade-up" ref={replyRef}>
-                  <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 10px', lineHeight: 1.5 }}>{userAnswer}</p>
-                  {reply && (
-                    reply.content
-                      ? <p style={{ fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic', fontSize: 13, lineHeight: 1.8, color: 'var(--text-2)', margin: 0 }}>
-                          {reply.content}
-                          {reply.streaming && <span style={{ display: 'inline-block', width: 2, height: 12, background: 'var(--text-3)', marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s step-end infinite' }} />}
-                        </p>
-                      : <Dots />
-                  )}
-                  {reply && !reply.streaming && (
-                    <button onClick={() => setShowChatPanel(true)} style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                      keep talking <ChevronRight size={11} />
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* ═══════════════════════════════════════
-              CENTER COLUMN — main widget grid
-          ══════════════════════════════════════════ */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-
-            {/* ── Daily quote ── */}
-            <div style={{
-              background: `linear-gradient(135deg, ${AMBER}12 0%, transparent 60%)`,
-              border: `1px solid ${AMBER}28`,
-              borderRadius: 18, padding: '14px 18px',
-              position: 'relative', overflow: 'hidden',
-            }}>
-              <div style={{
-                position: 'absolute', top: -10, right: -10, fontSize: 60,
-                color: AMBER, opacity: 0.07, lineHeight: 1, pointerEvents: 'none',
-                fontFamily: 'Georgia, serif', fontStyle: 'italic',
-              }}>&ldquo;</div>
-              <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px', textAlign: 'center' }}>
-                ✦ Daily Inspiration
-              </p>
-              <p style={{
-                fontFamily: 'var(--font-lora), Georgia, serif',
-                fontStyle: 'italic', fontSize: 14, lineHeight: 1.75,
-                color: 'var(--text)', margin: '0 0 8px', fontWeight: 500,
-                textAlign: 'center',
-              }}>
-                &ldquo;{quote.text}&rdquo;
-              </p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 600, textAlign: 'center' }}>
-                — {quote.author}
-              </p>
-            </div>
-
-            <div className="reflection-mobile-only">
-              <ReflectionCompact
-                reflection={todayReflection}
-                onOpenReflect={() => setSidebarView('memory')}
-              />
-            </div>
-
-            <div className="w2">
-            <W accent={AMBER} icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
-                {todayMood ? (
-                  <>
-                    <p style={{ fontSize: 32, lineHeight: 1, margin: '0 0 3px' }}>{MOOD_EMOJI[todayMood.score]}</p>
-                    <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>{MOOD_LABEL[todayMood.score]}</p>
-                    {yesterdayMood && <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '5px 0 0' }}>Yesterday {MOOD_EMOJI[yesterdayMood.score]}</p>}
-                  </>
-                ) : (
-                  <>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 7px' }}>Log today</p>
-                    <div style={{ display: 'flex', gap: 3 }}>
-                      {MOODS.map(({ score, emoji, label }) => (
-                        <button key={score} onClick={(e) => { e.stopPropagation(); onMoodLog(score) }} title={label}
-                          style={{ fontSize: 16, background: 'none', border: 'none', cursor: 'pointer', padding: 1, transition: 'transform .12s' }}
-                          onMouseEnter={(e) => (e.currentTarget as HTMLElement).style.transform = 'scale(1.3)'}
-                          onMouseLeave={(e) => (e.currentTarget as HTMLElement).style.transform = 'scale(1)'}
-                        >{emoji}</button>
-                      ))}
-                    </div>
-                  </>
-                )}
-            </W>
-            <HealthCompact
-              healthProfiles={healthProfiles}
-              medications={medications}
-              reminders={reminders}
-              onOpenHealth={() => setSidebarView('health')}
-            />
-            </div>
-
-            <ScheduleCompact
-              tasks={tasks}
-              reminders={reminders}
-              healthAppointments={healthAppointments}
-              onAddTask={onAddTask}
-              onToggleTask={onToggleTask}
-              onOpenFullCalendar={() => setSidebarView('calendar')}
-            />
-
-            {/* Trading — full width */}
-            <W accent={pnlColor} icon={tradingSnap && pnlPositive ? TrendingUp : TrendingDown}
-              label="Trading Portfolio" onClick={() => setSidebarView('trading')}
-            >
-              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-                <div>
-                  <p style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 3px' }}>
-                    {tradingSnap ? `$${tradingSnap.netWorth.toFixed(2)}` : '—'}
-                  </p>
-                  <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
-                    Net worth · {tradingSnap?.openPositions ?? 0} open · {tradingSnap?.totalTrades ?? 0} trades
-                  </p>
-                </div>
-                {tradingSnap && (
-                  <div style={{ textAlign: 'right' }}>
-                    <p style={{ fontSize: 20, fontWeight: 700, color: pnlColor, margin: '0 0 1px', lineHeight: 1 }}>
-                      {pnlPositive ? '+' : ''}{tradingSnap.totalPnl.toFixed(2)}
-                    </p>
-                    <p style={{ fontSize: 11, color: pnlColor, margin: 0, opacity: 0.8 }}>
-                      {pnlPositive ? '+' : ''}{tradingSnap.totalPnlPct.toFixed(2)}%
-                    </p>
-                  </div>
-                )}
-              </div>
-              <div style={{ marginTop: 10, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', background: `${pnlColor}12`, color: pnlColor, borderRadius: 99 }}>
-                  24/7 auto trading
-                </span>
-                <button onClick={(e) => { e.stopPropagation(); setSidebarView('strategylab') }}
-                  style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', background: 'var(--morning)', color: 'var(--text-3)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer' }}>
-                  ⚗ Strategy Lab
-                </button>
-              </div>
-            </W>
-
-
-          </div>
-
-          {/* ═══════════════════════════════════════
-              RIGHT COLUMN — stats, quick nav
-              Hidden on mobile/tablet, shown on desktop
-          ══════════════════════════════════════════ */}
-          <div className="home-right" style={{ display: 'none', flexDirection: 'column', gap: 12 }}>
-
-            <div className="reflection-desktop-only">
-              <ReflectionCompact
-                reflection={todayReflection}
-                onOpenReflect={() => setSidebarView('memory')}
-                variant="sidebar"
-              />
-            </div>
-
-            {profile?.biggest_goal && (
-              <W accent={AMBER} icon={Target} label="North star" onClick={() => setSidebarView('settings')}>
-                <p style={{
-                  fontFamily: 'var(--font-lora), Georgia, serif',
-                  fontStyle: 'italic', fontSize: 13, lineHeight: 1.55,
-                  color: 'var(--text)', margin: 0,
-                }}>
-                  {profile.biggest_goal}
-                </p>
-              </W>
-            )}
-
-            {/* Progress */}
-            <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div>
-                  <p style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 2px' }}>{profile?.growth_score ?? 0}</p>
-                  <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>growth points</p>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontSize: 16, fontWeight: 700, color: AMBER, margin: '0 0 1px' }}>{weekPct}%</p>
-                  <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>this week</p>
-                </div>
-              </div>
-              <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${weekPct}%`, background: `linear-gradient(90deg, ${AMBER}, #67E8F9)`, borderRadius: 99, transition: 'width 1s cubic-bezier(.34,1.56,.64,1)' }} />
-              </div>
-            </W>
-
-            <ExploreLinks
-              items={[
-                { icon: Brain, label: 'AI insights', sub: 'Patterns from your data', onClick: () => setSidebarView('insights') },
-                { icon: Users, label: 'Your circle', sub: 'Contacts & relationships', onClick: () => setSidebarView('people') },
-              ]}
-            />
-
-            <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates by setup</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>
-            </W>
-
-            <W accent={AMBER} icon={BookOpen} label="Memory" onClick={() => setSidebarView('memory')}>
-              <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Second brain</p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Reflect & save notes</p>
-            </W>
-          </div>
-
-        </div>
-
-        {/* ── Mobile-only: extra widgets (below center grid) ───────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 12 }} className="mobile-only-extras">
-          <style>{`
-            @media (min-width: 1100px) { .mobile-only-extras { display: none !important; } }
-          `}</style>
-
-          <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')}>
-            <p style={{ fontSize: 24, fontWeight: 800, color: 'var(--text)', margin: '0 0 2px' }}>{profile?.growth_score ?? 0}</p>
-            <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '0 0 6px' }}>growth pts</p>
-            <div style={{ height: 3, background: 'var(--border)', borderRadius: 99 }}>
-              <div style={{ height: '100%', width: `${weekPct}%`, background: AMBER, borderRadius: 99 }} />
-            </div>
-          </W>
-
-          <ExploreLinks
-            items={[
-              { icon: Brain, label: 'AI insights', sub: 'Patterns from your data', onClick: () => setSidebarView('insights') },
-              { icon: Users, label: 'Your circle', sub: 'Contacts & relationships', onClick: () => setSidebarView('people') },
-            ]}
-          />
-
-          {/* Strategy Lab — mobile */}
-          <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates by setup</p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Enable / disable strategies</p>
-          </W>
-        </div>
-
+        <CustomizableHomeGrid profile={profile} renderWidget={renderWidget} />
       </div>
     </>
   )

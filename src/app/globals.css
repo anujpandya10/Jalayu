@@ -232,6 +232,17 @@ input, textarea {
   height: auto;
 }
 
+.home-widget-shell .hwidget {
+  border-radius: 0 0 16px 16px;
+}
+
+@media (min-width: 1100px) {
+  .home-3col .home-right {
+    display: flex !important;
+    flex-direction: column;
+  }
+}
+
 /* Prevent layout shifts in sidebar */
 .sidebar-nav-item {
   transition: background 0.1s, color 0.1s;
