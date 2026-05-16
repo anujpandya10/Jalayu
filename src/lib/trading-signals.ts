@@ -24,7 +24,7 @@ import type { AssetData } from './market-data'
 import type { IndicatorBundle } from './indicators'
 import { computeIndicators } from './indicators'
 import { fetchCandles } from './candle-data'
-import { MIN_LONG_SCORE, MIN_SHORT_SCORE } from './trading-config'
+import { MIN_LONG_SCORE, MIN_SHORT_SCORE, getMinLongScore, ENRICH_TOP_N } from './trading-config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -64,9 +64,10 @@ function stage1Score(asset: AssetData): number {
   // LONG signals: momentum breakout (ride the trend) + extreme dip (reversal)
   // Key insight: assets up 5–12% in 24h with volume confirmation often KEEP going.
   // Stage 2 must confirm with volume spike + RSI + EMA — this just gets them in the pool.
-  if (change24h >= 8 && change24h <= 15) return  3.5  // strong momentum — needs Stage 2
-  if (change24h >= 4 && change24h <  8)  return  2.5  // mild momentum — needs Stage 2
-  if (change24h >= 2 && change24h <  4)  return  1.5  // weak momentum — needs Stage 2
+  if (change24h >= 8 && change24h <= 20) return  4.0  // strong momentum — always enrich
+  if (change24h >= 5 && change24h <  8)  return  3.5  // building momentum
+  if (change24h >= 3 && change24h <  5)  return  3.0  // early momentum — Stage 2 confirms
+  if (change24h >= 2 && change24h <  3)  return  2.0
 
   // Deep dip reversal signals — market overreacted
   if (change24h < -18) return  7.5  // extreme crash — aggressive oversold bounce
@@ -132,8 +133,14 @@ function stage2Score(
     if (setupTag === 'UNTAGGED') setupTag = 'MEAN_REVERT'
   }
 
+  // Kill weak dip-longs without real reversal (knife-catching)
+  if (setupTag === 'MEAN_REVERT' && change24h < -8 && volSpike < 1.8) {
+    score = Math.min(score, 3.0)
+    reasons.push('Deep dip without volume — skip knife catch')
+  }
+
   // Kill longs if RSI is very overbought AND no volume spike — already faded
-  if (score > 0 && rsi > 78 && volSpike < 2.0) {
+  if (score > 0 && rsi > 78 && volSpike < 2.0 && setupTag !== 'MOMENTUM_LONG') {
     score -= 2.5
     reasons.push(`RSI ${rsi.toFixed(0)} overbought with no vol — fading long`)
   }
@@ -299,31 +306,72 @@ export function rankShorts(assets: AssetData[]): Signal[] {
     .sort((a, b) => a.score - b.score)
 }
 
+function isMomentumCandidate(asset: AssetData): boolean {
+  return asset.assetType !== 'forex' && asset.change24h >= 3 && asset.change24h <= 22
+}
+
+function isPumpShortCandidate(asset: AssetData): boolean {
+  return asset.assetType !== 'forex' && asset.change24h > 10
+}
+
 /**
- * Async version — enriches top N candidates with real indicator data.
- * Fetches candles for up to `topN` assets per direction.
- * Returns all signals (indicators only on the enriched ones).
+ * Enrich top candidates with candles. Includes momentum/pump names that Stage-1-only ranking missed.
  */
 export async function rankSignalsEnriched(
   assets: AssetData[],
-  topN = 3,
+  topN = ENRICH_TOP_N,
 ): Promise<Signal[]> {
-  // Fast sort first
-  const quick = rankSignals(assets)
+  const scored = assets.map((asset) => ({ asset, s1: stage1Score(asset) }))
 
-  // Enrich the top N on each side
-  const longsToEnrich  = quick.filter((s) => s.score > 0).slice(0, topN)
-  const shortsToEnrich = quick.filter((s) => s.score < 0).slice(0, topN)
-  const toEnrich       = [...longsToEnrich, ...shortsToEnrich]
-
-  const enriched = await Promise.allSettled(
-    toEnrich.map((s) => scoreAssetFull(s.asset))
-  )
-
-  const enrichedMap = new Map<string, Signal>()
-  for (const r of enriched) {
-    if (r.status === 'fulfilled') enrichedMap.set(r.value.asset.symbol, r.value)
+  const longPool = new Map<string, AssetData>()
+  for (const { asset, s1 } of scored.filter((x) => x.s1 > 0).sort((a, b) => b.s1 - a.s1)) {
+    if (longPool.size >= topN) break
+    longPool.set(asset.symbol, asset)
+  }
+  for (const asset of assets) {
+    if (longPool.size >= topN + 2) break
+    if (isMomentumCandidate(asset) && !longPool.has(asset.symbol)) {
+      longPool.set(asset.symbol, asset)
+    }
   }
 
-  return quick.map((s) => enrichedMap.get(s.asset.symbol) ?? s)
+  const shortPool = new Map<string, AssetData>()
+  for (const { asset, s1 } of scored.filter((x) => x.s1 < 0).sort((a, b) => a.s1 - b.s1)) {
+    if (shortPool.size >= topN) break
+    shortPool.set(asset.symbol, asset)
+  }
+  for (const asset of assets) {
+    if (shortPool.size >= topN + 2) break
+    if (isPumpShortCandidate(asset) && !shortPool.has(asset.symbol)) {
+      shortPool.set(asset.symbol, asset)
+    }
+  }
+
+  const toEnrich = [...longPool.values(), ...shortPool.values()]
+  const enriched = await Promise.allSettled(toEnrich.map((asset) => scoreAssetFull(asset)))
+
+  const out: Signal[] = []
+  for (const r of enriched) {
+    if (r.status === 'fulfilled') out.push(r.value)
+  }
+  return out
+}
+
+/** Long entry candidates from enriched signals only (not Stage-1-only rankLongs). */
+export function filterLongEntries(signals: Signal[]): Signal[] {
+  return signals
+    .filter((s) => s.score >= getMinLongScore(s.setupTag))
+    .filter((s) => s.setupTag !== 'UNTAGGED' || s.indicators !== null)
+    .filter((s) => !(s.setupTag === 'MEAN_REVERT' && s.asset.change24h < -10))
+    .filter((s) => !(s.indicators && s.indicators.rsi > 76 && s.setupTag !== 'MOMENTUM_LONG'))
+    .sort((a, b) => b.score - a.score)
+}
+
+/** Short entry candidates from enriched signals only. */
+export function filterShortEntries(signals: Signal[]): Signal[] {
+  return signals
+    .filter((s) => s.score <= MIN_SHORT_SCORE)
+    .filter((s) => s.setupTag !== 'UNTAGGED' || s.indicators !== null)
+    .filter((s) => !(s.indicators && s.indicators.rsi < 28))
+    .sort((a, b) => a.score - b.score)
 }

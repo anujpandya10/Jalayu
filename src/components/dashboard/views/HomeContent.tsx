@@ -125,6 +125,50 @@ function Dots() {
   )
 }
 
+// ── Compact nav rows (sidebar / secondary) ───────────────────────────────────
+
+function ExploreLinks({
+  items,
+}: {
+  items: { icon: React.ComponentType<{ size?: number; color?: string }>; label: string; sub: string; onClick: () => void }[]
+}) {
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, overflow: 'hidden' }}>
+      <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, padding: '12px 16px 8px' }}>
+        Explore
+      </p>
+      {items.map((item, i) => {
+        const Icon = item.icon
+        return (
+          <button
+            key={item.label}
+            type="button"
+            onClick={item.onClick}
+            className="hwidget"
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+              padding: '11px 16px', background: 'none', border: 'none', borderTop: i > 0 ? '1px solid var(--border)' : 'none',
+              cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+            }}
+          >
+            <span style={{
+              width: 28, height: 28, borderRadius: 8, background: `${AMBER}14`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <Icon size={13} color={AMBER} />
+            </span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>{item.label}</span>
+              <span style={{ display: 'block', fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{item.sub}</span>
+            </span>
+            <ChevronRight size={14} color="var(--text-3)" style={{ flexShrink: 0 }} />
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ── Widget card ───────────────────────────────────────────────────────────────
 
 function W({
@@ -406,7 +450,8 @@ export default function HomeContent({
         }
 
         /* widget inner grid */
-        .w2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .w2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: stretch; }
+        .w2 > * { min-width: 0; }
         .w-full { grid-column: 1 / -1; }
 
         /* scrollable tasks on desktop */
@@ -605,6 +650,7 @@ export default function HomeContent({
               </p>
             </div>
 
+            <div className="w2">
             <W accent={AMBER} icon={Heart} label="Mood" onClick={() => setSidebarView('wellness')}>
                 {todayMood ? (
                   <>
@@ -627,6 +673,13 @@ export default function HomeContent({
                   </>
                 )}
             </W>
+            <HealthCompact
+              healthProfiles={healthProfiles}
+              medications={medications}
+              reminders={reminders}
+              onOpenHealth={() => setSidebarView('health')}
+            />
+            </div>
 
             <ScheduleCompact
               tasks={tasks}
@@ -673,20 +726,6 @@ export default function HomeContent({
             </W>
 
 
-            {/* Row: Intelligence + People */}
-            <div className="w2">
-              <W accent={AMBER} icon={Brain} label="Intelligence" onClick={() => setSidebarView('insights')}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>AI insights</p>
-                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Patterns from your data</p>
-              </W>
-              <W accent={AMBER} icon={Users} label="People" onClick={() => setSidebarView('people')}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px', lineHeight: 1.4 }}>Your circle</p>
-                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Contacts & relationships</p>
-              </W>
-            </div>
-
-            {/* Row: Health + Reminders (mobile only — on desktop these go in right col) */}
-            <div className="w2" style={{ display: 'none' }} id="mobile-extra-row" />
           </div>
 
           {/* ═══════════════════════════════════════
@@ -712,14 +751,13 @@ export default function HomeContent({
               </div>
             </W>
 
-            <HealthCompact
-              healthProfiles={healthProfiles}
-              medications={medications}
-              reminders={reminders}
-              onOpenHealth={() => setSidebarView('health')}
+            <ExploreLinks
+              items={[
+                { icon: Brain, label: 'AI insights', sub: 'Patterns from your data', onClick: () => setSidebarView('insights') },
+                { icon: Users, label: 'Your circle', sub: 'Contacts & relationships', onClick: () => setSidebarView('people') },
+              ]}
             />
 
-            {/* Strategy Lab */}
             <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
               <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates by setup</p>
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>
@@ -745,24 +783,22 @@ export default function HomeContent({
             @media (min-width: 1100px) { .mobile-only-extras { display: none !important; } }
           `}</style>
 
-          {/* Progress + Health */}
-          <div className="w2">
-            <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')}>
-              <p style={{ fontSize: 24, fontWeight: 800, color: 'var(--text)', margin: '0 0 2px' }}>{profile?.growth_score ?? 0}</p>
-              <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '0 0 6px' }}>growth pts</p>
-              <div style={{ height: 3, background: 'var(--border)', borderRadius: 99 }}>
-                <div style={{ height: '100%', width: `${weekPct}%`, background: AMBER, borderRadius: 99 }} />
-              </div>
-            </W>
-            <HealthCompact
-              healthProfiles={healthProfiles}
-              medications={medications}
-              reminders={reminders}
-              onOpenHealth={() => setSidebarView('health')}
-            />
-          </div>
+          <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')}>
+            <p style={{ fontSize: 24, fontWeight: 800, color: 'var(--text)', margin: '0 0 2px' }}>{profile?.growth_score ?? 0}</p>
+            <p style={{ fontSize: 10, color: 'var(--text-2)', margin: '0 0 6px' }}>growth pts</p>
+            <div style={{ height: 3, background: 'var(--border)', borderRadius: 99 }}>
+              <div style={{ height: '100%', width: `${weekPct}%`, background: AMBER, borderRadius: 99 }} />
+            </div>
+          </W>
 
-          {/* Strategy Lab — standalone on mobile */}
+          <ExploreLinks
+            items={[
+              { icon: Brain, label: 'AI insights', sub: 'Patterns from your data', onClick: () => setSidebarView('insights') },
+              { icon: Users, label: 'Your circle', sub: 'Contacts & relationships', onClick: () => setSidebarView('people') },
+            ]}
+          />
+
+          {/* Strategy Lab — mobile */}
           <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => setSidebarView('strategylab')}>
             <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates by setup</p>
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Enable / disable strategies</p>

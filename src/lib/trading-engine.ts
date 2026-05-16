@@ -3,16 +3,15 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getAllAssets, fetchStockPrice, isUsMarketOpen, isPremarket, type AssetData } from '@/lib/market-data'
-import { rankLongs, rankShorts, rankSignalsEnriched, type Signal } from '@/lib/trading-signals'
+import {
+  rankSignalsEnriched,
+  filterLongEntries,
+  filterShortEntries,
+  type Signal,
+} from '@/lib/trading-signals'
 import { getCurrentPhase, type PhaseInfo } from '@/lib/trading-phase'
 import {
   ROUND_TRIP_FEE_PCT,
-  LONG_TP_PCT,
-  LONG_SL_PCT,
-  SHORT_TP_PCT,
-  SHORT_SL_PCT,
-  FOREX_TP_PCT,
-  FOREX_SL_PCT,
   POSITION_SIZES,
   DEFAULT_POSITION_SIZE_PCT,
   DAILY_LOSS_LIMIT_PCT,
@@ -21,10 +20,15 @@ import {
   MIN_TRADE_USD,
   TIME_EXIT_SECS,
   STALE_EXIT_SECS,
+  STALE_MIN_LOSS_PCT,
+  QUICK_WIN_MIN_PCT,
+  QUICK_WIN_HOLD_SECS,
+  TIME_EXIT_TP_FRACTION,
   SYMBOL_COOLDOWN_SECS,
   SEED_CAPITAL,
-  MIN_LONG_SCORE,
   MIN_SHORT_SCORE,
+  ENRICH_TOP_N,
+  getTpSl,
 } from '@/lib/trading-config'
 
 export interface TickEvent {
@@ -190,10 +194,9 @@ export async function runTradingTick(
   const stockCount  = assets.filter((a) => a.assetType === 'stock').length
   const forexCount  = assets.filter((a) => a.assetType === 'forex').length
 
-  // ── Enriched signals: run indicator scoring on top candidates ─────────────
-  // Enriches top 3 longs + top 3 shorts with 1m candles (Binance/Yahoo)
-  const allSignals   = await rankSignalsEnriched(assets, 3)
-  const signalMap    = new Map(allSignals.map((s) => [s.asset.symbol, s]))
+  // ── Enriched signals: candles + RSI/VWAP for top candidates (incl. momentum) ─
+  const allSignals = await rankSignalsEnriched(assets, ENRICH_TOP_N)
+  const signalMap = new Map(allSignals.map((s) => [s.asset.symbol, s]))
 
   events.push({
     type: 'SCAN', symbol: '', name: '', price: 0, direction: 'LONG',
@@ -229,10 +232,12 @@ export async function runTradingTick(
     const shares = Number(pos.shares)
     const heldSecs = (now - new Date(pos.created_at).getTime()) / 1000
     const direction = pos.direction === 'SHORT' ? 'SHORT' : 'LONG'
-    const posAssetType = pos.asset_type ?? assetTypeMap.get(pos.symbol) ?? 'crypto'
+    const posAssetType = (pos.asset_type ?? assetTypeMap.get(pos.symbol) ?? 'crypto') as 'crypto' | 'stock' | 'forex'
     const isForex = posAssetType === 'forex'
-    const tpPct = isForex ? FOREX_TP_PCT : (direction === 'SHORT' ? SHORT_TP_PCT : LONG_TP_PCT)
-    const slPct = isForex ? FOREX_SL_PCT : (direction === 'SHORT' ? SHORT_SL_PCT : LONG_SL_PCT)
+    // Use latest signal tag for setup-aware exits, else defaults
+    const openSig = signalMap.get(pos.symbol)
+    const setupTag = openSig?.setupTag ?? 'MEAN_REVERT'
+    const { tp: tpPct, sl: slPct } = getTpSl(setupTag, direction, posAssetType)
 
     let shouldExit = false
     let exitReason = ''
@@ -249,11 +254,17 @@ export async function runTradingTick(
       } else if (pnlPct <= -slPct) {
         shouldExit = true
         exitReason = `Stop loss ${(pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
-      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * 0.5) {
-        // Only time-exit if at least halfway to TP — never grab dust profits that fees eat
+      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
         shouldExit = true
         exitReason = `Time exit — held ${Math.round(heldSecs)}s, +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(3)})`
-      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < 0) {
+      } else if (
+        heldSecs >= QUICK_WIN_HOLD_SECS &&
+        pnlPct >= QUICK_WIN_MIN_PCT &&
+        pnlPct < tpPct * TIME_EXIT_TP_FRACTION
+      ) {
+        shouldExit = true
+        exitReason = `Quick win — +${(pnlPct * 100).toFixed(2)}% secured (+$${pnl.toFixed(3)})`
+      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
         shouldExit = true
         exitReason = `Stale cut — held ${Math.round(heldSecs)}s, loss ${(pnlPct * 100).toFixed(2)}%`
       }
@@ -266,10 +277,17 @@ export async function runTradingTick(
       } else if (pnlPct <= -slPct) {
         shouldExit = true
         exitReason = `SHORT stop loss — loss ${(-pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
-      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * 0.5) {
+      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
         shouldExit = true
         exitReason = `SHORT time exit — +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(3)})`
-      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < 0) {
+      } else if (
+        heldSecs >= QUICK_WIN_HOLD_SECS &&
+        pnlPct >= QUICK_WIN_MIN_PCT &&
+        pnlPct < tpPct * TIME_EXIT_TP_FRACTION
+      ) {
+        shouldExit = true
+        exitReason = `SHORT quick win — +${(pnlPct * 100).toFixed(2)}%`
+      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
         shouldExit = true
         exitReason = `SHORT stale cut — loss ${(-pnlPct * 100).toFixed(2)}%`
       }
@@ -376,7 +394,7 @@ export async function runTradingTick(
   const cryptoHot = inHotWindow(CRYPTO_HOT_WINDOWS_UTC)
   const stockHot  = inHotWindow(STOCK_HOT_WINDOWS_UTC)
 
-  const filterByPhase = (s: ReturnType<typeof rankLongs>[0]) => {
+  const filterByPhase = (s: Signal) => {
     const t = s.asset.assetType
     if (t === 'stock' && !phaseInfo.stocksActive) return false
     if (t === 'forex' && !phaseInfo.forexActive) return false
@@ -387,12 +405,12 @@ export async function runTradingTick(
     return true
   }
 
-  const longSignals = rankLongs(assets)
+  const longSignals = filterLongEntries(allSignals)
     .filter((s) => !heldSet.has(s.asset.symbol))
-    .filter((s) => !cooldownSet.has(s.asset.symbol))  // respect post-exit cooldown
+    .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
 
-  const shortSignals = rankShorts(assets)
+  const shortSignals = filterShortEntries(allSignals)
     .filter((s) => !heldSet.has(s.asset.symbol))
     .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
@@ -471,12 +489,8 @@ export async function runTradingTick(
     ? []
     : longSignals.slice(0, Math.max(0, limits.maxLongs - currentLongs))
 
-  for (const rawSig of longsToOpen) {
-    // Use enriched signal if available
-    const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
-
-    // Re-check score after enrichment — Stage 2 may have downgraded a Stage-1 signal
-    if (sig.score < MIN_LONG_SCORE) continue
+  for (const sig of longsToOpen) {
+    if (!sig.indicators && sig.asset.assetType === 'crypto') continue
 
     // Check if this setup is disabled by the user
     if (disabledTags.has(sig.setupTag)) continue
@@ -540,10 +554,8 @@ export async function runTradingTick(
     ? []
     : shortSignals.slice(0, Math.max(0, limits.maxShorts - currentShorts))
 
-  for (const rawSig of shortsToOpen) {
-    const sig = signalMap.get(rawSig.asset.symbol) ?? rawSig
-
-    // Re-check score after enrichment — Stage 2 may have upgraded a short signal toward neutral
+  for (const sig of shortsToOpen) {
+    if (!sig.indicators && sig.asset.assetType === 'crypto') continue
     if (sig.score > MIN_SHORT_SCORE) continue
 
     if (disabledTags.has(sig.setupTag)) continue

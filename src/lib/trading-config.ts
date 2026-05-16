@@ -68,7 +68,8 @@ export const DAILY_LOSS_LIMIT_PCT = 0.03   // 3% of SEED_CAPITAL = $15 max daily
  *   [13.5, 16] = 9:30am–12pm ET (open momentum)
  *   [19, 20.5] = 3pm–4:30pm ET  (close momentum)
  */
-export const CRYPTO_HOT_WINDOWS_UTC: [number, number][] = [[0, 8], [10, 23]]
+/** Crypto tradable nearly 24/7 — only skip thin 07:00–09:00 UTC window */
+export const CRYPTO_HOT_WINDOWS_UTC: [number, number][] = [[0, 7], [9, 24]]
 export const STOCK_HOT_WINDOWS_UTC:  [number, number][] = [[13.5, 16], [19, 20.5]]
 
 /**
@@ -76,8 +77,16 @@ export const STOCK_HOT_WINDOWS_UTC:  [number, number][] = [[13.5, 16], [19, 20.5
  * Time-exit only triggers if position is at least 50% of the way to TP.
  * Stale cut fires when position is losing after a longer hold.
  */
-export const TIME_EXIT_SECS  = 600    // 10 min: min hold before any early exit
-export const STALE_EXIT_SECS = 2700   // 45 min: cut a dead/losing trade
+export const TIME_EXIT_SECS  = 420    // 7 min: allow earlier profit capture in chop
+export const STALE_EXIT_SECS = 5400   // 90 min: only cut slow bleeds (not quick SL trades)
+export const STALE_MIN_LOSS_PCT = 0.0025  // stale only if losing more than 0.25%
+
+/** Bank small winners in chop after min hold (between this and time-exit threshold) */
+export const QUICK_WIN_MIN_PCT = 0.003   // +0.3% minimum to bank
+export const QUICK_WIN_HOLD_SECS = 300   // 5 min
+
+/** Time-exit takes partial profit at this fraction of TP (was 0.5) */
+export const TIME_EXIT_TP_FRACTION = 0.35
 
 /**
  * How long before the engine can re-enter the same symbol after an exit.
@@ -92,5 +101,50 @@ export const SYMBOL_COOLDOWN_SECS = 180  // 3 min cooldown per symbol
  */
 export const MIN_LONG_SCORE  = 4.0
 export const MIN_SHORT_SCORE = -4.5
+
+/** Per-setup entry thresholds (momentum confirmed by candles can enter lower) */
+export const SETUP_MIN_LONG_SCORE: Record<string, number> = {
+  MOMENTUM_LONG   : 3.5,
+  VWAP_LONG       : 3.8,
+  OVERSOLD_BOUNCE : 4.5,
+  FOREX_DIP       : 3.5,
+  MEAN_REVERT     : 4.2,
+  UNTAGGED        : 5.0,
+}
+
+/** Per-setup TP/SL — match strategy personality */
+export const SETUP_TP_SL: Record<string, { tp: number; sl: number }> = {
+  MOMENTUM_LONG   : { tp: 0.010, sl: 0.004 },  // ride trend, tight stop
+  OVERSOLD_BOUNCE : { tp: 0.018, sl: 0.008 },  // wider — needs room to reverse
+  VWAP_LONG       : { tp: 0.012, sl: 0.005 },
+  PUMP_SHORT      : { tp: 0.014, sl: 0.006 },
+  SUPERNOVA_SHORT : { tp: 0.018, sl: 0.007 },
+  VWAP_SHORT      : { tp: 0.012, sl: 0.005 },
+  FOREX_DIP       : { tp: 0.006, sl: 0.0025 },
+  FOREX_FADE      : { tp: 0.006, sl: 0.0025 },
+  MEAN_REVERT     : { tp: 0.010, sl: 0.005 },
+}
+
+export function getMinLongScore(setupTag: string): number {
+  return SETUP_MIN_LONG_SCORE[setupTag] ?? MIN_LONG_SCORE
+}
+
+export function getTpSl(
+  setupTag: string,
+  direction: 'LONG' | 'SHORT',
+  assetType: 'crypto' | 'stock' | 'forex',
+): { tp: number; sl: number } {
+  if (assetType === 'forex') {
+    return { tp: FOREX_TP_PCT, sl: FOREX_SL_PCT }
+  }
+  const custom = SETUP_TP_SL[setupTag]
+  if (custom) return custom
+  return direction === 'SHORT'
+    ? { tp: SHORT_TP_PCT, sl: SHORT_SL_PCT }
+    : { tp: LONG_TP_PCT, sl: LONG_SL_PCT }
+}
+
+/** How many assets per side get full candle enrichment each tick */
+export const ENRICH_TOP_N = 8
 
 export const SEED_CAPITAL = 500

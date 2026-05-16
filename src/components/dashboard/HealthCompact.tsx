@@ -53,9 +53,9 @@ export default function HealthCompact({
       type="button"
       onClick={onOpenHealth}
       style={{
-        width: '100%', textAlign: 'left', cursor: 'pointer',
+        width: '100%', height: '100%', textAlign: 'left', cursor: 'pointer',
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18,
-        padding: '14px 16px', fontFamily: 'inherit',
+        padding: '14px 16px', fontFamily: 'inherit', boxSizing: 'border-box',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: collapsed ? 0 : 8 }}>

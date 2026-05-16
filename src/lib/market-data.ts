@@ -36,6 +36,11 @@ const CRYPTO_LIST: { id: string; symbol: string; name: string }[] = [
   { id: 'stellar',       symbol: 'XLM',  name: 'Stellar'   },
   { id: 'cosmos',        symbol: 'ATOM', name: 'Cosmos'    },
   { id: 'near',          symbol: 'NEAR', name: 'NEAR'      },
+  { id: 'matic-network', symbol: 'MATIC', name: 'Polygon'  },
+  { id: 'shiba-inu',     symbol: 'SHIB', name: 'Shiba Inu' },
+  { id: 'tron',          symbol: 'TRX',  name: 'TRON'      },
+  { id: 'sui',           symbol: 'SUI',  name: 'Sui'       },
+  { id: 'pepe',          symbol: 'PEPE', name: 'Pepe'      },
 ]
 
 // ── Liquid large-cap stocks + ETFs — steady signals during US session ─────────
@@ -168,7 +173,7 @@ export async function fetchStockPrice(symbol: string, fallbackName: string): Pro
 // ── Yahoo Finance day gainers screener (pump candidates) ──────────────────────
 async function fetchTopGainers(): Promise<AssetData[]> {
   try {
-    const url = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=25&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap'
+    const url = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=40&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap'
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
       cache: 'no-store',
