@@ -400,8 +400,14 @@ export async function rankSignalsEnriched(
 export function filterLongEntries(signals: Signal[]): Signal[] {
   return signals
     .filter((s) => s.score >= getMinLongScore(s.setupTag))
-    .filter((s) => s.setupTag !== 'UNTAGGED')                                           // no named setup = no edge = no trade
-    .filter((s) => !s.indicators || s.indicators.volSpike > 0.3)                        // require real volume confirmation
+    .filter((s) => s.setupTag !== 'UNTAGGED')
+    // Volume spike required for momentum/breakout setups — NOT for value-zone entries.
+    // VWAP_LONG and MEAN_REVERT enter at fair value; volume spike irrelevant.
+    .filter((s) => {
+      if (!s.indicators) return true
+      if (s.setupTag === 'VWAP_LONG' || s.setupTag === 'MEAN_REVERT') return true
+      return s.indicators.volSpike > 0.3
+    })
     .filter((s) => !(s.setupTag === 'MEAN_REVERT' && s.asset.change24h < -10))
     .filter((s) => !(s.indicators && s.indicators.rsi > 76 && s.setupTag !== 'MOMENTUM_LONG'))
     .sort((a, b) => b.score - a.score)
