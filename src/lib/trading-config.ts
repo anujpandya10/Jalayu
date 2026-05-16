@@ -162,9 +162,9 @@ export const TIME_EXIT_TP_FRACTION = 0.40
 
 /**
  * How long before the engine can re-enter the same symbol after an exit.
- * Short cooldown — don't miss a second good signal on the same asset.
+ * 60s is enough to avoid immediately re-entering a just-stopped trade.
  */
-export const SYMBOL_COOLDOWN_SECS = 180  // 3 min cooldown per symbol
+export const SYMBOL_COOLDOWN_SECS = 60  // 1 min cooldown per symbol
 
 /**
  * Minimum signal scores to open a position.
@@ -176,11 +176,11 @@ export const MIN_SHORT_SCORE = -4.5
 
 /** Per-setup entry thresholds (momentum confirmed by candles can enter lower) */
 export const SETUP_MIN_LONG_SCORE: Record<string, number> = {
-  MOMENTUM_LONG   : 5.0,   // raised: must score 5+ after tighter stage2 gate
-  VWAP_LONG       : 3.8,
-  OVERSOLD_BOUNCE : 4.5,
-  FOREX_DIP       : 3.5,
-  MEAN_REVERT     : 4.2,
+  MOMENTUM_LONG   : 4.5,   // score floor is 5.5 in stage2, so always passes
+  VWAP_LONG       : 3.5,   // score floor is 4.0 in stage2 — fires on any below-VWAP asset
+  OVERSOLD_BOUNCE : 4.5,   // score floor is 5.5 in stage2
+  FOREX_DIP       : 3.0,
+  MEAN_REVERT     : 2.8,   // score floor is 3.0 in stage2
   UNTAGGED        : 5.0,
 }
 
@@ -221,7 +221,9 @@ export function getTpSl(
     : { tp: LONG_TP_PCT, sl: LONG_SL_PCT }
 }
 
-/** How many assets per side get full candle enrichment each tick */
-export const ENRICH_TOP_N = 8
+/** How many assets per side get full candle enrichment each tick.
+ *  Higher = more VWAP_LONG opportunities discovered (flat assets not in top-8 by 24h score).
+ */
+export const ENRICH_TOP_N = 14
 
 export const SEED_CAPITAL = 500

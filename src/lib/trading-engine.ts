@@ -81,12 +81,13 @@ function applyFees(notional: number, rawPnl: number): number {
 
 function getPositionLimits(phase: PhaseInfo) {
   if (phase.phase === 'STOCK_MARKET') {
-    return { maxLongs: 3, maxShorts: 2 }
+    return { maxLongs: 4, maxShorts: 2 }
   }
   if (phase.phase === 'PREMARKET') {
-    return { maxLongs: 3, maxShorts: 1 }
+    return { maxLongs: 4, maxShorts: 1 }
   }
-  return { maxLongs: 3, maxShorts: 2 }
+  // CRYPTO_NIGHT / AFTER_HOURS — more slots so the engine stays deployed
+  return { maxLongs: 5, maxShorts: 2 }
 }
 
 function computePortfolioEquity(

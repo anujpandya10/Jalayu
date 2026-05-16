@@ -106,42 +106,50 @@ function stage2Score(
   }
 
   // ── LONG setups ──────────────────────────────────────────────────────────
+  //
+  // Design principle: each setup has a GUARANTEED minimum score so it always
+  // clears the per-setup threshold even when the 24h trend is flat/neutral.
+  // Stage-1 score is additive so strong trending assets score even higher.
 
-  // MOMENTUM LONG — trend-following breakout (highest priority for positive 24h movers)
-  // RSI ceiling 73 (not 74) to avoid entering already-overbought assets.
-  // volSpike >= 2.0 — same as original; ATOM at 50.9× easily passes.
-  // change24h >= 4.5 — slightly tighter than 4.0 but still catches ATOM-quality moves.
-  if (change24h >= 4.5 && volSpike >= 2.0 && rsi >= 50 && rsi <= 73 && ema9 > ema21) {
-    score   += 2.5
+  // MOMENTUM LONG — strong trend already in motion. High conviction.
+  // change24h >= 3.5: catches mid-day runners before they extend further.
+  // volSpike >= 1.8: real institutional buying behind the move.
+  // RSI 48-73: not yet overbought, still room to run.
+  if (change24h >= 3.5 && volSpike >= 1.8 && rsi >= 48 && rsi <= 73 && ema9 > ema21) {
+    score = Math.max(score, 3.0) + 2.5   // floor → guaranteed 5.5+ (well above threshold)
     reasons.push(`Momentum breakout: +${change24h.toFixed(1)}% 24h, ${volSpike.toFixed(1)}× vol, RSI ${rsi.toFixed(0)}, EMA9>21`)
     setupTag = 'MOMENTUM_LONG'
   }
-  // OVERSOLD BOUNCE — deep dip with reversal signals (tightened: RSI<32)
-  else if (rsi < 32 && vwapDevPct < -1.5 && change24h < -5) {
-    score   += 2.5
+  // OVERSOLD BOUNCE — extreme dip with reversal. Big moves expected.
+  else if (rsi < 35 && vwapDevPct < -1.0 && change24h < -5) {
+    score = Math.max(score, 3.0) + 2.5
     reasons.push(`Oversold bounce: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'OVERSOLD_BOUNCE'
   }
-  // VWAP LONG — value zone scalp (removed low-vol requirement — fires more often)
-  else if (rsi >= 35 && rsi <= 55 && vwapDevPct < -0.5 && regime !== 'HIGH_VOL') {
-    score   += 1.5
+  // VWAP LONG — asset temporarily below its intraday fair value.
+  // THE BREAD-AND-BUTTER SCALP. Fires on ANY asset below VWAP with sane RSI.
+  // Score is set to a FLOOR (not just added) so it fires even on flat-day assets.
+  // vwapDevPct < -0.3: only 0.3% below VWAP needed — this happens constantly.
+  // RSI 35-65: wide band — we don't need oversold, just not overbought.
+  else if (rsi >= 35 && rsi <= 65 && vwapDevPct < -0.3) {
+    score = Math.max(score, 2.5) + 1.5   // floor → guaranteed 4.0 score
     reasons.push(`VWAP long: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'VWAP_LONG'
   }
-  // Mild RSI confirmation for existing long score
-  else if (score > 0 && rsi < 48 && vwapDevPct < 0) {
-    score   += 1.0
-    reasons.push(`RSI ${rsi.toFixed(0)} + below VWAP confirms dip`)
-    if (setupTag === 'UNTAGGED') setupTag = 'MEAN_REVERT'
+  // MEAN REVERT — mild dip below VWAP with RSI fading. Secondary setup.
+  else if (rsi < 52 && vwapDevPct < -0.1 && change24h > -10) {
+    score = Math.max(score, 1.5) + 1.5   // floor → guaranteed 3.0 score
+    reasons.push(`Mean revert: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
+    setupTag = 'MEAN_REVERT'
   }
 
-  // Kill weak dip-longs without real reversal (knife-catching)
-  if (setupTag === 'MEAN_REVERT' && change24h < -8 && volSpike < 1.8) {
-    score = Math.min(score, 3.0)
-    reasons.push('Deep dip without volume — skip knife catch')
+  // Kill knife-catchers: deep dip with no volume = no buyer conviction
+  if (setupTag === 'MEAN_REVERT' && change24h < -8 && volSpike < 1.5) {
+    score = Math.min(score, 2.5)
+    reasons.push('Deep dip without volume — knife catch risk')
   }
 
-  // Kill longs if RSI is very overbought AND no volume spike — already faded
+  // Kill overbought longs: RSI > 78 + no volume spike = already faded
   if (score > 0 && rsi > 78 && volSpike < 2.0 && setupTag !== 'MOMENTUM_LONG') {
     score -= 2.5
     reasons.push(`RSI ${rsi.toFixed(0)} overbought with no vol — fading long`)
