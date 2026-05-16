@@ -43,48 +43,34 @@ function TradingPnlWidget({ onNavigate }: { onNavigate: () => void }) {
     }).catch(() => {})
   }, [])
 
-  if (!snap) return null
-
-  const positive = snap.totalPnl >= 0
-  const color = positive ? '#22C55E' : '#EF4444'
-  const Icon  = positive ? TrendingUp : TrendingDown
+  const positive = snap ? snap.totalPnl >= 0 : true
+  const pnlColor = positive ? '#22C55E' : '#EF4444'
 
   return (
     <button
       onClick={onNavigate}
       style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        width: '100%', textAlign: 'left', cursor: 'pointer',
+        display: 'block', width: '100%', textAlign: 'left', cursor: 'pointer',
         background: 'var(--surface)', border: '1px solid var(--border)',
-        borderRadius: 14, padding: '13px 16px', marginBottom: 18,
+        borderRadius: 14, padding: '14px 14px 12px',
         transition: 'border-color 0.15s',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{
-          width: 34, height: 34, borderRadius: 10,
-          background: `${color}18`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Icon size={16} color={color} />
-        </div>
-        <div>
-          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 500 }}>
-            TRADING · {snap.openPositions} open · {snap.totalTrades} trades
-          </p>
-          <p style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)', margin: '1px 0 0', lineHeight: 1 }}>
+      <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 6px' }}>
+        Trading
+      </p>
+      {snap ? (
+        <>
+          <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px', lineHeight: 1 }}>
             ${snap.netWorth.toFixed(2)}
           </p>
-        </div>
-      </div>
-      <div style={{ textAlign: 'right' }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color, margin: 0 }}>
-          {positive ? '+' : ''}{snap.totalPnl.toFixed(2)}
-        </p>
-        <p style={{ fontSize: 11, color, margin: '1px 0 0', opacity: 0.8 }}>
-          {positive ? '+' : ''}{snap.totalPnlPct.toFixed(2)}%
-        </p>
-      </div>
+          <p style={{ fontSize: 11, color: pnlColor, margin: 0 }}>
+            {positive ? '+' : ''}{snap.totalPnl.toFixed(2)} · {snap.openPositions} open
+          </p>
+        </>
+      ) : (
+        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Loading…</p>
+      )}
     </button>
   )
 }
@@ -397,137 +383,49 @@ export default function HomeContent({
           100% { transform: scale(2.4); opacity: 0;   }
         }
         @keyframes homeMicDot { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+        @keyframes chatPulse { 0%, 100% { opacity: 0.7; } 50% { opacity: 0.2; } }
         .task-row:hover .task-actions { opacity: 1; }
       `}</style>
 
-      <div style={{ maxWidth: 520, margin: '0 auto', padding: '24px 18px 100px' }}>
+      <div style={{ maxWidth: 520, margin: '0 auto', padding: '20px 16px 100px' }}>
 
-        {/* ── Galaxy Orb ── */}
-        <GalaxyOrb state={orbState} size={140} />
-
-        {/* ── Header: date + streak ── */}
-        <div className="fade-up" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28 }}>
+        {/* ── 1. HEADER ROW (compact 44px) ── */}
+        <div className="fade-up" style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          height: 44, marginBottom: 10,
+        }}>
           <div>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500, margin: 0 }}>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 600, margin: 0, lineHeight: 1.2 }}>
               {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '2px 0 0' }}>Day {dayNumber}</p>
-            {!noteLoading && chapter && (
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '3px 0 0', fontStyle: 'italic', opacity: 0.85 }}>
-                {chapter}
-              </p>
-            )}
-          </div>
-          {(profile?.streak_count ?? 0) > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: 5,
-              background: 'var(--morning)', border: '1px solid var(--border)',
-              borderRadius: 99, padding: '5px 10px',
-            }}>
-              <span style={{ fontSize: 14 }}>🔥</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: AMBER }}>{profile?.streak_count}</span>
-              <span style={{ fontSize: 11, color: 'var(--text-3)' }}>day streak</span>
-            </div>
-          )}
-        </div>
-
-        {/* ── Trading P&L widget ── */}
-        <TradingPnlWidget onNavigate={() => setSidebarView('trading')} />
-
-        {/* ── Yesterday snapshot ── */}
-        {hasYesterdayData && (
-          <div className="fade-up" style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 14,
-            padding: '16px 18px',
-            marginBottom: 20,
-          }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 14px' }}>
-              Yesterday
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '2px 0 0', lineHeight: 1 }}>
+              Day {dayNumber}{!noteLoading && chapter ? ` · ${chapter}` : ''}
             </p>
-            <div style={{ display: 'flex', gap: 0, alignItems: 'stretch' }}>
-
-              {completedYesterday.length > 0 && (
-                <div style={{ flex: 1, textAlign: 'center', paddingRight: 16, borderRight: '1px solid var(--border)' }}>
-                  <p style={{ fontSize: 32, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: 0 }}>
-                    {completedYesterday.length}
-                  </p>
-                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>tasks done</p>
-                </div>
-              )}
-
-              {yesterdayMood && (
-                <div style={{ flex: 1, textAlign: 'center', padding: '0 16px', borderRight: completedYesterday.length > 0 ? '1px solid var(--border)' : 'none' }}>
-                  <p style={{ fontSize: 32, lineHeight: 1, margin: 0 }}>{MOOD_EMOJI[yesterdayMood.score]}</p>
-                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>mood {yesterdayMood.score}/5</p>
-                </div>
-              )}
-
-              {completedYesterday.length > 0 && (
-                <div style={{ flex: 1, textAlign: 'center', paddingLeft: 16 }}>
-                  <p style={{ fontSize: 32, fontWeight: 800, color: AMBER, lineHeight: 1, margin: 0 }}>
-                    +{completedYesterday.length * 5}
-                  </p>
-                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>growth pts</p>
-                </div>
-              )}
-
-            </div>
-            {completedYesterday.length > 0 && (
-              <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                {completedYesterday.slice(0, 2).map((t) => (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                    <svg width="11" height="9" viewBox="0 0 11 9" fill="none">
-                      <path d="M1 4.5L4 7.5L10 1" stroke={AMBER} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    <span style={{ fontSize: 12, color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {t.title}
-                    </span>
-                  </div>
-                ))}
-                {completedYesterday.length > 2 && (
-                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>+{completedYesterday.length - 2} more</p>
-                )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {(profile?.streak_count ?? 0) > 0 && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 4,
+                background: 'var(--morning)', border: '1px solid var(--border)',
+                borderRadius: 99, padding: '4px 9px',
+              }}>
+                <span style={{ fontSize: 13 }}>🔥</span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: AMBER }}>{profile?.streak_count}</span>
               </div>
             )}
+            {todayMood && (
+              <span style={{ fontSize: 18, lineHeight: 1 }}>{MOOD_EMOJI[todayMood.score]}</span>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* ── Week progress ── */}
-        {weekTotal > 0 && (
-          <div className="fade-up" style={{ marginBottom: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-              <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
-                This week
-              </p>
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)', margin: 0 }}>
-                {weekCompleted}/{weekTotal} · {weekPct}%
-              </p>
-            </div>
-            <div style={{ height: 7, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-              <div style={{
-                height: '100%',
-                width: `${weekPct}%`,
-                background: `linear-gradient(90deg, ${AMBER}, #E8AA6A)`,
-                borderRadius: 99,
-                transition: 'width 1s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }} />
-            </div>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '5px 0 0' }}>
-              {pendingTasks.length} remaining this week
-              {completedToday.length > 0 && ` · ${completedToday.length} done today`}
-            </p>
-          </div>
-        )}
-
-        {/* ── Morning note ── */}
+        {/* ── 2. MORNING NOTE (no card, just italic text) ── */}
         {(noteLoading || morningNote) && (
-          <div className="fade-up" style={{ marginBottom: 20 }}>
+          <div className="fade-up" style={{ marginBottom: 16 }}>
             {noteLoading ? <Dots /> : (
               <p style={{
                 fontFamily: 'var(--font-lora), Georgia, serif',
-                fontStyle: 'italic', fontSize: 15, lineHeight: 1.85,
+                fontStyle: 'italic', fontSize: 14, lineHeight: 1.7,
                 color: 'var(--text-2)', margin: 0,
               }}>
                 {morningNote}
@@ -536,72 +434,124 @@ export default function HomeContent({
           </div>
         )}
 
-        {/* ── Focus card ── */}
+        {/* ── 3. FOCUS CARD ── */}
         {!noteLoading && (
           <div className="fade-up" style={{
             background: 'var(--surface)',
-            border: `1.5px solid ${AMBER}22`,
+            border: `1px solid var(--border)`,
             borderLeft: `3px solid ${AMBER}`,
             borderRadius: 14,
-            padding: '18px 20px',
-            marginBottom: tip ? 14 : 28,
+            padding: '14px 16px',
+            marginBottom: 14,
           }}>
-            <p style={{ fontSize: 10, fontWeight: 600, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 8px' }}>
-              Today&apos;s focus
+            <p style={{ fontSize: 10, fontWeight: 600, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 6px' }}>
+              Today&apos;s Focus
             </p>
-            <p style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', lineHeight: 1.45, margin: 0, letterSpacing: '-0.01em' }}>
+            <p style={{ fontSize: 17, fontWeight: 700, color: 'var(--text)', lineHeight: 1.4, margin: 0, letterSpacing: '-0.01em' }}>
               {focus || (pendingTasks.length > 0 ? pendingTasks[0].title : 'Tell me what you want to work on.')}
             </p>
           </div>
         )}
 
-        {/* ── Tip ── */}
-        {!noteLoading && tip && (
-          <div className="fade-up" style={{
-            display: 'flex', alignItems: 'flex-start', gap: 8,
-            padding: '10px 14px', background: 'var(--morning)',
-            borderRadius: 10, border: '1px solid var(--border)', marginBottom: 28,
+        {/* ── 4. STATS GRID (2 columns) ── */}
+        <div className="fade-up" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+
+          {/* LEFT — Week tasks */}
+          <div style={{
+            background: 'var(--surface)', border: '1px solid var(--border)',
+            borderRadius: 14, padding: '14px 14px 12px', cursor: 'default',
           }}>
-            <span style={{ fontSize: 12, color: AMBER, flexShrink: 0, marginTop: 2 }}>✦</span>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>{tip}</p>
+            <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.09em', margin: '0 0 6px' }}>
+              This Week
+            </p>
+            <p style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: '0 0 2px', lineHeight: 1 }}>
+              {weekCompleted}/{weekTotal || 0}
+            </p>
+            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px' }}>
+              {weekPct}% done
+            </p>
+            <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${weekPct}%`,
+                background: AMBER,
+                borderRadius: 99,
+                transition: 'width 1s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }} />
+            </div>
+          </div>
+
+          {/* RIGHT — Trading inline */}
+          <TradingPnlWidget onNavigate={() => setSidebarView('trading')} />
+        </div>
+
+        {/* ── 5. MOOD CHECK ROW (only if !todayMood) ── */}
+        {!todayMood && (
+          <div className="fade-up" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+            <span style={{ fontSize: 12, color: 'var(--text-3)' }}>How are you?</span>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {MOODS.map(({ score, emoji, label }) => (
+                <button
+                  key={score}
+                  onClick={() => onMoodLog(score)}
+                  title={label}
+                  style={{ fontSize: 20, background: 'none', border: 'none', cursor: 'pointer', padding: '2px', lineHeight: 1, transition: 'transform 0.15s' }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.25)' }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* ── Divider ── */}
-        <div style={{ borderTop: '1px solid var(--border)', marginBottom: 24 }} />
-
-        {/* ── Today's tasks ── */}
-        <div style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
+        {/* ── 6. TODAY TASKS SECTION ── */}
+        <div className="fade-up" style={{ marginBottom: 20 }}>
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
             <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
               Today
             </p>
-            {(todayTasks.length > 0 || completedToday.length > 0) && (
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
-                {completedToday.length > 0 && <span style={{ color: AMBER, fontWeight: 600 }}>{completedToday.length} done · </span>}
-                {todayTasks.length} pending
-              </p>
-            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {(completedToday.length > 0 || todayTasks.length > 0) && (
+                <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>
+                  {completedToday.length > 0 && <span style={{ color: AMBER, fontWeight: 600 }}>{completedToday.length} done · </span>}
+                  {todayTasks.length} left
+                </p>
+              )}
+              <button
+                onClick={() => setAddingTask(true)}
+                style={{
+                  fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none',
+                  cursor: 'pointer', padding: 0, transition: 'color 0.15s',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)' }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)' }}
+              >
+                + add
+              </button>
+            </div>
           </div>
 
           {todayTasks.length === 0 && completedToday.length === 0 && !addingTask && (
-            <p style={{ fontSize: 14, color: 'var(--text-3)', margin: '0 0 8px' }}>
-              Nothing for today yet. Add something below.
+            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 8px' }}>
+              Nothing for today yet.
             </p>
           )}
 
-          {/* Completed today (faded) */}
+          {/* Completed today (faded, max 2) */}
           {completedToday.slice(0, 2).map((task) => (
             <div key={task.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, opacity: 0.45,
+              display: 'flex', alignItems: 'center', gap: 10, marginBottom: 7, opacity: 0.4,
             }}>
               <div style={{
-                width: 16, height: 16, borderRadius: '50%',
+                width: 15, height: 15, borderRadius: '50%',
                 background: 'var(--border-2)', border: '1.5px solid var(--border-2)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}>
-                <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
-                  <path d="M1 3.5L3.5 6L8 1" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                  <path d="M1 3L3 5L7 1" stroke="var(--text-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </div>
               <span style={{ fontSize: 13, color: 'var(--text-3)', textDecoration: 'line-through', flex: 1 }}>
@@ -615,12 +565,12 @@ export default function HomeContent({
             <div
               key={task.id}
               className="task-row"
-              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10, position: 'relative' }}
+              style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 8, position: 'relative' }}
             >
               <button
                 onClick={() => onToggleTask(task)}
                 style={{
-                  width: 17, height: 17, borderRadius: '50%',
+                  width: 16, height: 16, borderRadius: '50%',
                   border: `1.5px solid ${task.priority === 'high' ? '#DC2626' : task.priority === 'medium' ? AMBER : 'var(--border-2)'}`,
                   background: 'transparent', cursor: 'pointer', flexShrink: 0, marginTop: 2,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -630,26 +580,19 @@ export default function HomeContent({
                 onMouseLeave={(e) => { const el = e.currentTarget as HTMLElement; el.style.background = 'transparent' }}
               />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.5 }}>{task.title}</span>
-                <div style={{ display: 'flex', gap: 5, marginTop: 3, flexWrap: 'wrap' }}>
-                  {task.priority === 'high' && (
-                    <span style={{
-                      fontSize: 9, fontWeight: 700, color: '#DC2626',
-                      background: 'rgba(220,38,38,0.07)', padding: '2px 6px',
-                      borderRadius: 4, letterSpacing: '0.06em', textTransform: 'uppercase',
-                    }}>high</span>
-                  )}
+                <span style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.45 }}>{task.title}</span>
+                <div style={{ display: 'flex', gap: 5, marginTop: 2, flexWrap: 'wrap' }}>
                   {task.due_date && task.due_date < todayStr && (
                     <span style={{
                       fontSize: 9, fontWeight: 700, color: '#92400E',
-                      background: 'rgba(146,64,14,0.08)', padding: '2px 6px',
+                      background: 'rgba(146,64,14,0.08)', padding: '2px 5px',
                       borderRadius: 4, letterSpacing: '0.06em', textTransform: 'uppercase',
                     }}>overdue</span>
                   )}
                   {task.due_date === todayStr && (
                     <span style={{
                       fontSize: 9, fontWeight: 700, color: AMBER,
-                      background: `${AMBER}15`, padding: '2px 6px',
+                      background: `${AMBER}15`, padding: '2px 5px',
                       borderRadius: 4, letterSpacing: '0.06em', textTransform: 'uppercase',
                     }}>due today</span>
                   )}
@@ -660,16 +603,16 @@ export default function HomeContent({
 
           {/* Future tasks (collapsed) */}
           {futureTasks.length > 0 && (
-            <div style={{ marginTop: 6, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px' }}>
+            <div style={{ marginTop: 4, paddingTop: 8, borderTop: '1px dashed var(--border)' }}>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 6px' }}>
                 Coming up ({futureTasks.length})
               </p>
               {futureTasks.slice(0, 3).map((task) => (
-                <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--border-2)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, color: 'var(--text-3)' }}>{task.title}</span>
+                <div key={task.id} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                  <div style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border-2)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-3)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{task.title}</span>
                   {task.due_date && (
-                    <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 'auto', flexShrink: 0 }}>
+                    <span style={{ fontSize: 10, color: 'var(--text-3)', flexShrink: 0 }}>
                       {new Date(task.due_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
                   )}
@@ -678,10 +621,10 @@ export default function HomeContent({
             </div>
           )}
 
-          {/* Inline add */}
-          {addingTask ? (
+          {/* Inline add input */}
+          {addingTask && (
             <form onSubmit={handleAddTask} style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8 }}>
-              <div style={{ width: 17, height: 17, borderRadius: '50%', border: '1.5px solid var(--text-3)', flexShrink: 0 }} />
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '1.5px solid var(--text-3)', flexShrink: 0 }} />
               <input
                 ref={newTaskRef}
                 value={newTaskTitle}
@@ -697,71 +640,22 @@ export default function HomeContent({
                 }}
               />
             </form>
-          ) : (
-            <button
-              onClick={() => setAddingTask(true)}
-              style={{
-                fontSize: 13, color: 'var(--text-3)', background: 'none', border: 'none',
-                cursor: 'pointer', padding: 0, marginTop: 8, transition: 'color 0.15s',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)' }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)' }}
-            >
-              + add task
-            </button>
           )}
         </div>
 
-        {/* ── Growth score ── */}
-        {(profile?.growth_score ?? 0) > 0 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 10,
-            padding: '10px 14px', background: 'var(--surface)',
-            border: '1px solid var(--border)', borderRadius: 10, marginBottom: 24,
-          }}>
-            <span style={{ fontSize: 20 }}>⚡</span>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-                {profile?.growth_score} growth points
-              </p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '1px 0 0' }}>
-                Keep completing tasks to build momentum
-              </p>
-            </div>
-            <span style={{ fontSize: 11, color: AMBER, fontWeight: 600 }}>+5 per task</span>
-          </div>
-        )}
-
-        {/* ── Mood check ── */}
-        {!todayMood && (
-          <div className="fade-up" style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap', marginBottom: 28 }}>
-            <span style={{ fontSize: 13, color: 'var(--text-3)' }}>How are you today?</span>
-            <div style={{ display: 'flex', gap: 6 }}>
-              {MOODS.map(({ score, emoji, label }) => (
-                <button
-                  key={score}
-                  onClick={() => onMoodLog(score)}
-                  title={label}
-                  style={{ fontSize: 22, background: 'none', border: 'none', cursor: 'pointer', padding: '2px', lineHeight: 1, transition: 'transform 0.15s' }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.25)' }}
-                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Divider ── */}
-        <div style={{ borderTop: '1px solid var(--border)', marginBottom: 24 }} />
-
-        {/* ── Conversation area ── */}
+        {/* ── 7. CHAT AREA ── */}
         {!submitted ? (
           <div className="fade-up">
-            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 10px' }}>
-              {focus ? 'Does that land, or is something else pulling at you?' : "What's on your mind?"}
-            </p>
+            {/* Pulsing dot + label */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%',
+                background: 'var(--accent, #C4834A)', opacity: 0.7,
+                display: 'inline-block', flexShrink: 0,
+                animation: 'chatPulse 2s ease-in-out infinite',
+              }} />
+              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Ask me anything</span>
+            </div>
             <div style={{
               borderBottom: `1.5px solid ${voiceListening ? 'rgba(220,38,38,0.35)' : 'var(--border-2)'}`,
               paddingBottom: 6, display: 'flex', alignItems: 'flex-end', gap: 8,
@@ -818,23 +712,20 @@ export default function HomeContent({
           </div>
         ) : (
           <div className="fade-up" ref={replyRef}>
-            <p style={{ fontSize: 13, color: 'var(--text-3)', margin: '0 0 8px' }}>
-              {focus ? 'Does that land, or is something else pulling at you?' : "What's on your mind?"}
-            </p>
-            <p style={{ fontSize: 15, color: 'var(--text)', margin: '0 0 18px', lineHeight: 1.7 }}>{userAnswer}</p>
+            <p style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: '0 0 12px', lineHeight: 1.5 }}>{userAnswer}</p>
 
             {reply && (
               <div>
                 {reply.content ? (
                   <p style={{
                     fontFamily: 'var(--font-lora), Georgia, serif',
-                    fontStyle: 'italic', fontSize: 15, lineHeight: 1.85,
+                    fontStyle: 'italic', fontSize: 14, lineHeight: 1.85,
                     color: 'var(--text-2)', margin: 0,
                   }}>
                     {reply.content}
                     {reply.streaming && (
                       <span style={{
-                        display: 'inline-block', width: 2, height: 14, background: 'var(--text-3)',
+                        display: 'inline-block', width: 2, height: 13, background: 'var(--text-3)',
                         marginLeft: 2, verticalAlign: 'middle', animation: 'blink 1s step-end infinite',
                       }} />
                     )}
@@ -845,12 +736,12 @@ export default function HomeContent({
                   <button
                     onClick={() => setShowChatPanel(true)}
                     style={{
-                      marginTop: 14, display: 'flex', alignItems: 'center', gap: 4,
+                      marginTop: 12, display: 'flex', alignItems: 'center', gap: 4,
                       fontSize: 12, color: 'var(--text-3)', background: 'none',
                       border: 'none', cursor: 'pointer', padding: 0,
                     }}
                   >
-                    keep talking <ChevronRight size={12} />
+                    keep talking → <ChevronRight size={12} />
                   </button>
                 )}
               </div>
