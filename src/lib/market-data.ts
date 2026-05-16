@@ -1,15 +1,16 @@
 /**
  * Market data — CoinGecko (crypto, no key, no geo-blocking) + Yahoo Finance (stocks, market hours)
+ *              + Frankfurter API (forex, free, no key, real exchange rates)
  */
 
 export interface AssetData {
-  symbol: string      // e.g. BTC or AAPL
+  symbol: string      // e.g. BTC or AAPL or EURUSD
   coinId?: string     // CoinGecko id, e.g. "bitcoin"
   name: string
   price: number
   change24h: number   // % change last 24h
   change7d: number    // % change last 7d
-  assetType: 'crypto' | 'stock'
+  assetType: 'crypto' | 'stock' | 'forex'
   isPumpCandidate?: boolean  // true if big gainer / historically volatile pump stock
 }
 
@@ -39,16 +40,35 @@ const CRYPTO_LIST: { id: string; symbol: string; name: string }[] = [
 
 // ── Pump-and-dump watch stocks (historically volatile) ────────────────────────
 const PUMP_WATCH_STOCKS: { symbol: string; name: string }[] = [
-  { symbol: 'GME',  name: 'GameStop'        },
+  { symbol: 'GME',  name: 'GameStop' },
   { symbol: 'AMC',  name: 'AMC Entertainment' },
-  { symbol: 'SPCE', name: 'Virgin Galactic'  },
-  { symbol: 'BBAI', name: 'BigBear.ai'       },
-  { symbol: 'MULN', name: 'Mullen Auto'      },
-  { symbol: 'FFIE', name: 'Faraday Future'   },
-  { symbol: 'BBBY', name: 'Bed Bath Beyond'  },
-  { symbol: 'CLOV', name: 'Clover Health'    },
-  { symbol: 'SNDL', name: 'Sundial Growers'  },
-  { symbol: 'MVIS', name: 'MicroVision'      },
+  { symbol: 'SPCE', name: 'Virgin Galactic' },
+  { symbol: 'BBAI', name: 'BigBear.ai' },
+  { symbol: 'MULN', name: 'Mullen Auto' },
+  { symbol: 'FFIE', name: 'Faraday Future' },
+  { symbol: 'CLOV', name: 'Clover Health' },
+  { symbol: 'SNDL', name: 'Sundial Growers' },
+  { symbol: 'MVIS', name: 'MicroVision' },
+  { symbol: 'KOSS', name: 'Koss Corporation' },
+  { symbol: 'NAKD', name: 'Naked Brand' },
+  { symbol: 'EXPR', name: 'Express Inc' },
+  { symbol: 'BBBY', name: 'Bed Bath Beyond' },
+  { symbol: 'NKLA', name: 'Nikola Corp' },
+  { symbol: 'RIDE', name: 'Lordstown Motors' },
+]
+
+// ── Forex pairs — always active 24/7 (except weekends when spreads widen) ─────
+const FOREX_PAIRS: { symbol: string; name: string; base: string }[] = [
+  { symbol: 'EURUSD', name: 'Euro / USD',           base: 'EUR' },
+  { symbol: 'GBPUSD', name: 'British Pound / USD',  base: 'GBP' },
+  { symbol: 'AUDUSD', name: 'Australian Dollar',    base: 'AUD' },
+  { symbol: 'CADUSD', name: 'Canadian Dollar',      base: 'CAD' },
+  { symbol: 'JPYUSD', name: 'Japanese Yen / USD',   base: 'JPY' },
+  { symbol: 'CHFUSD', name: 'Swiss Franc / USD',    base: 'CHF' },
+  { symbol: 'NZDUSD', name: 'NZD / USD',            base: 'NZD' },
+  { symbol: 'MXNUSD', name: 'Mexican Peso / USD',   base: 'MXN' },
+  { symbol: 'INRUSD', name: 'Indian Rupee / USD',   base: 'INR' },
+  { symbol: 'BRLUSD', name: 'Brazilian Real / USD', base: 'BRL' },
 ]
 
 export function isUsMarketOpen(): boolean {
@@ -57,6 +77,14 @@ export function isUsMarketOpen(): boolean {
   if (day === 0 || day === 6) return false
   const total = now.getUTCHours() * 60 + now.getUTCMinutes()
   return total >= 13 * 60 + 30 && total < 20 * 60
+}
+
+export function isPremarket(): boolean {
+  const now = new Date()
+  const day = now.getUTCDay()
+  if (day === 0 || day === 6) return false
+  const total = now.getUTCHours() * 60 + now.getUTCMinutes()
+  return total >= 8 * 60 && total < 13 * 60 + 30
 }
 
 // ── CoinGecko — one API call returns ALL crypto prices + changes ──────────────
@@ -156,6 +184,63 @@ async function fetchTopGainers(): Promise<AssetData[]> {
   } catch { return [] }
 }
 
+// ── Frankfurter API — real forex exchange rates, free, no key ─────────────────
+function getYesterdayStr(): string {
+  const d = new Date()
+  d.setUTCDate(d.getUTCDate() - 1)
+  // Skip weekends for Frankfurter (no data on weekends)
+  if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() - 2) // Sunday → Friday
+  if (d.getUTCDay() === 6) d.setUTCDate(d.getUTCDate() - 1) // Saturday → Friday
+  return d.toISOString().split('T')[0]
+}
+
+async function fetchForexRates(): Promise<AssetData[]> {
+  try {
+    const bases = FOREX_PAIRS.map(p => p.base).join(',')
+
+    // Get today's and yesterday's rates for % change
+    const [todayRes, yesterdayRes] = await Promise.all([
+      fetch(`https://api.frankfurter.app/latest?from=USD&to=${bases}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store',
+      }),
+      fetch(`https://api.frankfurter.app/${getYesterdayStr()}?from=USD&to=${bases}`, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }, cache: 'no-store',
+      }),
+    ])
+
+    if (!todayRes.ok) return []
+    const today = await todayRes.json() as { rates: Record<string, number> }
+    const yesterday = yesterdayRes.ok ? await yesterdayRes.json() as { rates: Record<string, number> } : null
+
+    const mapped: (AssetData | null)[] = FOREX_PAIRS.map(({ symbol, name, base }) => {
+      // Frankfurter gives how many of "base" currency = 1 USD
+      // So rate for EUR = how many EUR per USD (e.g. 0.92)
+      // Price in USD = 1 / rate (how much 1 EUR costs in USD)
+      const todayRate = today.rates[base]
+      if (!todayRate) return null
+
+      const priceInUSD = 1 / todayRate  // e.g. 1 EUR = $1.085
+      const yesterdayRate = yesterday?.rates[base]
+      const change24h = yesterdayRate
+        ? ((todayRate - yesterdayRate) / yesterdayRate) * -100  // negative because we inverted
+        : 0
+
+      return {
+        symbol, name,
+        price: parseFloat(priceInUSD.toFixed(5)),
+        change24h: parseFloat(change24h.toFixed(4)),
+        change7d: 0,
+        assetType: 'forex' as const,
+        isPumpCandidate: false,
+      }
+    })
+    return mapped.filter((x): x is AssetData => x !== null)
+  } catch (err) {
+    console.error('[market-data] Forex fetch failed:', err)
+    return []
+  }
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function getAllAssets(): Promise<AssetData[]> {
   const results: AssetData[] = []
@@ -164,10 +249,15 @@ export async function getAllAssets(): Promise<AssetData[]> {
   const crypto = await fetchCryptoPrices()
   results.push(...crypto)
 
-  const marketOpen = isUsMarketOpen()
+  // Forex is global/24h — always fetch
+  const forex = await fetchForexRates()
+  results.push(...forex)
 
-  if (marketOpen) {
-    // Fetch pump-watch stocks during market hours
+  const marketOpen = isUsMarketOpen()
+  const premarket = isPremarket()
+
+  if (marketOpen || premarket) {
+    // Fetch pump-watch stocks during market hours and premarket
     const pumpSettled = await Promise.allSettled(
       PUMP_WATCH_STOCKS.map(({ symbol, name }) => fetchStockPrice(symbol, name))
     )
@@ -175,19 +265,22 @@ export async function getAllAssets(): Promise<AssetData[]> {
       if (r.status === 'fulfilled' && r.value) results.push(r.value)
     }
 
-    // Fetch top gainers (pump candidates from screener)
-    const gainers = await fetchTopGainers()
-    // Deduplicate against already-fetched symbols
-    const existingSymbols = new Set(results.map((a) => a.symbol))
-    for (const g of gainers) {
-      if (!existingSymbols.has(g.symbol)) {
-        results.push(g)
-        existingSymbols.add(g.symbol)
+    if (marketOpen) {
+      // Fetch top gainers (pump candidates from screener) — only during market hours
+      const gainers = await fetchTopGainers()
+      // Deduplicate against already-fetched symbols
+      const existingSymbols = new Set(results.map((a) => a.symbol))
+      for (const g of gainers) {
+        if (!existingSymbols.has(g.symbol)) {
+          results.push(g)
+          existingSymbols.add(g.symbol)
+        }
       }
     }
   }
 
-  console.log(`[market-data] fetched ${results.length} assets (${crypto.length} crypto, market=${marketOpen})`)
+  const forexCount = results.filter((a) => a.assetType === 'forex').length
+  console.log(`[market-data] fetched ${results.length} assets (${crypto.length} crypto, ${forexCount} forex, market=${marketOpen}, premarket=${premarket})`)
   return results
 }
 

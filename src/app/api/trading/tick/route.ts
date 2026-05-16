@@ -2,18 +2,34 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { getAllAssets } from '@/lib/market-data'
 import { rankLongs, rankShorts } from '@/lib/trading-signals'
+import { getCurrentPhase } from '@/lib/trading-phase'
+import type { PhaseInfo } from '@/lib/trading-phase'
 
 // ── Strategy constants ──────────────────────────────────────────────────────
 const LONG_TP_PCT       = 0.0012  // +0.12% — take tiny profits quickly
 const LONG_SL_PCT       = 0.003   // -0.3%  — cut fast
 const SHORT_TP_PCT      = 0.0015  // price drops 0.15% → cover short = profit
 const SHORT_SL_PCT      = 0.003   // price rises 0.3% → stop loss on short
-const MAX_LONGS         = 3
-const MAX_SHORTS        = 3
 const POSITION_SIZE_PCT = 0.18    // 18% of cash per position
 const MIN_TRADE_USD     = 3
 const TIME_EXIT_SECS    = 45      // force exit after 45s if any profit
 const STALE_EXIT_SECS   = 120     // force exit after 2min regardless
+
+// Forex-specific thresholds (tighter — forex moves in tiny increments)
+const FOREX_TP_PCT  = 0.0008  // +0.08%
+const FOREX_SL_PCT  = 0.002   // -0.2%
+
+// Phase-based position limits
+function getPositionLimits(phase: PhaseInfo) {
+  if (phase.phase === 'STOCK_MARKET') {
+    return { maxLongs: 3, maxShorts: 3, maxStocks: 4, maxForex: 2, maxCrypto: 3 }
+  }
+  if (phase.phase === 'PREMARKET') {
+    return { maxLongs: 3, maxShorts: 2, maxStocks: 0, maxForex: 2, maxCrypto: 4 }
+  }
+  // Night / after hours
+  return { maxLongs: 3, maxShorts: 3, maxStocks: 0, maxForex: 3, maxCrypto: 4 }
+}
 
 export interface TickEvent {
   type: 'LONG_BUY' | 'LONG_SELL' | 'SHORT_OPEN' | 'SHORT_COVER' | 'SCAN' | 'HOLD'
@@ -38,6 +54,7 @@ interface PositionRow {
   avg_buy_price: number | string
   created_at: string
   direction?: string | null
+  asset_type?: string | null
 }
 
 export async function POST() {
@@ -47,6 +64,10 @@ export async function POST() {
 
   const events: TickEvent[] = []
   const now = Date.now()
+
+  // ── Determine current trading phase ───────────────────────────────────────
+  const phaseInfo = getCurrentPhase()
+  const limits = getPositionLimits(phaseInfo)
 
   // ── 1. Load / create portfolio ─────────────────────────────────────────────
   let { data: portfolio } = await supabase
@@ -70,13 +91,15 @@ export async function POST() {
   // ── 2. Fetch live market data ──────────────────────────────────────────────
   const assets = await getAllAssets()
   const priceMap = new Map(assets.map((a) => [a.symbol, a.price]))
+  const assetTypeMap = new Map(assets.map((a) => [a.symbol, a.assetType]))
 
   const pumpCandidates = assets.filter((a) => a.isPumpCandidate).length
+  const forexCount = assets.filter((a) => a.assetType === 'forex').length
 
   events.push({
     type: 'SCAN', symbol: '', name: '', price: 0,
     direction: 'LONG',
-    reason: `Scanned ${assets.length} assets · ${pumpCandidates} pump candidates detected`,
+    reason: `[${phaseInfo.emoji} ${phaseInfo.label}] Scanned ${assets.length} assets · ${pumpCandidates} pumps · ${forexCount} forex pairs`,
     ts: now,
   })
 
@@ -112,20 +135,28 @@ export async function POST() {
     const heldSecs = (now - new Date(pos.created_at).getTime()) / 1000
     const direction = pos.direction === 'SHORT' ? 'SHORT' : 'LONG'
 
+    // Determine if this is a forex position (check asset type map or stored type)
+    const posAssetType = pos.asset_type ?? assetTypeMap.get(pos.symbol) ?? 'crypto'
+    const isForex = posAssetType === 'forex'
+
+    // Use tighter thresholds for forex
+    const tpPct = isForex ? FOREX_TP_PCT : (direction === 'SHORT' ? SHORT_TP_PCT : LONG_TP_PCT)
+    const slPct = isForex ? FOREX_SL_PCT : (direction === 'SHORT' ? SHORT_SL_PCT : LONG_SL_PCT)
+
     let shouldExit = false
     let exitReason = ''
     let pnl = 0
     let pnlPct = 0
-    let eventType: TickEvent['type'] = direction === 'SHORT' ? 'SHORT_COVER' : 'LONG_SELL'
+    const eventType: TickEvent['type'] = direction === 'SHORT' ? 'SHORT_COVER' : 'LONG_SELL'
 
     if (direction === 'LONG') {
       pnlPct = (current - avgCost) / avgCost
       pnl = (current - avgCost) * shares
 
-      if (pnlPct >= LONG_TP_PCT) {
+      if (pnlPct >= tpPct) {
         shouldExit = true
         exitReason = `Take profit +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(2)})`
-      } else if (pnlPct <= -LONG_SL_PCT) {
+      } else if (pnlPct <= -slPct) {
         shouldExit = true
         exitReason = `Stop loss ${(pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
       } else if (heldSecs >= TIME_EXIT_SECS && pnlPct > 0.0001) {
@@ -141,10 +172,10 @@ export async function POST() {
       pnlPct = (avgCost - current) / avgCost
       pnl = (avgCost - current) * shares
 
-      if (pnlPct >= SHORT_TP_PCT) {
+      if (pnlPct >= tpPct) {
         shouldExit = true
         exitReason = `SHORT cover — price dropped ${(pnlPct * 100).toFixed(2)}%, profit +$${pnl.toFixed(2)}`
-      } else if (pnlPct <= -SHORT_SL_PCT) {
+      } else if (pnlPct <= -slPct) {
         // Price rose, stop loss
         shouldExit = true
         exitReason = `SHORT stop loss — price rose ${(-pnlPct * 100).toFixed(2)}%, loss $${pnl.toFixed(2)}`
@@ -219,11 +250,30 @@ export async function POST() {
     else currentLongs++
   }
 
-  const longSignals = rankLongs(assets).filter((s) => !heldSet.has(s.asset.symbol))
-  const shortSignals = rankShorts(assets).filter((s) => !heldSet.has(s.asset.symbol))
+  // ── 6. Filter signals by phase ─────────────────────────────────────────────
+  // Only trade asset types allowed in the current phase
+  const allLongSignals = rankLongs(assets).filter((s) => !heldSet.has(s.asset.symbol))
+  const allShortSignals = rankShorts(assets).filter((s) => !heldSet.has(s.asset.symbol))
 
-  // ── 6. Open new LONG positions ─────────────────────────────────────────────
-  const longSlots = MAX_LONGS - currentLongs
+  const longSignals = allLongSignals.filter((s) => {
+    const t = s.asset.assetType
+    if (t === 'stock' && !phaseInfo.stocksActive) return false
+    if (t === 'forex' && !phaseInfo.forexActive) return false
+    if (t === 'crypto' && !phaseInfo.cryptoActive) return false
+    return true
+  })
+
+  const shortSignals = allShortSignals.filter((s) => {
+    const t = s.asset.assetType
+    if (t === 'stock' && !phaseInfo.stocksActive) return false
+    if (t === 'forex' && !phaseInfo.forexActive) return false
+    if (t === 'crypto' && !phaseInfo.cryptoActive) return false
+    return true
+  })
+
+  // ── 7. Open new LONG positions ─────────────────────────────────────────────
+  const maxLongs = limits.maxLongs
+  const longSlots = maxLongs - currentLongs
   const longsToOpen = longSignals.slice(0, Math.max(0, longSlots))
 
   for (const sig of longsToOpen) {
@@ -277,8 +327,9 @@ export async function POST() {
     }
   }
 
-  // ── 7. Open new SHORT positions ────────────────────────────────────────────
-  const shortSlots = MAX_SHORTS - currentShorts
+  // ── 8. Open new SHORT positions ────────────────────────────────────────────
+  const maxShorts = limits.maxShorts
+  const shortSlots = maxShorts - currentShorts
   const shortsToOpen = shortSignals.slice(0, Math.max(0, shortSlots))
 
   for (const sig of shortsToOpen) {
@@ -336,7 +387,7 @@ export async function POST() {
     }
   }
 
-  // ── 8. HOLD if nothing happened ────────────────────────────────────────────
+  // ── 9. HOLD if nothing happened ────────────────────────────────────────────
   const actionCount = events.filter((e) => e.type !== 'SCAN').length
   if (actionCount === 0) {
     events.push({
@@ -357,5 +408,6 @@ export async function POST() {
     pumpCandidates,
     currentLongs,
     currentShorts,
+    phase: phaseInfo,
   })
 }

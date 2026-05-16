@@ -25,6 +25,25 @@ export function scoreAsset(asset: AssetData): Signal {
   let urgency: Signal['urgency'] = 'low'
   const reasons: string[] = []
 
+  // ── Forex-specific scoring branch (tighter thresholds, slower movement) ──
+  if (asset.assetType === 'forex') {
+    // change24h here = % change in the base currency value
+    if (change24h < -0.5)       { score += 3; reasons.push(`${change24h.toFixed(3)}% forex dip`) }
+    else if (change24h < -0.2)  { score += 1.8 }
+    else if (change24h < -0.1)  { score += 1.0 }
+    else if (change24h > 0.5)   { score -= 3; reasons.push(`${change24h.toFixed(3)}% forex spike`) }
+    else if (change24h > 0.2)   { score -= 1.5 }
+    score = Math.max(-5, Math.min(5, score))
+    // Forex TP/SL are tighter — handled in tick
+    return {
+      asset, score,
+      direction: score > 0 ? 'LONG' : 'SHORT',
+      action: score >= 1.0 ? 'BUY_LONG' : score <= -1.5 ? 'SELL_SHORT' : 'HOLD',
+      reason: reasons.join(', ') || 'forex neutral',
+      urgency: 'low' as const,
+    }
+  }
+
   if (change24h > 30) {
     // Supernova spike — extreme pump, dump imminent
     score = -9

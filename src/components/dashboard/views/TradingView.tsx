@@ -67,6 +67,18 @@ interface ActivityItem {
   event: TickEvent
 }
 
+interface PhaseInfo {
+  phase: string
+  label: string
+  emoji: string
+  description: string
+  minutesUntilNext: number
+  nextPhaseName: string
+  cryptoActive: boolean
+  stocksActive: boolean
+  forexActive: boolean
+}
+
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 let actId = 0
@@ -274,6 +286,59 @@ function PositionRow({ pos }: { pos: Position }) {
   )
 }
 
+// ─── Phase Banner ──────────────────────────────────────────────────────────────
+
+function PhaseBanner({ phase }: { phase: PhaseInfo | null }) {
+  if (!phase) return null
+
+  const colors: Record<string, { bg: string; text: string; border: string }> = {
+    CRYPTO_NIGHT: { bg: '#1a1035', text: '#a78bfa', border: '#4c1d95' },
+    PREMARKET:    { bg: '#1a2a1a', text: '#86efac', border: '#166534' },
+    STOCK_MARKET: { bg: '#1a2510', text: '#bef264', border: '#3f6212' },
+    AFTER_HOURS:  { bg: '#1a1a2e', text: '#93c5fd', border: '#1d4ed8' },
+    FOREX_NIGHT:  { bg: '#1a1035', text: '#a78bfa', border: '#4c1d95' },
+  }
+  const c = colors[phase.phase] ?? colors.CRYPTO_NIGHT
+  const hrs = Math.floor(phase.minutesUntilNext / 60)
+  const mins = phase.minutesUntilNext % 60
+  const timeStr = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`
+
+  return (
+    <div style={{
+      background: c.bg, border: `1px solid ${c.border}`,
+      borderRadius: 10, padding: '10px 16px', marginBottom: 12,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      flexWrap: 'wrap', gap: 8,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 18 }}>{phase.emoji}</span>
+        <div>
+          <span style={{ fontWeight: 800, fontSize: 13, color: c.text }}>{phase.label.toUpperCase()}</span>
+          <span style={{ fontSize: 12, color: '#64748b', marginLeft: 10 }}>{phase.description}</span>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {phase.cryptoActive && (
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#86efac22', color: '#86efac' }}>
+            ₿ CRYPTO
+          </span>
+        )}
+        {phase.stocksActive && (
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#bef26422', color: '#bef264' }}>
+            📊 STOCKS
+          </span>
+        )}
+        {phase.forexActive && (
+          <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 6px', borderRadius: 4, background: '#93c5fd22', color: '#93c5fd' }}>
+            💱 FOREX
+          </span>
+        )}
+        <span style={{ fontSize: 11, color: '#475569' }}>{timeStr} until {phase.nextPhaseName}</span>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
 const TICK_INTERVAL = 8000 // 8 seconds
@@ -292,6 +357,7 @@ export default function TradingView() {
   const [pumpCandidates, setPumpCandidates] = useState(0)
   const [currentLongs, setCurrentLongs] = useState(0)
   const [currentShorts, setCurrentShorts] = useState(0)
+  const [currentPhase, setCurrentPhase] = useState<PhaseInfo | null>(null)
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const cdRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -331,6 +397,7 @@ export default function TradingView() {
         pumpCandidates?: number
         currentLongs?: number
         currentShorts?: number
+        phase?: PhaseInfo
       }
 
       addActivity(data.events)
@@ -338,6 +405,7 @@ export default function TradingView() {
       setPumpCandidates(data.pumpCandidates ?? 0)
       setCurrentLongs(data.currentLongs ?? 0)
       setCurrentShorts(data.currentShorts ?? 0)
+      if (data.phase) setCurrentPhase(data.phase)
       setLastScan(Date.now())
 
       const hadTrades = data.events.some((e) =>
@@ -467,6 +535,9 @@ export default function TradingView() {
             {scanning ? '⟳ Running…' : '⟳ Force scan'}
           </button>
         </div>
+
+        {/* ── PHASE BANNER ── */}
+        <PhaseBanner phase={currentPhase} />
 
         {/* ── LIVE ACTIVITY FEED ── */}
         <ActivityFeed items={activity} scanning={scanning} />
