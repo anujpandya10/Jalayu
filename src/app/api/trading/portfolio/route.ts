@@ -2,6 +2,16 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { getQuote } from '@/lib/yahoo-finance'
 
+interface PositionRow {
+  symbol: string
+  name: string | null
+  shares: number
+  avg_buy_price: number
+  asset_type: string | null
+  take_profit_price: number | null
+  stop_loss_price: number | null
+}
+
 export async function GET() {
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -28,15 +38,16 @@ export async function GET() {
     portfolio = created
   }
 
-  const { data: positions } = await supabase
+  const { data: positionsRaw } = await supabase
     .from('paper_positions')
     .select('*')
     .eq('user_id', user.id)
 
+  const positions = (positionsRaw ?? []) as PositionRow[]
   const cash: number = portfolio.cash
 
   const enrichedPositions = await Promise.all(
-    (positions ?? []).map(async (pos) => {
+    positions.map(async (pos) => {
       try {
         const quote = await getQuote(pos.symbol)
         const currentPrice = quote.price
@@ -53,6 +64,9 @@ export async function GET() {
           value,
           pnl,
           pnlPct,
+          assetType: pos.asset_type ?? 'stock',
+          takeProfitPrice: pos.take_profit_price ?? null,
+          stopLossPrice: pos.stop_loss_price ?? null,
         }
       } catch {
         return {
@@ -64,6 +78,9 @@ export async function GET() {
           value: pos.avg_buy_price * pos.shares,
           pnl: 0,
           pnlPct: 0,
+          assetType: pos.asset_type ?? 'stock',
+          takeProfitPrice: pos.take_profit_price ?? null,
+          stopLossPrice: pos.stop_loss_price ?? null,
         }
       }
     }),
@@ -71,7 +88,6 @@ export async function GET() {
 
   const positionsValue = enrichedPositions.reduce((sum, p) => sum + p.value, 0)
   const totalValue = cash + positionsValue
-  const invested = enrichedPositions.reduce((sum, p) => sum + p.avgBuyPrice * p.shares, 0)
   const totalPnL = totalValue - 500
   const totalPnLPct = (totalPnL / 500) * 100
 

@@ -1,171 +1,162 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase-admin'
-import { getOHLC } from '@/lib/yahoo-finance'
+import { getAllAssets } from '@/lib/market-data'
+import { rankSignals } from '@/lib/trading-signals'
+
+const TAKE_PROFIT_PCT = 0.015  // +1.5%
+const STOP_LOSS_PCT   = 0.010  // -1.0%
+const POSITION_SIZE_PCT = 0.20 // 20% of cash per trade
+const MIN_TRADE_USD = 5
 
 function verifyCron(req: Request) {
   const secret = process.env.CRON_SECRET
   if (!secret) return false
-  const auth = req.headers.get('authorization')
-  return auth === `Bearer ${secret}`
+  return req.headers.get('authorization') === `Bearer ${secret}`
 }
 
-/** US market hours: Mon–Fri 09:30–16:00 ET = 13:30–20:00 UTC */
-function isMarketOpen(): boolean {
-  const now = new Date()
-  const dayUTC = now.getUTCDay() // 0=Sun, 6=Sat
-  if (dayUTC === 0 || dayUTC === 6) return false
-  const hUTC = now.getUTCHours()
-  const mUTC = now.getUTCMinutes()
-  const totalMin = hUTC * 60 + mUTC
-  return totalMin >= 13 * 60 + 30 && totalMin < 20 * 60
+interface PortfolioRow {
+  user_id: string
+  cash: number
+  total_trades_run?: number
 }
 
-function sma(arr: number[], period: number): number {
-  const slice = arr.slice(-period)
-  if (slice.length < period) return 0
-  return slice.reduce((a, b) => a + b, 0) / period
+interface PositionRow {
+  id: string
+  symbol: string
+  name: string | null
+  shares: number
+  avg_buy_price: number
+  take_profit_price: number | null
+  stop_loss_price: number | null
+}
+
+interface PositionSymbolRow {
+  symbol: string
 }
 
 export async function GET(req: Request) {
-  if (!verifyCron(req)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  if (!isMarketOpen()) {
-    return NextResponse.json({ skipped: true, reason: 'Market closed' })
-  }
+  if (!verifyCron(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const supabase = createAdminClient()
-  if (!supabase) {
-    return NextResponse.json({ error: 'DB unavailable' }, { status: 500 })
-  }
+  if (!supabase) return NextResponse.json({ error: 'DB unavailable' }, { status: 500 })
 
-  // Get all users with a portfolio
-  const { data: portfolios } = await supabase
-    .from('paper_portfolio')
-    .select('user_id, cash')
+  // Fetch all market data once, reuse for all users
+  const assets = await getAllAssets()
+  const signals = rankSignals(assets)
+  const assetPriceMap = new Map(assets.map((a) => [a.symbol, a.price]))
 
-  if (!portfolios || portfolios.length === 0) {
-    return NextResponse.json({ processed: 0 })
-  }
+  // Get all users with portfolios
+  const { data: portfolios } = await supabase.from('paper_portfolio').select('user_id, cash, total_trades_run')
+  if (!portfolios || portfolios.length === 0) return NextResponse.json({ processed: 0 })
 
-  const results: { userId: string; trades: number; error?: string }[] = []
+  let totalTrades = 0
 
-  for (const portfolio of portfolios) {
+  for (const portfolioRaw of portfolios) {
+    const portfolio = portfolioRaw as PortfolioRow
     const userId: string = portfolio.user_id
     let cash: number = Number(portfolio.cash)
 
     try {
-      // Get this user's watchlist
-      const { data: watchlist } = await supabase
-        .from('trading_watchlist')
-        .select('symbol, name')
-        .eq('user_id', userId)
-
-      if (!watchlist || watchlist.length === 0) continue
-
-      // Get current positions
-      const { data: positions } = await supabase
+      // Get open positions
+      const { data: positionsRaw } = await supabase
         .from('paper_positions')
-        .select('symbol, shares, avg_buy_price')
+        .select('*')
         .eq('user_id', userId)
 
-      const posMap = new Map<string, { shares: number; avg_buy_price: number }>()
-      for (const p of positions ?? []) {
-        posMap.set(p.symbol, { shares: Number(p.shares), avg_buy_price: Number(p.avg_buy_price) })
-      }
+      const positions = (positionsRaw ?? []) as PositionRow[]
 
-      let tradesThisUser = 0
+      let tradesThisRun = 0
 
-      for (const item of watchlist) {
-        const symbol: string = item.symbol
-        try {
-          const ohlc = await getOHLC(symbol, '2mo')
-          const closes = ohlc.closes
-          if (closes.length < 20) continue
+      // ── STEP 1: Check take-profit and stop-loss on open positions ──
+      for (const pos of positions) {
+        const currentPrice = assetPriceMap.get(pos.symbol)
+        if (!currentPrice) continue
 
-          const s5 = sma(closes, 5)
-          const s20 = sma(closes, 20)
-          const price = ohlc.price
-          const name: string = ohlc.name || item.name || symbol
-          const hasPosition = posMap.has(symbol)
+        const tp = Number(pos.take_profit_price)
+        const sl = Number(pos.stop_loss_price)
+        const shares = Number(pos.shares)
+        let shouldSell = false
+        let sellReason = ''
 
-          if (s5 > s20 && !hasPosition) {
-            // BUY signal — 15% of available cash
-            const budget = cash * 0.15
-            if (budget < 10) continue
-            const shares = parseFloat((budget / price).toFixed(6))
-            const total = parseFloat((price * shares).toFixed(2))
-            const reason = `Auto: SMA5 $${s5.toFixed(2)} > SMA20 $${s20.toFixed(2)} — upward momentum`
+        if (tp && currentPrice >= tp) {
+          shouldSell = true
+          sellReason = `Take profit: price $${currentPrice.toFixed(4)} hit target $${tp.toFixed(4)}`
+        } else if (sl && currentPrice <= sl) {
+          shouldSell = true
+          sellReason = `Stop loss: price $${currentPrice.toFixed(4)} hit floor $${sl.toFixed(4)}`
+        }
 
-            const { error } = await supabase.from('paper_trades').insert({
-              user_id: userId, symbol, name, action: 'BUY',
-              shares, price: parseFloat(price.toFixed(4)), total,
-              pnl: null, reason, auto: true,
-            })
+        if (shouldSell) {
+          const total = parseFloat((currentPrice * shares).toFixed(2))
+          const pnl = parseFloat(((currentPrice - Number(pos.avg_buy_price)) * shares).toFixed(2))
 
-            if (!error) {
-              cash = parseFloat((cash - total).toFixed(2))
-              const existing = posMap.get(symbol)
-              if (existing) {
-                const newShares = existing.shares + shares
-                const newAvg = parseFloat(((existing.avg_buy_price * existing.shares + price * shares) / newShares).toFixed(4))
-                await supabase.from('paper_positions')
-                  .update({ shares: newShares, avg_buy_price: newAvg, updated_at: new Date().toISOString() })
-                  .eq('user_id', userId).eq('symbol', symbol)
-                posMap.set(symbol, { shares: newShares, avg_buy_price: newAvg })
-              } else {
-                await supabase.from('paper_positions').insert({
-                  user_id: userId, symbol, name,
-                  shares, avg_buy_price: parseFloat(price.toFixed(4)),
-                })
-                posMap.set(symbol, { shares, avg_buy_price: price })
-              }
-              tradesThisUser++
-            }
-          } else if (s5 < s20 && hasPosition) {
-            // SELL signal — full position
-            const position = posMap.get(symbol)!
-            const shares = position.shares
-            const total = parseFloat((price * shares).toFixed(2))
-            const pnl = parseFloat(((price - position.avg_buy_price) * shares).toFixed(2))
-            const reason = `Auto: SMA5 $${s5.toFixed(2)} < SMA20 $${s20.toFixed(2)} — momentum reversal`
+          const { error } = await supabase.from('paper_trades').insert({
+            user_id: userId, symbol: pos.symbol, name: pos.name,
+            action: 'SELL', shares, price: currentPrice, total, pnl,
+            reason: sellReason, auto: true,
+          })
 
-            const { error } = await supabase.from('paper_trades').insert({
-              user_id: userId, symbol, name, action: 'SELL',
-              shares, price: parseFloat(price.toFixed(4)), total,
-              pnl, reason, auto: true,
-            })
-
-            if (!error) {
-              cash = parseFloat((cash + total).toFixed(2))
-              await supabase.from('paper_positions').delete()
-                .eq('user_id', userId).eq('symbol', symbol)
-              posMap.delete(symbol)
-              tradesThisUser++
-            }
+          if (!error) {
+            await supabase.from('paper_positions').delete().eq('id', pos.id)
+            cash = parseFloat((cash + total).toFixed(2))
+            tradesThisRun++
           }
-        } catch {
-          // One symbol failing shouldn't stop others
-          continue
         }
       }
 
-      // Update cash if any trades fired
-      if (tradesThisUser > 0) {
-        await supabase.from('paper_portfolio')
-          .update({ cash, updated_at: new Date().toISOString() })
-          .eq('user_id', userId)
+      // ── STEP 2: Find best BUY opportunities ──
+      // Get updated positions after sells
+      const { data: currentPositionsRaw } = await supabase
+        .from('paper_positions').select('symbol').eq('user_id', userId)
+      const currentPositions = (currentPositionsRaw ?? []) as PositionSymbolRow[]
+      const heldSymbols = new Set(currentPositions.map((p) => p.symbol))
+
+      // Top 2 buy signals we don't already hold
+      const buySignals = signals
+        .filter((s) => s.action === 'BUY' && !heldSymbols.has(s.asset.symbol))
+        .slice(0, 2)
+
+      for (const signal of buySignals) {
+        const budget = cash * POSITION_SIZE_PCT
+        if (budget < MIN_TRADE_USD) continue
+
+        const price = signal.asset.price
+        const shares = parseFloat((budget / price).toFixed(8))
+        const total = parseFloat((price * shares).toFixed(2))
+        const tpPrice = parseFloat((price * (1 + TAKE_PROFIT_PCT)).toFixed(6))
+        const slPrice = parseFloat((price * (1 - STOP_LOSS_PCT)).toFixed(6))
+        const reason = `Buy signal — ${signal.reason} (score: ${signal.score.toFixed(1)})`
+
+        const { error: tradeError } = await supabase.from('paper_trades').insert({
+          user_id: userId, symbol: signal.asset.symbol, name: signal.asset.name,
+          action: 'BUY', shares, price, total, pnl: null, reason, auto: true,
+        })
+
+        if (!tradeError) {
+          await supabase.from('paper_positions').insert({
+            user_id: userId, symbol: signal.asset.symbol, name: signal.asset.name,
+            shares, avg_buy_price: price, asset_type: signal.asset.assetType,
+            take_profit_price: tpPrice, stop_loss_price: slPrice,
+          })
+          cash = parseFloat((cash - total).toFixed(2))
+          heldSymbols.add(signal.asset.symbol)
+          tradesThisRun++
+        }
       }
 
-      results.push({ userId, trades: tradesThisUser })
+      // Update portfolio cash + last_run_at
+      await supabase.from('paper_portfolio').update({
+        cash,
+        last_run_at: new Date().toISOString(),
+        total_trades_run: (portfolio.total_trades_run ?? 0) + tradesThisRun,
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', userId)
+
+      totalTrades += tradesThisRun
     } catch (err) {
-      results.push({ userId, trades: 0, error: String(err) })
+      console.error(`[cron/trading] user ${userId} error:`, err)
     }
   }
 
-  const totalTrades = results.reduce((s, r) => s + r.trades, 0)
-  console.log(`[cron/trading] ${portfolios.length} users, ${totalTrades} trades fired`)
-
-  return NextResponse.json({ processed: portfolios.length, totalTrades, results })
+  return NextResponse.json({ processed: portfolios.length, totalTrades, assetsScanned: assets.length })
 }
