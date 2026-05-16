@@ -21,6 +21,7 @@ import MeetingsView from '@/components/dashboard/views/MeetingsView'
 import InsightsView from '@/components/dashboard/views/InsightsView'
 import HealthView from '@/components/dashboard/views/HealthView'
 import UnifiedCalendarView from '@/components/dashboard/views/UnifiedCalendarView'
+import TradingView from '@/components/dashboard/views/TradingView'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
 
 async function getSupabase() {
@@ -410,6 +411,8 @@ export default function DashboardPage() {
             records={medicalRecords}
           />
         )
+      case 'trading':
+        return <TradingView />
       default:
         return null
     }

@@ -44,6 +44,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
       { key: 'people', icon: Users, label: 'People' },
       { key: 'reminders', icon: Bell, label: 'Reminders' },
       { key: 'widgets', icon: Puzzle, label: 'Widgets', badge: 'new-pill' },
+      { key: 'trading', icon: TrendingUp, label: 'Trading', badge: 'new-pill' },
     ],
   },
 ]
