@@ -5,7 +5,7 @@ import {
   Mic, MicOff, ChevronRight,
   TrendingUp, TrendingDown, Heart,
   BookOpen, Sparkles, Brain,
-  Users, FlaskConical, BarChart2, Zap, Target, Settings,
+  Users, FlaskConical, BarChart2, Zap, Target,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile, Task, Mood, Reminder } from '@/lib/types'
@@ -783,15 +783,6 @@ export default function HomeContent({
               </W>
             )}
 
-            <W accent={AMBER} icon={Settings} label="Profile" onClick={() => setSidebarView('settings')}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 2px' }}>
-                {firstName || 'Your details'}
-              </p>
-              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.45 }}>
-                Name, phone, email & address for smarter AI
-              </p>
-            </W>
-
             {/* Progress */}
             <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => setSidebarView('progress')}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -841,11 +832,6 @@ export default function HomeContent({
             <div style={{ height: 3, background: 'var(--border)', borderRadius: 99 }}>
               <div style={{ height: '100%', width: `${weekPct}%`, background: AMBER, borderRadius: 99 }} />
             </div>
-          </W>
-
-          <W accent={AMBER} icon={Settings} label="Profile" onClick={() => setSidebarView('settings')}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 2px' }}>Your details</p>
-            <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Phone, email & address for AI</p>
           </W>
 
           <ExploreLinks
