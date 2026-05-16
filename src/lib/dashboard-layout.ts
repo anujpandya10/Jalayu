@@ -144,19 +144,40 @@ export function parseDashboardLayout(raw: unknown): DashboardLayout {
   const hidden = sanitizeList(o.hidden)
   const hiddenSet = new Set(hidden)
 
-  const parsed: DashboardLayout = {
+  const savedLeft   = sanitizeList(columns?.left)
+  const savedCenter = sanitizeList(columns?.center)
+  const savedRight  = sanitizeList(columns?.right)
+  const savedMobile = sanitizeList(o.mobile)
+
+  // Track every widget already placed in any column or mobile so that moving a
+  // widget between columns doesn't cause it to reappear in its old default slot.
+  const alreadyPlaced = new Set<HomeWidgetId>([
+    ...savedLeft, ...savedCenter, ...savedRight, ...savedMobile, ...hidden,
+  ])
+
+  // Add default widgets that are genuinely new (not placed anywhere yet).
+  function addNewDefaults(saved: HomeWidgetId[], defaults: HomeWidgetId[]): HomeWidgetId[] {
+    const result = [...saved]
+    for (const id of defaults) {
+      if (!alreadyPlaced.has(id)) {
+        result.push(id)
+        alreadyPlaced.add(id) // prevent the same new widget landing in multiple columns
+      }
+    }
+    return result.filter((id) => !hiddenSet.has(id))
+  }
+
+  return {
     version: 2,
     columns: {
-      left: mergeLists(sanitizeList(columns?.left), base.columns.left).filter((id) => !hiddenSet.has(id)),
-      center: mergeLists(sanitizeList(columns?.center), base.columns.center).filter((id) => !hiddenSet.has(id)),
-      right: mergeLists(sanitizeList(columns?.right), base.columns.right).filter((id) => !hiddenSet.has(id)),
+      left:   addNewDefaults(savedLeft,   base.columns.left),
+      center: addNewDefaults(savedCenter, base.columns.center),
+      right:  addNewDefaults(savedRight,  base.columns.right),
     },
-    mobile: mergeLists(sanitizeList(o.mobile), base.mobile).filter((id) => !hiddenSet.has(id)),
+    mobile: addNewDefaults(savedMobile, base.mobile),
     hidden,
     sizes: sanitizeSizes(o.sizes),
   }
-
-  return parsed
 }
 
 export function getWidgetSize(layout: DashboardLayout, id: HomeWidgetId): WidgetSize {
