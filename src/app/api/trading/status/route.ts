@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { getAllAssets, isUsMarketOpen } from '@/lib/market-data'
 import { rankSignals } from '@/lib/trading-signals'
+import { getCurrentPhase } from '@/lib/trading-phase'
 
 interface PortfolioRow {
   last_run_at: string | null
@@ -24,6 +25,7 @@ export async function GET() {
   const portfolio = portfolioRaw as PortfolioRow | null
 
   // Get current signals (lightweight — used to show "scanning X assets")
+  const phase = getCurrentPhase()
   const assets = await getAllAssets()
   const signals = rankSignals(assets)
   const topBuys = signals.filter((s) => s.action === 'BUY_LONG').slice(0, 3)
@@ -35,6 +37,8 @@ export async function GET() {
     autoTradingEnabled: portfolio?.auto_trading_enabled !== false,
     serverCronInterval: 'Every 1 minute on Vercel (works when your Mac is off)',
     assetsScanned: assets.length,
+    pumpCandidates: assets.filter((a) => a.isPumpCandidate).length,
+    phase,
     marketOpen: isUsMarketOpen(),
     topBuys: topBuys.map((s) => ({ symbol: s.asset.symbol, name: s.asset.name, price: s.asset.price, score: s.score, reason: s.reason })),
     topSells: topSells.map((s) => ({ symbol: s.asset.symbol, name: s.asset.name, price: s.asset.price, score: s.score, reason: s.reason })),

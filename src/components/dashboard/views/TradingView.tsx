@@ -102,6 +102,46 @@ function timeAgo(ts: number): string {
   return `${Math.floor(s / 60)}m ago`
 }
 
+/** Show recent DB trades in the activity feed on first load */
+function tradesToActivity(trades: Trade[]): TickEvent[] {
+  return trades.slice(0, 12).map((t) => {
+    const ts = new Date(t.created_at).getTime()
+    const isShort = t.direction === 'SHORT'
+    const closed = t.pnl != null
+
+    if (closed && isShort) {
+      return {
+        type: 'SHORT_COVER' as const,
+        symbol: t.symbol, name: t.name ?? t.symbol, price: t.price,
+        direction: 'SHORT' as const, shares: t.shares, total: t.total,
+        pnl: t.pnl ?? 0, reason: t.reason ?? 'Cover', ts,
+      }
+    }
+    if (closed) {
+      return {
+        type: 'LONG_SELL' as const,
+        symbol: t.symbol, name: t.name ?? t.symbol, price: t.price,
+        direction: 'LONG' as const, shares: t.shares, total: t.total,
+        pnl: t.pnl ?? 0, reason: t.reason ?? 'Sell', ts,
+      }
+    }
+    if (isShort) {
+      return {
+        type: 'SHORT_OPEN' as const,
+        symbol: t.symbol, name: t.name ?? t.symbol, price: t.price,
+        direction: 'SHORT' as const, shares: t.shares, total: t.total,
+        reason: t.reason ?? 'Short open', ts,
+      }
+    }
+    return {
+      type: 'LONG_BUY' as const,
+      symbol: t.symbol, name: t.name ?? t.symbol, price: t.price,
+      direction: 'LONG' as const, shares: t.shares, total: t.total,
+      reason: t.reason ?? 'Buy', ts,
+    }
+  })
+}
+
 // ─── Subcomponents ─────────────────────────────────────────────────────────────
 
 function PulseDot({ active, color = '#2D6A2D' }: { active: boolean; color?: string }) {
@@ -341,9 +381,8 @@ function PhaseBanner({ phase }: { phase: PhaseInfo | null }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-/** Server cron runs every 60s on Vercel — client refreshes UI to match */
+/** Scan + UI refresh interval (tab open). Vercel cron also runs ~every 1 min when tab is closed. */
 const REFRESH_INTERVAL = 15000
-const TICK_INTERVAL = 60000
 
 export default function TradingView() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
@@ -376,9 +415,17 @@ export default function TradingView() {
     if (res.ok) setPortfolio(await res.json())
   }, [])
 
-  const loadTrades = useCallback(async () => {
+  const loadTrades = useCallback(async (seedFeed = false) => {
     const res = await fetch('/api/trading/history')
-    if (res.ok) setTrades(await res.json())
+    if (!res.ok) return
+    const data = await res.json() as Trade[]
+    setTrades(data)
+    if (seedFeed && data.length > 0) {
+      setActivity((prev) => {
+        if (prev.length > 0) return prev
+        return tradesToActivity(data).map((event) => ({ id: nextId(), event }))
+      })
+    }
   }, [])
 
   const loadNews = useCallback(async () => {
@@ -393,10 +440,16 @@ export default function TradingView() {
       lastRunAt?: string | null
       totalTradesRun?: number
       autoTradingEnabled?: boolean
+      assetsScanned?: number
+      pumpCandidates?: number
+      phase?: PhaseInfo
     }
     if (data.lastRunAt) setServerLastRun(data.lastRunAt)
     if (data.totalTradesRun != null) setTotalTrades(data.totalTradesRun)
     if (data.autoTradingEnabled != null) setAutoTradingEnabled(data.autoTradingEnabled)
+    if (data.assetsScanned != null) setAssetsScanned(data.assetsScanned)
+    if (data.pumpCandidates != null) setPumpCandidates(data.pumpCandidates)
+    if (data.phase) setCurrentPhase(data.phase)
   }, [])
 
   const refreshAll = useCallback(async () => {
@@ -412,7 +465,15 @@ export default function TradingView() {
     try {
       const url = force ? '/api/trading/tick?force=1' : '/api/trading/tick'
       const res = await fetch(url, { method: 'POST' })
-      if (!res.ok) return
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({})) as { error?: string }
+        addActivity([{
+          type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+          reason: `Scan failed (${res.status}): ${errBody.error ?? 'check login / deploy'}`,
+          ts: Date.now(),
+        }])
+        return
+      }
       const data = await res.json() as {
         events: TickEvent[]
         cash: number
@@ -446,23 +507,30 @@ export default function TradingView() {
     }
   }, [scanning, addActivity, refreshAll])
 
-  // Initial load
+  // Boot: load data, seed feed from history, run first scan immediately
   useEffect(() => {
-    Promise.all([loadPortfolio(), loadTrades(), loadNews(), loadStatus()])
-      .finally(() => setLoading(false))
-  }, [loadPortfolio, loadTrades, loadNews, loadStatus])
+    let cancelled = false
+    const boot = async () => {
+      await Promise.all([
+        loadPortfolio(),
+        loadTrades(true),
+        loadNews(),
+        loadStatus(),
+      ])
+      if (!cancelled) setLoading(false)
+      if (!cancelled) await runTick(true)
+    }
+    boot()
+    return () => { cancelled = true }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refresh portfolio from server cron results; optional client tick when tab is open
+  // While tab is open: scan every 15s (updates activity + portfolio)
   useEffect(() => {
-    const initial = setTimeout(() => { refreshAll() }, 800)
-    tickRef.current = setInterval(() => { refreshAll() }, REFRESH_INTERVAL)
-    const tickSlow = setInterval(() => { runTick(false) }, TICK_INTERVAL)
+    tickRef.current = setInterval(() => { runTick(false) }, REFRESH_INTERVAL)
     cdRef.current = setInterval(() => {
       setCountdown((n) => (n <= 0 ? REFRESH_INTERVAL / 1000 : n - 1))
     }, 1000)
     return () => {
-      clearTimeout(initial)
-      clearInterval(tickSlow)
       if (tickRef.current) clearInterval(tickRef.current)
       if (cdRef.current) clearInterval(cdRef.current)
     }

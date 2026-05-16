@@ -14,7 +14,8 @@ export async function POST(req: Request) {
 
   const result = await runTradingTick(supabase, user.id, {
     force,
-    minSecondsSinceLastRun: force ? 0 : 50,
+    // When tab is open, allow a trade cycle every ~30s; cron still runs on Vercel each minute
+    minSecondsSinceLastRun: force ? 0 : 28,
   })
 
   return NextResponse.json(result)
