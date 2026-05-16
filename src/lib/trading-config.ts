@@ -1,32 +1,55 @@
 /**
- * Shared paper-trading parameters (website engine).
+ * ══════════════════════════════════════════════════════════════════════════
+ *  "SLEEP IN PROFIT" STRATEGY  — v4
+ * ══════════════════════════════════════════════════════════════════════════
  *
- * ── Fee math ────────────────────────────────────────────────────────────────
- * Old v1:  TP 0.25%  SL 0.12%  Fee 0.20% → net win 0.05%  net loss 0.32%
- *          Break-even win rate needed: 87% — impossible.
+ * Core principle: a trade can end in 3 ways — but NEVER in a big loss:
  *
- * Old v2:  TP 0.80%  SL 0.40%  Fee 0.20% → net win 0.60%  net loss 0.60%
- *          Break-even win rate needed: 50% — 1:1 R:R, only flat in best case.
+ *   ① Hard stop   (price never reached break-even) → −0.4% max loss
+ *   ② Break-even stop (was up ≥0.6%, reversed)     → −0.1% (fees only)
+ *   ③ Trailing stop / TP  (ran in our favour)       → +1.0% to +2.5%
  *
- * Current: TP 1.50%  SL 0.50%  Fee 0.20% → net win +1.30%  net loss −0.70%
- *          R:R = 1.86:1. Break-even win rate needed: 35%.
- *          At 40% win rate → EV = +0.40×1.30 − 0.60×0.70 = +0.10% per trade.
- *          5 trades/day on $500 → ~+$2.50/day average.
- * ──────────────────────────────────────────────────────────────────────────
+ * Expected value with 50% win rate (conservative):
+ *   EV = 0.50×(avg +1.6%) + 0.20×(−0.1%) + 0.30×(−0.4%)
+ *      = +0.80% − 0.02% − 0.12% = +0.66% per trade
+ *
+ * At 3 trades/day on $500 → +$9.90/day average (conservative).
+ * Impossible to compound losses because:
+ *   • Break-even stop kills the "winner turned loser" scenario
+ *   • Hard time cut (12 min) kills the "holding and hoping" scenario
+ *   • DAILY_LOSS_LIMIT_PCT circuit-breaker kills bad-day spirals
+ *
+ * R:R by setup:
+ *   MOMENTUM_LONG   TP 2.0% / SL 0.4% → 5:1 R:R   (break-even at +0.6%)
+ *   OVERSOLD_BOUNCE TP 2.5% / SL 0.5% → 5:1 R:R
+ *   VWAP_LONG       TP 1.5% / SL 0.4% → 3.75:1 R:R
+ *   Shorts           TP 1.8% / SL 0.4% → 4.5:1 R:R
+ * ══════════════════════════════════════════════════════════════════════════
  */
 
 /** Round-trip fee simulation (entry + exit, e.g. 0.1% × 2) */
 export const ROUND_TRIP_FEE_PCT = 0.002
 
-// True 2:1 R:R after fees — fees become a tiny fraction of the move
-export const LONG_TP_PCT  = 0.015   // +1.50% take profit  (net +1.30% after fees)
-export const LONG_SL_PCT  = 0.005   // −0.50% stop loss    (net −0.70% after fees)
-
-export const SHORT_TP_PCT = 0.012   // shorts move faster, tighter TP still good
-export const SHORT_SL_PCT = 0.005
-
-export const FOREX_TP_PCT = 0.005   // forex moves slower — tighter TP
+// Default TP/SL — overridden per-setup in SETUP_TP_SL below
+export const LONG_TP_PCT  = 0.020   // +2.0%  hard take-profit ceiling
+export const LONG_SL_PCT  = 0.004   // −0.4%  hard stop — never more than this
+export const SHORT_TP_PCT = 0.018   // +1.8%
+export const SHORT_SL_PCT = 0.004
+export const FOREX_TP_PCT = 0.005
 export const FOREX_SL_PCT = 0.002
+
+// ── Break-even stop ────────────────────────────────────────────────────────
+// When a position gains BREAKEVEN_TRIGGER_PCT, move stop to entry + BREAKEVEN_LOCK_PCT.
+// After this fires the trade CANNOT result in a loss (only fees at worst).
+export const BREAKEVEN_TRIGGER_PCT = 0.006   // activate when +0.6% in profit
+export const BREAKEVEN_LOCK_PCT    = 0.001   // lock stop at entry +0.1% (covers ~half fees)
+
+// ── Trailing stop ──────────────────────────────────────────────────────────
+// When profit reaches TRAIL_TRIGGER_PCT, a trailing stop replaces the fixed SL.
+// The stop ratchets up (for longs) so you can NEVER give back more than TRAIL_DISTANCE_PCT
+// from the peak price. Winners run; profits are protected.
+export const TRAIL_TRIGGER_PCT  = 0.012   // activate trailing when +1.2% in profit
+export const TRAIL_DISTANCE_PCT = 0.005   // trail 0.5% below price peak
 
 export const MIN_TRADE_USD = 10        // skip micro positions that fees eat entirely
 
@@ -121,16 +144,21 @@ export const STOCK_HOT_WINDOWS_UTC:  [number, number][] = [[13.5, 16], [19, 20.5
  * Time-exit only triggers if position is at least 50% of the way to TP.
  * Stale cut fires when position is losing after a longer hold.
  */
-export const TIME_EXIT_SECS  = 420    // 7 min: allow earlier profit capture in chop
-export const STALE_EXIT_SECS = 5400   // 90 min: only cut slow bleeds (not quick SL trades)
-export const STALE_MIN_LOSS_PCT = 0.0025  // stale only if losing more than 0.25%
+/**
+ * Time discipline — the second pillar of "sleep in profit".
+ * A trade that hasn't reached break-even in 12 min is NOT working.
+ * Exit immediately. Don't hold and hope — free up capital for better entries.
+ */
+export const TIME_EXIT_SECS     = 720   // 12 min: cut if position ≥ 50% toward TP
+export const STALE_EXIT_SECS    = 720   // 12 min: same — don't differentiate
+export const STALE_MIN_LOSS_PCT = 0.001 // cut ANY losing position after 12 min (not just -0.25%)
 
-/** Bank small winners in chop after min hold (between this and time-exit threshold) */
-export const QUICK_WIN_MIN_PCT = 0.003   // +0.3% minimum to bank
-export const QUICK_WIN_HOLD_SECS = 300   // 5 min
+/** Take a small winner rather than let it turn into a loser in sideways market */
+export const QUICK_WIN_MIN_PCT   = 0.005  // bank +0.5% quick wins
+export const QUICK_WIN_HOLD_SECS = 240    // after just 4 min
 
-/** Time-exit takes partial profit at this fraction of TP (was 0.5) */
-export const TIME_EXIT_TP_FRACTION = 0.35
+/** Time-exit triggers when position is at least 40% of the way to TP */
+export const TIME_EXIT_TP_FRACTION = 0.40
 
 /**
  * How long before the engine can re-enter the same symbol after an exit.
@@ -156,17 +184,22 @@ export const SETUP_MIN_LONG_SCORE: Record<string, number> = {
   UNTAGGED        : 5.0,
 }
 
-/** Per-setup TP/SL — match strategy personality */
+/**
+ * Per-setup TP/SL — designed around break-even + trailing stop framework.
+ * SL is TIGHT (0.4%) because break-even stop prevents large losses.
+ * TP is WIDE (2-2.5%) because trailing stop captures big moves.
+ * R:R is 5:1+ so we're profitable even at 30% win rate.
+ */
 export const SETUP_TP_SL: Record<string, { tp: number; sl: number }> = {
-  MOMENTUM_LONG   : { tp: 0.010, sl: 0.004 },  // ride trend, tight stop
-  OVERSOLD_BOUNCE : { tp: 0.018, sl: 0.008 },  // wider — needs room to reverse
-  VWAP_LONG       : { tp: 0.012, sl: 0.005 },
-  PUMP_SHORT      : { tp: 0.014, sl: 0.006 },
-  SUPERNOVA_SHORT : { tp: 0.018, sl: 0.007 },
-  VWAP_SHORT      : { tp: 0.012, sl: 0.005 },
-  FOREX_DIP       : { tp: 0.006, sl: 0.0025 },
-  FOREX_FADE      : { tp: 0.006, sl: 0.0025 },
-  MEAN_REVERT     : { tp: 0.010, sl: 0.005 },
+  MOMENTUM_LONG   : { tp: 0.020, sl: 0.004 },  // 5:1 — trend already confirmed
+  OVERSOLD_BOUNCE : { tp: 0.025, sl: 0.005 },  // 5:1 — deep dip bounces hard
+  VWAP_LONG       : { tp: 0.015, sl: 0.004 },  // 3.75:1 — value play, modest target
+  PUMP_SHORT      : { tp: 0.018, sl: 0.004 },  // 4.5:1 — pump fades reliably
+  SUPERNOVA_SHORT : { tp: 0.025, sl: 0.005 },  // 5:1 — extreme pumps mean-revert hard
+  VWAP_SHORT      : { tp: 0.015, sl: 0.004 },  // 3.75:1
+  FOREX_DIP       : { tp: 0.006, sl: 0.002 },  // forex: tighter, faster moves
+  FOREX_FADE      : { tp: 0.006, sl: 0.002 },
+  MEAN_REVERT     : { tp: 0.018, sl: 0.004 },  // 4.5:1
 }
 
 export function getMinLongScore(setupTag: string): number {

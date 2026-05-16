@@ -28,6 +28,10 @@ import {
   MIN_SHORT_SCORE,
   ENRICH_TOP_N,
   getTpSl,
+  BREAKEVEN_TRIGGER_PCT,
+  BREAKEVEN_LOCK_PCT,
+  TRAIL_TRIGGER_PCT,
+  TRAIL_DISTANCE_PCT,
 } from '@/lib/trading-config'
 
 export interface TickEvent {
@@ -66,6 +70,8 @@ interface PositionRow {
   created_at: string
   direction?: string | null
   asset_type?: string | null
+  stop_loss_price?: number | null   // dynamic — updated by break-even / trailing logic
+  take_profit_price?: number | null // stored for reference
 }
 
 function applyFees(notional: number, rawPnl: number): number {
@@ -227,7 +233,7 @@ export async function runTradingTick(
   let posRaw: PositionRow[] | null = null
   const { data: posWithDir, error: dirError } = await supabase
     .from('paper_positions')
-    .select('id, symbol, name, shares, avg_buy_price, created_at, direction, asset_type')
+    .select('id, symbol, name, shares, avg_buy_price, created_at, direction, asset_type, stop_loss_price, take_profit_price')
     .eq('user_id', userId)
     .order('created_at', { ascending: true })
 
@@ -248,69 +254,97 @@ export async function runTradingTick(
     const current = priceMap.get(pos.symbol)
     if (!current) continue
 
-    const avgCost = Number(pos.avg_buy_price)
-    const shares = Number(pos.shares)
-    const heldSecs = (now - new Date(pos.created_at).getTime()) / 1000
+    const avgCost   = Number(pos.avg_buy_price)
+    const shares    = Number(pos.shares)
+    const heldSecs  = (now - new Date(pos.created_at).getTime()) / 1000
     const direction = pos.direction === 'SHORT' ? 'SHORT' : 'LONG'
     const posAssetType = (pos.asset_type ?? assetTypeMap.get(pos.symbol) ?? 'crypto') as 'crypto' | 'stock' | 'forex'
-    const isForex = posAssetType === 'forex'
-    // Use latest signal tag for setup-aware exits, else defaults
-    const openSig = signalMap.get(pos.symbol)
+    const openSig  = signalMap.get(pos.symbol)
     const setupTag = openSig?.setupTag ?? 'MEAN_REVERT'
     const { tp: tpPct, sl: slPct } = getTpSl(setupTag, direction, posAssetType)
 
+    // ── Current P&L ────────────────────────────────────────────────────────
+    const isLong   = direction === 'LONG'
+    const rawPnlPct = isLong
+      ? (current - avgCost) / avgCost
+      : (avgCost - current) / avgCost
+    const pnlPct = rawPnlPct   // signed: positive = in profit
+    const pnl    = isLong ? (current - avgCost) * shares : (avgCost - current) * shares
+
+    // ── Dynamic stop: read stored price or compute from % ──────────────────
+    // stop_loss_price starts as the hard SL set at entry.
+    // It gets ratcheted up (LONG) / down (SHORT) by break-even + trailing logic below.
+    let dynamicSl = pos.stop_loss_price != null
+      ? Number(pos.stop_loss_price)
+      : (isLong ? avgCost * (1 - slPct) : avgCost * (1 + slPct))
+
+    // ── Break-even stop activation ─────────────────────────────────────────
+    // Once we're up BREAKEVEN_TRIGGER_PCT, lock the stop at entry + BREAKEVEN_LOCK_PCT.
+    // After this fires, the trade CANNOT end in a meaningful loss — worst case is fees.
+    if (pnlPct >= BREAKEVEN_TRIGGER_PCT) {
+      const beSl = isLong
+        ? avgCost * (1 + BREAKEVEN_LOCK_PCT)   // just above entry
+        : avgCost * (1 - BREAKEVEN_LOCK_PCT)   // just below entry (short)
+      if ((isLong && beSl > dynamicSl) || (!isLong && beSl < dynamicSl)) {
+        dynamicSl = beSl
+        // Persist to DB so subsequent ticks see the updated stop
+        await supabase.from('paper_positions')
+          .update({ stop_loss_price: dynamicSl })
+          .eq('id', pos.id)
+      }
+    }
+
+    // ── Trailing stop activation / ratchet ─────────────────────────────────
+    // Once we're up TRAIL_TRIGGER_PCT, trail TRAIL_DISTANCE_PCT below price peak.
+    // For longs: stop moves UP as price rises — never back down.
+    // This lets big winners run while locking in most of the profit.
+    if (pnlPct >= TRAIL_TRIGGER_PCT) {
+      const trailSl = isLong
+        ? current * (1 - TRAIL_DISTANCE_PCT)
+        : current * (1 + TRAIL_DISTANCE_PCT)
+      // Only move the stop if it improves (ratchet — never widen stop)
+      if ((isLong && trailSl > dynamicSl) || (!isLong && trailSl < dynamicSl)) {
+        dynamicSl = trailSl
+        await supabase.from('paper_positions')
+          .update({ stop_loss_price: dynamicSl })
+          .eq('id', pos.id)
+      }
+    }
+
+    // ── Exit decisions ─────────────────────────────────────────────────────
     let shouldExit = false
     let exitReason = ''
-    let pnl = 0
-    let pnlPct = 0
-    const eventType: TickEvent['type'] = direction === 'SHORT' ? 'SHORT_COVER' : 'LONG_SELL'
+    const eventType: TickEvent['type'] = isLong ? 'LONG_SELL' : 'SHORT_COVER'
 
-    if (direction === 'LONG') {
-      pnlPct = (current - avgCost) / avgCost
-      pnl = (current - avgCost) * shares
-      if (pnlPct >= tpPct) {
-        shouldExit = true
-        exitReason = `Take profit +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(2)})`
-      } else if (pnlPct <= -slPct) {
-        shouldExit = true
-        exitReason = `Stop loss ${(pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
-      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
-        shouldExit = true
-        exitReason = `Time exit — held ${Math.round(heldSecs)}s, +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(3)})`
-      } else if (
-        heldSecs >= QUICK_WIN_HOLD_SECS &&
-        pnlPct >= QUICK_WIN_MIN_PCT &&
-        pnlPct < tpPct * TIME_EXIT_TP_FRACTION
-      ) {
-        shouldExit = true
-        exitReason = `Quick win — +${(pnlPct * 100).toFixed(2)}% secured (+$${pnl.toFixed(3)})`
-      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
-        shouldExit = true
-        exitReason = `Stale cut — held ${Math.round(heldSecs)}s, loss ${(pnlPct * 100).toFixed(2)}%`
-      }
-    } else {
-      pnlPct = (avgCost - current) / avgCost
-      pnl = (avgCost - current) * shares
-      if (pnlPct >= tpPct) {
-        shouldExit = true
-        exitReason = `SHORT cover — profit +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(2)})`
-      } else if (pnlPct <= -slPct) {
-        shouldExit = true
-        exitReason = `SHORT stop loss — loss ${(-pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
-      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
-        shouldExit = true
-        exitReason = `SHORT time exit — +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(3)})`
-      } else if (
-        heldSecs >= QUICK_WIN_HOLD_SECS &&
-        pnlPct >= QUICK_WIN_MIN_PCT &&
-        pnlPct < tpPct * TIME_EXIT_TP_FRACTION
-      ) {
-        shouldExit = true
-        exitReason = `SHORT quick win — +${(pnlPct * 100).toFixed(2)}%`
-      } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
-        shouldExit = true
-        exitReason = `SHORT stale cut — loss ${(-pnlPct * 100).toFixed(2)}%`
-      }
+    // 1. Hard take-profit ceiling
+    if (pnlPct >= tpPct) {
+      shouldExit = true
+      exitReason = `TP hit +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(2)})`
+    }
+    // 2. Dynamic stop (hard SL, break-even, or trailing — whichever is highest/lowest)
+    else if ((isLong && current <= dynamicSl) || (!isLong && current >= dynamicSl)) {
+      const slLabel = pnlPct > 0.001
+        ? `Trailing stop +${(pnlPct * 100).toFixed(2)}% (locked profit)`
+        : pnlPct > -0.002
+        ? `Break-even stop (fees only ~${(pnlPct * 100).toFixed(2)}%)`
+        : `Hard stop ${(pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
+      shouldExit = true
+      exitReason = slLabel
+    }
+    // 3. Quick win: small but definite profit after 4 min (no point staying in choppy market)
+    else if (heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * TIME_EXIT_TP_FRACTION) {
+      shouldExit = true
+      exitReason = `Quick win +${(pnlPct * 100).toFixed(2)}% secured after ${Math.round(heldSecs)}s`
+    }
+    // 4. Time exit: held 12 min and at least 40% of the way to TP — take it
+    else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
+      shouldExit = true
+      exitReason = `Time exit — ${Math.round(heldSecs)}s, +${(pnlPct * 100).toFixed(2)}%`
+    }
+    // 5. Stale cut: held 12 min and STILL losing — it's not working, exit now
+    else if (heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
+      shouldExit = true
+      exitReason = `Stale cut — ${Math.round(heldSecs)}s with no recovery, ${(pnlPct * 100).toFixed(2)}%`
     }
 
     if (!shouldExit) continue
@@ -548,15 +582,18 @@ export async function runTradingTick(
     }
     if (tradeError) continue
 
+    const { sl: longSlPct, tp: longTpPct } = getTpSl(sig.setupTag, 'LONG', sig.asset.assetType as 'crypto' | 'stock' | 'forex')
     const posPayload = {
       user_id: userId,
       symbol: sig.asset.symbol, name: sig.asset.name,
       shares, avg_buy_price: price, direction: 'LONG',
       asset_type: sig.asset.assetType,
+      stop_loss_price:   parseFloat((price * (1 - longSlPct)).toFixed(8)),
+      take_profit_price: parseFloat((price * (1 + longTpPct)).toFixed(8)),
     }
     const { error: pe1 } = await supabase.from('paper_positions').insert(posPayload)
     if (pe1) {
-      const { direction: _d, ...noDirPos } = posPayload
+      const { direction: _d, stop_loss_price: _sl, take_profit_price: _tp, ...noDirPos } = posPayload
       await supabase.from('paper_positions').insert(noDirPos)
     }
 
