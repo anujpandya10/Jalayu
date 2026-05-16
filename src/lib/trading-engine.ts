@@ -316,6 +316,10 @@ export async function runTradingTick(
     let exitReason = ''
     const eventType: TickEvent['type'] = isLong ? 'LONG_SELL' : 'SHORT_COVER'
 
+    // High-conviction setups run to TP or trailing stop — quick wins cut what could be +2% winners.
+    // VWAP/MEAN_REVERT/FOREX setups still benefit from quick-win exits in choppy markets.
+    const allowQuickWin = !['MOMENTUM_LONG', 'OVERSOLD_BOUNCE'].includes(setupTag)
+
     // 1. Hard take-profit ceiling
     if (pnlPct >= tpPct) {
       shouldExit = true
@@ -331,8 +335,9 @@ export async function runTradingTick(
       shouldExit = true
       exitReason = slLabel
     }
-    // 3. Quick win: small but definite profit after 4 min (no point staying in choppy market)
-    else if (heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * TIME_EXIT_TP_FRACTION) {
+    // 3. Quick win: small but definite profit after 4 min (choppy market — take it and move on)
+    //    Disabled for MOMENTUM_LONG + OVERSOLD_BOUNCE so high-conviction setups run to trailing TP.
+    else if (allowQuickWin && heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * TIME_EXIT_TP_FRACTION) {
       shouldExit = true
       exitReason = `Quick win +${(pnlPct * 100).toFixed(2)}% secured after ${Math.round(heldSecs)}s`
     }

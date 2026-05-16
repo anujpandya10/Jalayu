@@ -51,7 +51,7 @@ export const BREAKEVEN_LOCK_PCT    = 0.001   // lock stop at entry +0.1% (covers
 export const TRAIL_TRIGGER_PCT  = 0.012   // activate trailing when +1.2% in profit
 export const TRAIL_DISTANCE_PCT = 0.005   // trail 0.5% below price peak
 
-export const MIN_TRADE_USD = 10        // skip micro positions that fees eat entirely
+export const MIN_TRADE_USD = 40        // skip tiny positions — fees eat all profit below this
 
 /**
  * Variable position sizing by setup conviction.
@@ -176,7 +176,7 @@ export const MIN_SHORT_SCORE = -4.5
 
 /** Per-setup entry thresholds (momentum confirmed by candles can enter lower) */
 export const SETUP_MIN_LONG_SCORE: Record<string, number> = {
-  MOMENTUM_LONG   : 3.5,
+  MOMENTUM_LONG   : 5.0,   // raised: must score 5+ after tighter stage2 gate
   VWAP_LONG       : 3.8,
   OVERSOLD_BOUNCE : 4.5,
   FOREX_DIP       : 3.5,

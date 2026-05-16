@@ -108,14 +108,15 @@ function stage2Score(
   // ── LONG setups ──────────────────────────────────────────────────────────
 
   // MOMENTUM LONG — trend-following breakout (highest priority for positive 24h movers)
-  // Asset already moving UP with real volume and healthy RSI — ride the wave.
-  if (change24h >= 4 && volSpike >= 2.0 && rsi >= 48 && rsi <= 74 && ema9 > ema21) {
+  // Tightened: requires stronger 24h move, more aggressive volume, and cleaner RSI range.
+  // Only the cleanest setups enter — weaker signals wait for a better candle.
+  if (change24h >= 5.0 && volSpike >= 2.5 && rsi >= 52 && rsi <= 70 && ema9 > ema21) {
     score   += 2.5
     reasons.push(`Momentum breakout: +${change24h.toFixed(1)}% 24h, ${volSpike.toFixed(1)}× vol, RSI ${rsi.toFixed(0)}, EMA9>21`)
     setupTag = 'MOMENTUM_LONG'
   }
-  // OVERSOLD BOUNCE — deep dip with reversal signals
-  else if (rsi < 35 && vwapDevPct < -1.0 && change24h < -5) {
+  // OVERSOLD BOUNCE — deep dip with reversal signals (tightened: RSI<32, further below VWAP)
+  else if (rsi < 32 && vwapDevPct < -1.5 && change24h < -5) {
     score   += 2.5
     reasons.push(`Oversold bounce: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'OVERSOLD_BOUNCE'
