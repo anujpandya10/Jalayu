@@ -7,6 +7,7 @@ interface PortfolioRow {
   last_run_at: string | null
   total_trades_run: number | null
   cash: number
+  auto_trading_enabled?: boolean | null
 }
 
 export async function GET() {
@@ -16,7 +17,7 @@ export async function GET() {
 
   const { data: portfolioRaw } = await supabase
     .from('paper_portfolio')
-    .select('last_run_at, total_trades_run, cash')
+    .select('last_run_at, total_trades_run, cash, auto_trading_enabled')
     .eq('user_id', user.id)
     .single()
 
@@ -31,6 +32,8 @@ export async function GET() {
   return NextResponse.json({
     lastRunAt: portfolio?.last_run_at ?? null,
     totalTradesRun: portfolio?.total_trades_run ?? 0,
+    autoTradingEnabled: portfolio?.auto_trading_enabled !== false,
+    serverCronInterval: 'Every 1 minute on Vercel (works when your Mac is off)',
     assetsScanned: assets.length,
     marketOpen: isUsMarketOpen(),
     topBuys: topBuys.map((s) => ({ symbol: s.asset.symbol, name: s.asset.name, price: s.asset.price, score: s.score, reason: s.reason })),

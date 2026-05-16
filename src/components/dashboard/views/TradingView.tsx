@@ -341,7 +341,9 @@ function PhaseBanner({ phase }: { phase: PhaseInfo | null }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-const TICK_INTERVAL = 8000 // 8 seconds
+/** Server cron runs every 60s on Vercel — client refreshes UI to match */
+const REFRESH_INTERVAL = 15000
+const TICK_INTERVAL = 60000
 
 export default function TradingView() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
@@ -351,7 +353,9 @@ export default function TradingView() {
   const [scanning, setScanning] = useState(false)
   const [activity, setActivity] = useState<ActivityItem[]>([])
   const [lastScan, setLastScan] = useState<number | null>(null)
-  const [countdown, setCountdown] = useState(TICK_INTERVAL / 1000)
+  const [serverLastRun, setServerLastRun] = useState<string | null>(null)
+  const [autoTradingEnabled, setAutoTradingEnabled] = useState(true)
+  const [countdown, setCountdown] = useState(REFRESH_INTERVAL / 1000)
   const [totalTrades, setTotalTrades] = useState(0)
   const [assetsScanned, setAssetsScanned] = useState(0)
   const [pumpCandidates, setPumpCandidates] = useState(0)
@@ -382,13 +386,32 @@ export default function TradingView() {
     if (res.ok) setNews(await res.json())
   }, [])
 
-  const runTick = useCallback(async () => {
+  const loadStatus = useCallback(async () => {
+    const res = await fetch('/api/trading/status')
+    if (!res.ok) return
+    const data = await res.json() as {
+      lastRunAt?: string | null
+      totalTradesRun?: number
+      autoTradingEnabled?: boolean
+    }
+    if (data.lastRunAt) setServerLastRun(data.lastRunAt)
+    if (data.totalTradesRun != null) setTotalTrades(data.totalTradesRun)
+    if (data.autoTradingEnabled != null) setAutoTradingEnabled(data.autoTradingEnabled)
+  }, [])
+
+  const refreshAll = useCallback(async () => {
+    await Promise.all([loadPortfolio(), loadTrades(), loadStatus()])
+    setLastScan(Date.now())
+  }, [loadPortfolio, loadTrades, loadStatus])
+
+  const runTick = useCallback(async (force = false) => {
     if (scanning) return
     setScanning(true)
-    setCountdown(TICK_INTERVAL / 1000)
+    setCountdown(REFRESH_INTERVAL / 1000)
 
     try {
-      const res = await fetch('/api/trading/tick', { method: 'POST' })
+      const url = force ? '/api/trading/tick?force=1' : '/api/trading/tick'
+      const res = await fetch(url, { method: 'POST' })
       if (!res.ok) return
       const data = await res.json() as {
         events: TickEvent[]
@@ -398,9 +421,11 @@ export default function TradingView() {
         currentLongs?: number
         currentShorts?: number
         phase?: PhaseInfo
+        skipped?: boolean
+        tradesExecuted?: number
       }
 
-      addActivity(data.events)
+      if (data.events?.length) addActivity(data.events)
       setAssetsScanned(data.assetsScanned)
       setPumpCandidates(data.pumpCandidates ?? 0)
       setCurrentLongs(data.currentLongs ?? 0)
@@ -412,35 +437,32 @@ export default function TradingView() {
         e.type === 'LONG_BUY' || e.type === 'LONG_SELL' ||
         e.type === 'SHORT_OPEN' || e.type === 'SHORT_COVER'
       )
-      if (hadTrades) {
-        setTotalTrades((n) => n + data.events.filter((e) =>
-          e.type === 'LONG_BUY' || e.type === 'LONG_SELL' ||
-          e.type === 'SHORT_OPEN' || e.type === 'SHORT_COVER'
-        ).length)
-        await Promise.all([loadPortfolio(), loadTrades()])
-      } else {
-        setPortfolio((prev) => prev ? { ...prev, cash: data.cash } : prev)
+      await refreshAll()
+      if ((data.tradesExecuted ?? 0) > 0) {
+        setTotalTrades((n) => n + (data.tradesExecuted ?? 0))
       }
     } catch { /* silent */ } finally {
       setScanning(false)
     }
-  }, [scanning, addActivity, loadPortfolio, loadTrades])
+  }, [scanning, addActivity, refreshAll])
 
   // Initial load
   useEffect(() => {
-    Promise.all([loadPortfolio(), loadTrades(), loadNews()])
+    Promise.all([loadPortfolio(), loadTrades(), loadNews(), loadStatus()])
       .finally(() => setLoading(false))
-  }, [loadPortfolio, loadTrades, loadNews])
+  }, [loadPortfolio, loadTrades, loadNews, loadStatus])
 
-  // Run tick immediately, then every 8s
+  // Refresh portfolio from server cron results; optional client tick when tab is open
   useEffect(() => {
-    const initial = setTimeout(() => { runTick() }, 1500)
-    tickRef.current = setInterval(() => { runTick() }, TICK_INTERVAL)
+    const initial = setTimeout(() => { refreshAll() }, 800)
+    tickRef.current = setInterval(() => { refreshAll() }, REFRESH_INTERVAL)
+    const tickSlow = setInterval(() => { runTick(false) }, TICK_INTERVAL)
     cdRef.current = setInterval(() => {
-      setCountdown((n) => Math.max(0, n - 1))
+      setCountdown((n) => (n <= 0 ? REFRESH_INTERVAL / 1000 : n - 1))
     }, 1000)
     return () => {
       clearTimeout(initial)
+      clearInterval(tickSlow)
       if (tickRef.current) clearInterval(tickRef.current)
       if (cdRef.current) clearInterval(cdRef.current)
     }
@@ -494,11 +516,15 @@ export default function TradingView() {
               color: hasShorts ? '#fdba74' : '#86efac',
               letterSpacing: '0.08em', textTransform: 'uppercase',
             }}>
-              {hasShorts ? 'PUMP & DUMP DETECTOR ACTIVE' : 'Auto-Trader Live'}
+              {autoTradingEnabled ? (hasShorts ? 'SERVER AUTO-TRADE ON' : '24/7 Server Trading') : 'Auto-trade paused'}
+            </span>
+            <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
+            <span style={{ fontSize: 12, color: '#94a3b8' }} title="Runs on Vercel every minute — Mac can be off">
+              {autoTradingEnabled ? '☁️ Cloud cron ~1min' : 'Enable in Supabase'}
             </span>
             <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>
-              {scanning ? '⟳ Scanning…' : `${assetsScanned} assets scanned`}
+              {scanning ? '⟳ Updating…' : `${assetsScanned || '—'} assets`}
             </span>
             {pumpCandidates > 0 && (
               <>
@@ -510,8 +536,16 @@ export default function TradingView() {
             )}
             <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>
-              Next scan: <strong style={{ color: '#e2e8f0' }}>{countdown}s</strong>
+              UI refresh: <strong style={{ color: '#e2e8f0' }}>{countdown}s</strong>
             </span>
+            {serverLastRun && (
+              <>
+                <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
+                <span style={{ fontSize: 12, color: '#64748b' }}>
+                  Server: {timeAgo(new Date(serverLastRun).getTime())}
+                </span>
+              </>
+            )}
             <span style={{ fontSize: 12, color: '#64748b' }}>·</span>
             <span style={{ fontSize: 12, color: '#94a3b8' }}>
               Trades: <strong style={{ color: '#fcd34d' }}>{totalTrades}</strong>
@@ -524,7 +558,7 @@ export default function TradingView() {
             )}
           </div>
           <button
-            onClick={() => { runTick() }}
+            onClick={() => { runTick(true) }}
             disabled={scanning}
             style={{
               background: 'none', border: '1px solid #334155', borderRadius: 8,
