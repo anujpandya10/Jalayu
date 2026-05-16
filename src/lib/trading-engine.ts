@@ -17,6 +17,7 @@ import {
   MIN_TRADE_USD,
   TIME_EXIT_SECS,
   STALE_EXIT_SECS,
+  SYMBOL_COOLDOWN_SECS,
   SEED_CAPITAL,
 } from '@/lib/trading-config'
 
@@ -218,9 +219,10 @@ export async function runTradingTick(
       } else if (pnlPct <= -slPct) {
         shouldExit = true
         exitReason = `Stop loss ${(pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
-      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct > 0.0001) {
+      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * 0.5) {
+        // Only time-exit if at least halfway to TP — never grab dust profits that fees eat
         shouldExit = true
-        exitReason = `Time exit — held ${Math.round(heldSecs)}s, +$${pnl.toFixed(3)}`
+        exitReason = `Time exit — held ${Math.round(heldSecs)}s, +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(3)})`
       } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < 0) {
         shouldExit = true
         exitReason = `Stale cut — held ${Math.round(heldSecs)}s, loss ${(pnlPct * 100).toFixed(2)}%`
@@ -230,13 +232,13 @@ export async function runTradingTick(
       pnl = (avgCost - current) * shares
       if (pnlPct >= tpPct) {
         shouldExit = true
-        exitReason = `SHORT cover — profit +$${pnl.toFixed(2)}`
+        exitReason = `SHORT cover — profit +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(2)})`
       } else if (pnlPct <= -slPct) {
         shouldExit = true
-        exitReason = `SHORT stop loss — loss $${pnl.toFixed(2)}`
-      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct > 0.0001) {
+        exitReason = `SHORT stop loss — loss ${(-pnlPct * 100).toFixed(2)}% ($${pnl.toFixed(2)})`
+      } else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * 0.5) {
         shouldExit = true
-        exitReason = `SHORT time exit — +$${pnl.toFixed(3)}`
+        exitReason = `SHORT time exit — +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(3)})`
       } else if (heldSecs >= STALE_EXIT_SECS && pnlPct < 0) {
         shouldExit = true
         exitReason = `SHORT stale cut — loss ${(-pnlPct * 100).toFixed(2)}%`
@@ -291,6 +293,18 @@ export async function runTradingTick(
 
   const held = heldRaw ?? []
   const heldSet = new Set(held.map((r: { symbol: string }) => r.symbol))
+
+  // ── Symbol cooldown: block re-entry for SYMBOL_COOLDOWN_SECS after any exit ─
+  // This stops the "LINK loses → immediately re-enters LINK" loop.
+  const cooldownCutoff = new Date(now - SYMBOL_COOLDOWN_SECS * 1000).toISOString()
+  const { data: recentExits } = await supabase
+    .from('paper_trades')
+    .select('symbol')
+    .eq('user_id', userId)
+    .in('action', ['SELL', 'BUY'])  // SELL = long exit, BUY = short cover
+    .neq('pnl', null)               // only closed trades (not entries)
+    .gte('created_at', cooldownCutoff)
+  const cooldownSet = new Set((recentExits ?? []).map((t: { symbol: string }) => t.symbol))
   let currentLongs = 0
   let currentShorts = 0
   for (const h of held) {
@@ -309,10 +323,12 @@ export async function runTradingTick(
 
   const longSignals = rankLongs(assets)
     .filter((s) => !heldSet.has(s.asset.symbol))
+    .filter((s) => !cooldownSet.has(s.asset.symbol))  // respect post-exit cooldown
     .filter(filterByPhase)
 
   const shortSignals = rankShorts(assets)
     .filter((s) => !heldSet.has(s.asset.symbol))
+    .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
 
   // ── Helper: check if this setup tag is disabled by user ──────────────────
