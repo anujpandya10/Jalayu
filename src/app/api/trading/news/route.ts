@@ -32,7 +32,7 @@ export async function GET() {
     const url = 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=AAPL,TSLA,MSFT,NVDA,SPY&region=US&lang=en-US'
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0' },
-      next: { revalidate: 300 },
+      cache: 'no-store',
     })
 
     if (!res.ok) throw new Error(`RSS fetch failed: ${res.status}`)

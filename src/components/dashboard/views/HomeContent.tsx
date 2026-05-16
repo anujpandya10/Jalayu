@@ -59,6 +59,63 @@ const MOOD_EMOJI:  Record<number, string> = { 1: '😔', 2: '😕', 3: '😐', 4
 const MOOD_LABEL:  Record<number, string> = { 1: 'Rough', 2: 'Low', 3: 'Okay', 4: 'Good', 5: 'Great' }
 const AMBER = '#C4834A'
 
+const QUOTES: { text: string; author: string }[] = [
+  { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },
+  { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
+  { text: "Everything you've ever wanted is on the other side of fear.", author: "George Addair" },
+  { text: "Success is not final, failure is not fatal — it is the courage to continue that counts.", author: "Winston Churchill" },
+  { text: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
+  { text: "Don't watch the clock; do what it does — keep going.", author: "Sam Levenson" },
+  { text: "Hard work beats talent when talent doesn't work hard.", author: "Tim Notke" },
+  { text: "The difference between ordinary and extraordinary is that little extra.", author: "Jimmy Johnson" },
+  { text: "Discipline is the bridge between goals and accomplishment.", author: "Jim Rohn" },
+  { text: "You don't have to be great to start, but you have to start to be great.", author: "Zig Ziglar" },
+  { text: "Energy and persistence conquer all things.", author: "Benjamin Franklin" },
+  { text: "The harder I work, the luckier I get.", author: "Samuel Goldwyn" },
+  { text: "Your time is limited, so don't waste it living someone else's life.", author: "Steve Jobs" },
+  { text: "Push yourself, because no one else is going to do it for you.", author: "Unknown" },
+  { text: "The future depends on what you do today.", author: "Mahatma Gandhi" },
+  { text: "Little by little, one travels far.", author: "J.R.R. Tolkien" },
+  { text: "Act as if what you do makes a difference. It does.", author: "William James" },
+  { text: "Success usually comes to those who are too busy to be looking for it.", author: "Henry David Thoreau" },
+  { text: "Don't limit your challenges — challenge your limits.", author: "Jerry Dunn" },
+  { text: "All our dreams can come true, if we have the courage to pursue them.", author: "Walt Disney" },
+  { text: "The best time to plant a tree was twenty years ago. The second best time is now.", author: "Chinese Proverb" },
+  { text: "What you do today can improve all your tomorrows.", author: "Ralph Marston" },
+  { text: "You are never too old to set another goal or dream a new dream.", author: "C.S. Lewis" },
+  { text: "Believe you can and you're halfway there.", author: "Theodore Roosevelt" },
+  { text: "Strive not to be a success, but rather to be of value.", author: "Albert Einstein" },
+  { text: "Start where you are. Use what you have. Do what you can.", author: "Arthur Ashe" },
+  { text: "Simplicity is the ultimate sophistication.", author: "Leonardo da Vinci" },
+  { text: "The only limit to our realization of tomorrow is our doubts of today.", author: "Franklin D. Roosevelt" },
+  { text: "Life is what happens when you're busy making other plans.", author: "John Lennon" },
+  { text: "Spread love everywhere you go. Let no one ever come to you without leaving happier.", author: "Mother Teresa" },
+  { text: "When you reach the end of your rope, tie a knot in it and hang on.", author: "Franklin D. Roosevelt" },
+  { text: "In the middle of every difficulty lies opportunity.", author: "Albert Einstein" },
+  { text: "Too many of us are not living our dreams because we are living our fears.", author: "Les Brown" },
+  { text: "I have learned over the years that when one's mind is made up, this diminishes fear.", author: "Rosa Parks" },
+  { text: "It's not whether you get knocked down, it's whether you get up.", author: "Vince Lombardi" },
+  { text: "Winning isn't everything, but wanting to win is.", author: "Vince Lombardi" },
+  { text: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
+  { text: "The most common way people give up their power is by thinking they don't have any.", author: "Alice Walker" },
+  { text: "Even if you're on the right track, you'll get run over if you just sit there.", author: "Will Rogers" },
+  { text: "Darkness cannot drive out darkness; only light can do that.", author: "Martin Luther King Jr." },
+  { text: "Perfection is not attainable, but if we chase perfection we can catch excellence.", author: "Vince Lombardi" },
+  { text: "Life shrinks or expands in proportion to one's courage.", author: "Anaïs Nin" },
+  { text: "If you want to lift yourself up, lift up someone else.", author: "Booker T. Washington" },
+  { text: "I am not a product of my circumstances. I am a product of my decisions.", author: "Stephen Covey" },
+  { text: "Every strike brings me closer to the next home run.", author: "Babe Ruth" },
+  { text: "Whatever the mind of man can conceive and believe, it can achieve.", author: "Napoleon Hill" },
+  { text: "Eighty percent of success is showing up.", author: "Woody Allen" },
+  { text: "I've missed more than 9,000 shots in my career. That's why I succeed.", author: "Michael Jordan" },
+  { text: "Don't be afraid to give up the good to go for the great.", author: "John D. Rockefeller" },
+  { text: "The question isn't who is going to let me — it's who is going to stop me.", author: "Ayn Rand" },
+]
+
+function randomQuote(): { text: string; author: string } {
+  return QUOTES[Math.floor(Math.random() * QUOTES.length)]
+}
+
 function formatEventTime(start: string | null, todayStr: string): { label: string; isToday: boolean; isTomorrow: boolean } {
   if (!start) return { label: 'All day', isToday: false, isTomorrow: false }
   const d = new Date(start)
@@ -164,6 +221,7 @@ export default function HomeContent({
   const [tradingSnap, setTradingSnap] = useState<TradingSnap | null>(null)
   const [calEvents,   setCalEvents]   = useState<CalEvent[]>([])
   const [calConnected, setCalConnected] = useState<boolean | null>(null)
+  const [quote] = useState<{ text: string; author: string }>(randomQuote)
   const [voiceListening, setVoiceListening] = useState(false)
   const homeRecRef       = useRef<HomeSpeechRec | null>(null)
   const homeVoiceBaseRef = useRef('')
@@ -562,6 +620,33 @@ export default function HomeContent({
               CENTER COLUMN — main widget grid
           ══════════════════════════════════════════ */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+            {/* ── Daily quote ── */}
+            <div style={{
+              background: `linear-gradient(135deg, ${AMBER}12 0%, transparent 60%)`,
+              border: `1px solid ${AMBER}28`,
+              borderRadius: 18, padding: '14px 18px',
+              position: 'relative', overflow: 'hidden',
+            }}>
+              <div style={{
+                position: 'absolute', top: -10, right: -10, fontSize: 60,
+                color: AMBER, opacity: 0.07, lineHeight: 1, pointerEvents: 'none',
+                fontFamily: 'Georgia, serif', fontStyle: 'italic',
+              }}>&ldquo;</div>
+              <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px' }}>
+                ✦ Daily Inspiration
+              </p>
+              <p style={{
+                fontFamily: 'var(--font-lora), Georgia, serif',
+                fontStyle: 'italic', fontSize: 14, lineHeight: 1.75,
+                color: 'var(--text)', margin: '0 0 8px', fontWeight: 500,
+              }}>
+                &ldquo;{quote.text}&rdquo;
+              </p>
+              <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 600 }}>
+                — {quote.author}
+              </p>
+            </div>
 
             {/* Row: Today + Mood */}
             <div className="w2">

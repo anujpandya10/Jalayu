@@ -388,6 +388,9 @@ export default function TradingView() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
   const [news, setNews] = useState<NewsItem[]>([])
+  const [newsRefreshing, setNewsRefreshing] = useState(false)
+  const [newsLastFetched, setNewsLastFetched] = useState<number | null>(null)
+  const [newItemKeys, setNewItemKeys] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [scanning, setScanning] = useState(false)
   const [activity, setActivity] = useState<ActivityItem[]>([])
@@ -428,9 +431,26 @@ export default function TradingView() {
     }
   }, [])
 
-  const loadNews = useCallback(async () => {
-    const res = await fetch('/api/trading/news')
-    if (res.ok) setNews(await res.json())
+  const loadNews = useCallback(async (silent = false) => {
+    if (!silent) setNewsRefreshing(true)
+    try {
+      const res = await fetch('/api/trading/news', { cache: 'no-store' })
+      if (!res.ok) return
+      const fresh: NewsItem[] = await res.json()
+      setNews((prev) => {
+        const prevTitles = new Set(prev.map((n) => n.title))
+        const newKeys = new Set(fresh.filter((n) => !prevTitles.has(n.title)).map((n) => n.title))
+        if (newKeys.size > 0) {
+          setNewItemKeys(newKeys)
+          // clear NEW badges after 30s
+          setTimeout(() => setNewItemKeys(new Set()), 30_000)
+        }
+        return fresh
+      })
+      setNewsLastFetched(Date.now())
+    } finally {
+      setNewsRefreshing(false)
+    }
   }, [])
 
   const loadStatus = useCallback(async () => {
@@ -535,6 +555,12 @@ export default function TradingView() {
       if (cdRef.current) clearInterval(cdRef.current)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh news every 5 minutes while tab is open
+  useEffect(() => {
+    const id = setInterval(() => { loadNews(true) }, 5 * 60 * 1000)
+    return () => clearInterval(id)
+  }, [loadNews])
 
   const totalPnL = portfolio?.totalPnL ?? 0
   const totalPnLPct = portfolio?.totalPnLPct ?? 0
@@ -775,26 +801,103 @@ export default function TradingView() {
 
         {/* ── MARKET NEWS ── */}
         <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: '18px 20px' }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>
-            Market News
+          {/* Header row */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap', gap: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Market News
+              </span>
+              {newsRefreshing && (
+                <span style={{ fontSize: 11, color: '#C4834A', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⟳</span>
+                  Refreshing…
+                </span>
+              )}
+              {newsLastFetched && !newsRefreshing && (
+                <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
+                  Updated {Math.round((Date.now() - newsLastFetched) / 60000) < 1
+                    ? 'just now'
+                    : `${Math.round((Date.now() - newsLastFetched) / 60000)}m ago`}
+                </span>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
+                🔄 Auto-refreshes every 5 min
+              </span>
+              <button
+                onClick={() => loadNews()}
+                disabled={newsRefreshing}
+                style={{
+                  fontSize: 11, fontWeight: 600, padding: '3px 10px',
+                  background: 'var(--morning)', border: '1px solid var(--border)',
+                  borderRadius: 99, cursor: newsRefreshing ? 'not-allowed' : 'pointer',
+                  color: 'var(--text-2)', opacity: newsRefreshing ? 0.5 : 1,
+                }}
+              >
+                Refresh now
+              </button>
+            </div>
           </div>
+
           {news.length === 0 ? (
-            <div style={{ color: 'var(--text-3)', fontSize: 13 }}>Loading news…</div>
+            <div style={{ color: 'var(--text-3)', fontSize: 13, padding: '12px 0' }}>
+              {newsRefreshing ? 'Loading latest news…' : 'No news loaded yet.'}
+            </div>
           ) : (
-            news.slice(0, 8).map((n, i) => (
-              <a key={i} href={n.link} target="_blank" rel="noreferrer" style={{
-                display: 'block', textDecoration: 'none',
-                padding: '10px 0', borderBottom: i < 7 ? '1px solid var(--border)' : 'none',
-              }}>
-                <div style={{ fontSize: 13, color: 'var(--text)', fontWeight: 500, lineHeight: 1.4,
-                  overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
-                  {n.title}
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3 }}>
-                  {n.source} · {n.pubDate}
-                </div>
-              </a>
-            ))
+            news.slice(0, 8).map((n, i) => {
+              const isNew = newItemKeys.has(n.title)
+              // Try to detect if it's recent (within 2h) from pubDate
+              let isRecent = false
+              try {
+                const pub = new Date(n.pubDate)
+                isRecent = !isNaN(pub.getTime()) && (Date.now() - pub.getTime()) < 2 * 60 * 60 * 1000
+              } catch { /* ok */ }
+
+              return (
+                <a
+                  key={n.title + i}
+                  href={n.link}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: 'block', textDecoration: 'none',
+                    padding: '10px 0',
+                    borderBottom: i < Math.min(news.length, 8) - 1 ? '1px solid var(--border)' : 'none',
+                    animation: isNew ? 'fadeSlide 0.4s ease forwards' : 'none',
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                    {(isNew || isRecent) && (
+                      <span style={{
+                        flexShrink: 0, marginTop: 2,
+                        fontSize: 8, fontWeight: 800, padding: '2px 5px',
+                        background: isNew ? '#6366F1' : '#22C55E',
+                        color: '#fff', borderRadius: 4, letterSpacing: '0.05em',
+                      }}>
+                        {isNew ? 'NEW' : 'LIVE'}
+                      </span>
+                    )}
+                    <div style={{ flex: 1 }}>
+                      <div style={{
+                        fontSize: 13, color: 'var(--text)', fontWeight: 500, lineHeight: 1.45,
+                        overflow: 'hidden', display: '-webkit-box',
+                        WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
+                      }}>
+                        {n.title}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 3, display: 'flex', gap: 6 }}>
+                        <span style={{ fontWeight: 600 }}>{n.source}</span>
+                        <span>·</span>
+                        <span>{isRecent
+                          ? `${Math.round((Date.now() - new Date(n.pubDate).getTime()) / 60000)}m ago`
+                          : n.pubDate}</span>
+                      </div>
+                    </div>
+                  </div>
+                </a>
+              )
+            })
           )}
         </div>
 
