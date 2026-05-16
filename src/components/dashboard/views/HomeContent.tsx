@@ -6,7 +6,7 @@ import type { Profile, Task, Mood, Reminder } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 import CustomizableHomeGrid from '@/components/dashboard/home/CustomizableHomeGrid'
 import { renderHomeWidget, type HomeWidgetContext } from '@/components/dashboard/home/home-widgets'
-import type { HomeWidgetId } from '@/lib/dashboard-layout'
+import type { HomeWidgetId, WidgetSize } from '@/lib/dashboard-layout'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -386,7 +386,8 @@ export default function HomeContent({
   )
 
   const renderWidget = useCallback(
-    (id: HomeWidgetId, column: 'left' | 'center' | 'right' | 'mobile') => renderHomeWidget(id, column, widgetCtx),
+    (id: HomeWidgetId, column: 'left' | 'center' | 'right' | 'mobile', size: WidgetSize) =>
+      renderHomeWidget(id, column, size, widgetCtx),
     [widgetCtx],
   )
 
@@ -442,7 +443,21 @@ export default function HomeContent({
             gap: 16px;
             align-items: start;
           }
-          .home-right { display: flex !important; flex-direction: column; gap: 12px; }
+          .home-right { display: grid !important; }
+        }
+
+        /* iOS-style widget grid (center / right / mobile) */
+        .widget-grid-col {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          align-items: start;
+        }
+        .widget-span-full { grid-column: 1 / -1; }
+        .widget-span-half { grid-column: span 1; min-width: 0; }
+        @media (max-width: 420px) {
+          .widget-grid-col { grid-template-columns: 1fr; }
+          .widget-span-half { grid-column: 1 / -1; }
         }
 
         /* widget inner grid */

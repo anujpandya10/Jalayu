@@ -6,7 +6,7 @@ import {
   BookOpen, Brain, Users, FlaskConical, BarChart2, Zap, Target,
 } from 'lucide-react'
 import type { Profile, Task, Mood, Reminder } from '@/lib/types'
-import type { HomeWidgetId } from '@/lib/dashboard-layout'
+import type { HomeWidgetId, WidgetSize } from '@/lib/dashboard-layout'
 import ScheduleCompact from '@/components/dashboard/ScheduleCompact'
 import HealthCompact from '@/components/dashboard/HealthCompact'
 import ReflectionCompact from '@/components/dashboard/ReflectionCompact'
@@ -213,9 +213,28 @@ export interface HomeWidgetContext {
   startHomeVoice: () => void
 }
 
-export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: HomeWidgetContext): React.ReactNode | null {
+function identityClockSize(size: WidgetSize, fallback: number) {
+  if (size === 'small') return 88
+  if (size === 'large') return Math.max(fallback, 148)
+  return fallback
+}
+
+function identityOrbSize(size: WidgetSize) {
+  if (size === 'small') return 72
+  if (size === 'large') return 120
+  return 100
+}
+
+export function renderHomeWidget(
+  id: HomeWidgetId,
+  column: ContainerId,
+  size: WidgetSize,
+  ctx: HomeWidgetContext,
+): React.ReactNode | null {
   const pnlPositive = (ctx.tradingSnap?.totalPnl ?? 0) >= 0
   const pnlColor = pnlPositive ? '#22C55E' : '#EF4444'
+  const compact = size === 'small'
+  const expanded = size === 'large'
 
   switch (id) {
     case 'identity':
@@ -225,25 +244,27 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
             background: 'var(--surface)',
             border: '1px solid var(--border)',
             borderRadius: 20,
-            padding: '20px 18px 16px',
+            padding: compact ? '14px 14px 12px' : '20px 18px 16px',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
             textAlign: 'center',
           }}
         >
-          <GalaxyOrb state={ctx.orbState} size={100} />
-          <p style={{ fontSize: 18, fontWeight: 700, color: 'var(--text)', margin: '10px 0 8px', letterSpacing: '-0.02em' }}>
-            {ctx.greeting}
-            {ctx.firstName ? `, ${ctx.firstName}` : ''}
-          </p>
+          <GalaxyOrb state={ctx.orbState} size={identityOrbSize(size)} />
+          {!compact && (
+            <p style={{ fontSize: expanded ? 20 : 18, fontWeight: 700, color: 'var(--text)', margin: '10px 0 8px', letterSpacing: '-0.02em' }}>
+              {ctx.greeting}
+              {ctx.firstName ? `, ${ctx.firstName}` : ''}
+            </p>
+          )}
           <div className="porsche-clock-wrap">
-            <PorscheClock size={ctx.clockSize} />
+            <PorscheClock size={identityClockSize(size, ctx.clockSize)} />
           </div>
-          {ctx.chapter && (
+          {!compact && ctx.chapter && (
             <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '3px 0 0', fontStyle: 'italic', opacity: 0.8 }}>{ctx.chapter}</p>
           )}
-          {(ctx.profile?.streak_count ?? 0) > 0 && (
+          {!compact && (ctx.profile?.streak_count ?? 0) > 0 && (
             <div
               style={{
                 marginTop: 10,
@@ -265,16 +286,21 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
 
     case 'morning_note':
       return (
-        <div style={{ background: 'var(--morning)', border: `1px solid ${AMBER}28`, borderRadius: 18, padding: '14px 16px', boxShadow: `0 0 20px ${AMBER}0A` }}>
-          <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px' }}>✦ From Jalayu</p>
+        <div style={{ background: 'var(--morning)', border: `1px solid ${AMBER}28`, borderRadius: 18, padding: compact ? '10px 12px' : '14px 16px', boxShadow: `0 0 20px ${AMBER}0A` }}>
+          {!compact && <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px' }}>✦ From Jalayu</p>}
           {ctx.noteLoading ? (
             <Dots />
           ) : (
-            <p style={{ fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic', fontSize: 13, lineHeight: 1.8, color: 'var(--text-2)', margin: 0 }}>
+            <p style={{
+              fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic',
+              fontSize: compact ? 12 : 13, lineHeight: 1.8, color: 'var(--text-2)', margin: 0,
+              display: '-webkit-box', WebkitLineClamp: compact ? 2 : expanded ? 6 : 4,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}>
               {ctx.morningNote || 'A new day to work toward what matters.'}
             </p>
           )}
-          {!ctx.noteLoading && (
+          {!ctx.noteLoading && !compact && (
             <button
               type="button"
               onClick={() => ctx.setShowChatPanel(true)}
@@ -288,8 +314,8 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
 
     case 'ask_jalayu':
       return (
-        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: '14px 16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10 }}>
+        <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: compact ? '10px 12px' : '14px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: compact ? 6 : 10 }}>
             <div style={{ width: 22, height: 22, borderRadius: 6, background: `${AMBER}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Zap size={11} color={AMBER} />
             </div>
@@ -307,7 +333,7 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
           </div>
           {!ctx.submitted ? (
             <>
-              {ctx.focus && (
+              {!compact && ctx.focus && (
                 <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 6px', fontStyle: 'italic', lineHeight: 1.5 }}>&ldquo;{ctx.focus}&rdquo;</p>
               )}
               <div
@@ -368,12 +394,18 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
 
     case 'quote':
       return (
-        <div style={{ background: `linear-gradient(135deg, ${AMBER}12 0%, transparent 60%)`, border: `1px solid ${AMBER}28`, borderRadius: 18, padding: '14px 18px', position: 'relative', overflow: 'hidden' }}>
-          <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px', textAlign: 'center' }}>✦ Daily Inspiration</p>
-          <p style={{ fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic', fontSize: 14, lineHeight: 1.75, color: 'var(--text)', margin: '0 0 8px', fontWeight: 500, textAlign: 'center' }}>
+        <div style={{ background: `linear-gradient(135deg, ${AMBER}12 0%, transparent 60%)`, border: `1px solid ${AMBER}28`, borderRadius: 18, padding: compact ? '10px 12px' : '14px 18px', position: 'relative', overflow: 'hidden' }}>
+          {!compact && <p style={{ fontSize: 9, fontWeight: 700, color: AMBER, textTransform: 'uppercase', letterSpacing: '0.12em', margin: '0 0 8px', textAlign: 'center' }}>✦ Daily Inspiration</p>}
+          <p style={{
+            fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic',
+            fontSize: compact ? 12 : expanded ? 15 : 14, lineHeight: 1.75, color: 'var(--text)',
+            margin: compact ? 0 : '0 0 8px', fontWeight: 500, textAlign: 'center',
+            display: '-webkit-box', WebkitLineClamp: compact ? 3 : expanded ? 5 : 4,
+            WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>
             &ldquo;{ctx.quote.text}&rdquo;
           </p>
-          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 600, textAlign: 'center' }}>— {ctx.quote.author}</p>
+          {!compact && <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, fontWeight: 600, textAlign: 'center' }}>— {ctx.quote.author}</p>}
         </div>
       )
 
@@ -383,6 +415,7 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
           reflection={ctx.todayReflection}
           onOpenReflect={() => ctx.setSidebarView('memory')}
           variant={column === 'right' ? 'sidebar' : 'default'}
+          size={size}
         />
       )
 
@@ -391,15 +424,15 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
         <W accent={AMBER} icon={Heart} label="Mood" onClick={() => ctx.setSidebarView('wellness')}>
           {ctx.todayMood ? (
             <>
-              <p style={{ fontSize: 32, lineHeight: 1, margin: '0 0 3px' }}>{MOOD_EMOJI[ctx.todayMood.score]}</p>
-              <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>{MOOD_LABEL[ctx.todayMood.score]}</p>
-              {ctx.yesterdayMood && <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '5px 0 0' }}>Yesterday {MOOD_EMOJI[ctx.yesterdayMood.score]}</p>}
+              <p style={{ fontSize: compact ? 26 : 32, lineHeight: 1, margin: '0 0 3px' }}>{MOOD_EMOJI[ctx.todayMood.score]}</p>
+              {!compact && <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>{MOOD_LABEL[ctx.todayMood.score]}</p>}
+              {expanded && ctx.yesterdayMood && <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '5px 0 0' }}>Yesterday {MOOD_EMOJI[ctx.yesterdayMood.score]}</p>}
             </>
           ) : (
             <>
-              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 7px' }}>Log today</p>
-              <div style={{ display: 'flex', gap: 3 }}>
-                {MOODS.map(({ score, emoji, label }) => (
+              {!compact && <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: '0 0 7px' }}>Log today</p>}
+              <div style={{ display: 'flex', gap: compact ? 2 : 3, flexWrap: 'wrap' }}>
+                {(compact ? MOODS.filter((m) => m.score === 3 || m.score === 5) : MOODS).map(({ score, emoji, label }) => (
                   <button
                     key={score}
                     type="button"
@@ -426,6 +459,7 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
           medications={ctx.medications}
           reminders={ctx.reminders}
           onOpenHealth={() => ctx.setSidebarView('health')}
+          size={size}
         />
       )
 
@@ -438,24 +472,30 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
           onAddTask={ctx.onAddTask}
           onToggleTask={ctx.onToggleTask}
           onOpenFullCalendar={() => ctx.setSidebarView('calendar')}
+          size={size}
         />
       )
 
     case 'trading':
       return (
-        <W accent={pnlColor} icon={ctx.tradingSnap && pnlPositive ? TrendingUp : TrendingDown} label="Trading Portfolio" onClick={() => ctx.setSidebarView('trading')}>
+        <W accent={pnlColor} icon={ctx.tradingSnap && pnlPositive ? TrendingUp : TrendingDown} label="Trading" onClick={() => ctx.setSidebarView('trading')}>
           <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
             <div>
-              <p style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 3px' }}>
+              <p style={{ fontSize: compact ? 22 : 28, fontWeight: 800, color: 'var(--text)', lineHeight: 1, margin: '0 0 3px' }}>
                 {ctx.tradingSnap ? `$${ctx.tradingSnap.netWorth.toFixed(2)}` : '—'}
               </p>
-              <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
-                Net worth · {ctx.tradingSnap?.openPositions ?? 0} open · {ctx.tradingSnap?.totalTrades ?? 0} trades
-              </p>
+              {!compact && (
+                <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0 }}>
+                  {ctx.tradingSnap?.openPositions ?? 0} open · {ctx.tradingSnap?.totalTrades ?? 0} trades
+                </p>
+              )}
             </div>
             {ctx.tradingSnap && (
               <div style={{ textAlign: 'right' }}>
-                <p style={{ fontSize: 20, fontWeight: 700, color: pnlColor, margin: 0 }}>{pnlPositive ? '+' : ''}{ctx.tradingSnap.totalPnl.toFixed(2)}</p>
+                <p style={{ fontSize: compact ? 16 : 20, fontWeight: 700, color: pnlColor, margin: 0 }}>{pnlPositive ? '+' : ''}{ctx.tradingSnap.totalPnl.toFixed(2)}</p>
+                {expanded && (
+                  <p style={{ fontSize: 10, color: 'var(--text-3)', margin: '2px 0 0' }}>{pnlPositive ? '+' : ''}{ctx.tradingSnap.totalPnlPct.toFixed(1)}%</p>
+                )}
               </div>
             )}
           </div>
@@ -466,7 +506,12 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
       if (!ctx.profile?.biggest_goal) return null
       return (
         <W accent={AMBER} icon={Target} label="North star" onClick={() => ctx.setSidebarView('settings')}>
-          <p style={{ fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic', fontSize: 13, lineHeight: 1.55, color: 'var(--text)', margin: 0 }}>
+          <p style={{
+            fontFamily: 'var(--font-lora), Georgia, serif', fontStyle: 'italic',
+            fontSize: compact ? 12 : expanded ? 14 : 13, lineHeight: 1.55, color: 'var(--text)', margin: 0,
+            display: '-webkit-box', WebkitLineClamp: compact ? 2 : expanded ? 5 : 3,
+            WebkitBoxOrient: 'vertical', overflow: 'hidden',
+          }}>
             {ctx.profile.biggest_goal}
           </p>
         </W>
@@ -475,19 +520,23 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
     case 'progress':
       return (
         <W accent={AMBER} icon={BarChart2} label="Progress" onClick={() => ctx.setSidebarView('progress')}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: expanded ? 8 : 0 }}>
             <div>
-              <p style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', margin: '0 0 2px' }}>{ctx.profile?.growth_score ?? 0}</p>
-              <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>growth points</p>
+              <p style={{ fontSize: compact ? 18 : 22, fontWeight: 800, color: 'var(--text)', margin: '0 0 2px' }}>{ctx.profile?.growth_score ?? 0}</p>
+              {!compact && <p style={{ fontSize: 10, color: 'var(--text-2)', margin: 0 }}>growth</p>}
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <p style={{ fontSize: 16, fontWeight: 700, color: AMBER, margin: 0 }}>{ctx.weekPct}%</p>
-              <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>this week</p>
+            {!compact && (
+              <div style={{ textAlign: 'right' }}>
+                <p style={{ fontSize: 16, fontWeight: 700, color: AMBER, margin: 0 }}>{ctx.weekPct}%</p>
+                <p style={{ fontSize: 10, color: 'var(--text-3)', margin: 0 }}>this week</p>
+              </div>
+            )}
+          </div>
+          {expanded && (
+            <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${ctx.weekPct}%`, background: `linear-gradient(90deg, ${AMBER}, #67E8F9)`, borderRadius: 99 }} />
             </div>
-          </div>
-          <div style={{ height: 4, background: 'var(--border)', borderRadius: 99, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${ctx.weekPct}%`, background: `linear-gradient(90deg, ${AMBER}, #67E8F9)`, borderRadius: 99 }} />
-          </div>
+          )}
         </W>
       )
 
@@ -495,8 +544,8 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
       return (
         <ExploreLinks
           items={[
-            { icon: Brain, label: 'AI insights', sub: 'Patterns from your data', onClick: () => ctx.setSidebarView('insights') },
-            { icon: Users, label: 'Your circle', sub: 'Contacts & relationships', onClick: () => ctx.setSidebarView('people') },
+            { icon: Brain, label: 'AI insights', sub: compact ? 'Patterns' : 'Patterns from your data', onClick: () => ctx.setSidebarView('insights') },
+            ...(compact ? [] : [{ icon: Users, label: 'Your circle', sub: 'Contacts & relationships', onClick: () => ctx.setSidebarView('people') }]),
           ]}
         />
       )
@@ -504,16 +553,16 @@ export function renderHomeWidget(id: HomeWidgetId, column: ContainerId, ctx: Hom
     case 'strategy_lab':
       return (
         <W accent={AMBER} icon={FlaskConical} label="Strategy Lab" onClick={() => ctx.setSidebarView('strategylab')}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Win rates by setup</p>
-          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>
+          <p style={{ fontSize: compact ? 12 : 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>{compact ? 'Strategies' : 'Win rates by setup'}</p>
+          {!compact && <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Enable / disable strategies</p>}
         </W>
       )
 
     case 'memory':
       return (
         <W accent={AMBER} icon={BookOpen} label="Memory" onClick={() => ctx.setSidebarView('memory')}>
-          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>Second brain</p>
-          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Reflect & save notes</p>
+          <p style={{ fontSize: compact ? 12 : 14, fontWeight: 600, color: 'var(--text)', margin: '0 0 3px' }}>{compact ? 'Memory' : 'Second brain'}</p>
+          {!compact && <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0, lineHeight: 1.5 }}>Reflect & save notes</p>}
         </W>
       )
 

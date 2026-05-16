@@ -1,13 +1,17 @@
 'use client'
 
 import { GripVertical, X } from 'lucide-react'
-import type { HomeWidgetId } from '@/lib/dashboard-layout'
-import { WIDGET_LABELS } from '@/lib/dashboard-layout'
+import type { HomeWidgetId, WidgetSize } from '@/lib/dashboard-layout'
+import { WIDGET_LABELS, SIZE_LABELS } from '@/lib/dashboard-layout'
+
+const SIZES: WidgetSize[] = ['small', 'medium', 'large']
 
 export default function HomeWidgetShell({
   id,
   editMode,
   onHide,
+  onResize,
+  size = 'medium',
   children,
   className = '',
   dragHandleRef,
@@ -17,6 +21,8 @@ export default function HomeWidgetShell({
   id: HomeWidgetId
   editMode: boolean
   onHide?: () => void
+  onResize?: (size: WidgetSize) => void
+  size?: WidgetSize
   children: React.ReactNode
   className?: string
   dragHandleRef?: (el: HTMLElement | null) => void
@@ -49,6 +55,7 @@ export default function HomeWidgetShell({
           background: 'var(--morning)',
           borderBottom: '1px solid var(--border)',
           borderRadius: '16px 16px 0 0',
+          flexWrap: 'wrap',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
@@ -78,28 +85,55 @@ export default function HomeWidgetShell({
             {WIDGET_LABELS[id]}
           </span>
         </div>
-        {onHide && (
-          <button
-            type="button"
-            onClick={onHide}
-            aria-label={`Hide ${WIDGET_LABELS[id]}`}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: 28,
-              height: 28,
-              borderRadius: 6,
-              border: '1px solid var(--border)',
-              background: 'var(--surface)',
-              color: 'var(--text-3)',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
-          >
-            <X size={14} />
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          {onResize && (
+            <div style={{ display: 'flex', gap: 2, background: 'var(--surface)', borderRadius: 6, padding: 2, border: '1px solid var(--border)' }} role="group" aria-label="Widget size">
+              {SIZES.map((s) => (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => onResize(s)}
+                  title={SIZE_LABELS[s]}
+                  style={{
+                    padding: '3px 7px',
+                    fontSize: 9,
+                    fontWeight: 700,
+                    border: 'none',
+                    borderRadius: 4,
+                    cursor: 'pointer',
+                    background: size === s ? 'var(--accent)' : 'transparent',
+                    color: size === s ? '#fff' : 'var(--text-3)',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  {s.charAt(0)}
+                </button>
+              ))}
+            </div>
+          )}
+          {onHide && (
+            <button
+              type="button"
+              onClick={onHide}
+              aria-label={`Hide ${WIDGET_LABELS[id]}`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: 28,
+                height: 28,
+                borderRadius: 6,
+                border: '1px solid var(--border)',
+                background: 'var(--surface)',
+                color: 'var(--text-3)',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
       </div>
       <div style={{ pointerEvents: editMode ? 'none' : 'auto' }}>{children}</div>
     </div>

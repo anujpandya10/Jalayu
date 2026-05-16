@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import type { Reflection } from '@/lib/types'
+import type { WidgetSize } from '@/lib/dashboard-layout'
 
 const AMBER = '#00C9A7'
 
@@ -14,13 +15,16 @@ export default function ReflectionCompact({
   reflection,
   onOpenReflect,
   variant = 'default',
+  size = 'medium',
 }: {
   reflection: Reflection | null
   onOpenReflect: () => void
   variant?: 'default' | 'sidebar'
+  size?: WidgetSize
 }) {
-  const [collapsed, setCollapsed] = useState(false)
-  const compact = variant === 'sidebar'
+  const [collapsed, setCollapsed] = useState(size === 'small')
+  const compact = variant === 'sidebar' || size === 'small'
+  const expanded = size === 'large'
 
   if (!reflection || !hasContent(reflection)) {
     return (
@@ -162,7 +166,7 @@ export default function ReflectionCompact({
           {word && (
             <p style={{
               fontFamily: 'var(--font-lora), Georgia, serif',
-              fontSize: compact ? 22 : 28, fontWeight: 700, color: 'var(--text)',
+              fontSize: expanded ? 32 : compact ? 22 : 28, fontWeight: 700, color: 'var(--text)',
               margin: '0 0 8px', lineHeight: 1.15, letterSpacing: '-0.02em',
             }}>
               {word}

@@ -12,7 +12,13 @@ import {
   type GoogleCalEvent,
 } from '@/lib/schedule'
 
-const PREVIEW_COUNT = 2
+import type { WidgetSize } from '@/lib/dashboard-layout'
+
+function previewCount(size: WidgetSize): number {
+  if (size === 'small') return 1
+  if (size === 'large') return 8
+  return 2
+}
 
 export default function ScheduleCompact({
   tasks,
@@ -21,6 +27,7 @@ export default function ScheduleCompact({
   onAddTask,
   onToggleTask,
   onOpenFullCalendar,
+  size = 'medium',
 }: {
   tasks: Task[]
   reminders: Reminder[]
@@ -28,7 +35,10 @@ export default function ScheduleCompact({
   onAddTask: (title: string, date?: string, eventType?: string) => Promise<void>
   onToggleTask: (task: Task) => Promise<void>
   onOpenFullCalendar: () => void
+  size?: WidgetSize
 }) {
+  const maxPreview = previewCount(size)
+  const compact = size === 'small'
   const todayStr = toLocalDateStr(new Date())
   const todayLabel = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
@@ -56,8 +66,8 @@ export default function ScheduleCompact({
     [tasks, reminders, googleEvents, healthAppointments, todayStr],
   )
 
-  const visibleItems = listExpanded ? todayItems : todayItems.slice(0, PREVIEW_COUNT)
-  const hasMore = todayItems.length > PREVIEW_COUNT
+  const visibleItems = listExpanded ? todayItems : todayItems.slice(0, maxPreview)
+  const hasMore = todayItems.length > maxPreview
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault()
@@ -72,11 +82,13 @@ export default function ScheduleCompact({
     }
   }
 
+  const showBody = !compact && !cardCollapsed
+
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: cardCollapsed ? 0 : 10, gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-          {todayItems.length > 0 && (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18, padding: compact ? '10px 12px' : '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: showBody ? 10 : 0, gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, minWidth: 0 }}>
+          {todayItems.length > 0 && !compact && (
             <button
               type="button"
               onClick={() => setCardCollapsed(!cardCollapsed)}
@@ -86,10 +98,13 @@ export default function ScheduleCompact({
               {cardCollapsed ? <ChevronDown size={16} /> : <ChevronUp size={16} />}
             </button>
           )}
-          <div>
-            <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>Calendar</p>
-            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0, lineHeight: 1.3 }}>{todayLabel}</p>
-            {cardCollapsed && todayItems.length > 0 && (
+          <div style={{ minWidth: 0 }}>
+            <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 2px' }}>Calendar</p>
+            {!compact && <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text)', margin: 0, lineHeight: 1.3 }}>{todayLabel}</p>}
+            {compact && todayItems[0] && (
+              <p style={{ fontSize: 12, fontWeight: 600, color: 'var(--text)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{todayItems[0].title}</p>
+            )}
+            {!compact && cardCollapsed && todayItems.length > 0 && (
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>
                 {todayItems.length} item{todayItems.length !== 1 ? 's' : ''} today
               </p>
@@ -101,11 +116,11 @@ export default function ScheduleCompact({
           onClick={onOpenFullCalendar}
           style={{ fontSize: 11, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, whiteSpace: 'nowrap' }}
         >
-          full calendar →
+          {compact ? '→' : 'full calendar →'}
         </button>
       </div>
 
-      {!cardCollapsed && (
+      {showBody && (
         <>
           {calConnected === false && (
             <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 10px' }}>
@@ -158,13 +173,13 @@ export default function ScheduleCompact({
                     cursor: 'pointer', padding: '0 0 10px', width: '100%', textAlign: 'left',
                   }}
                 >
-                  {listExpanded ? 'Show less' : `View more (${todayItems.length - PREVIEW_COUNT})`}
+                  {listExpanded ? 'Show less' : `View more (${todayItems.length - maxPreview})`}
                 </button>
               )}
             </>
           )}
 
-          {showAdd ? (
+          {!compact && showAdd ? (
             <form onSubmit={handleAdd} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input
                 value={title}
@@ -178,7 +193,7 @@ export default function ScheduleCompact({
               </button>
               <button type="button" onClick={() => setShowAdd(false)} style={{ fontSize: 11, color: 'var(--text-3)', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
             </form>
-          ) : (
+          ) : !compact ? (
             <button
               type="button"
               onClick={() => setShowAdd(true)}
@@ -186,7 +201,7 @@ export default function ScheduleCompact({
             >
               <span style={{ fontSize: 14, lineHeight: 1, color: 'var(--accent)' }}>+</span> add to today
             </button>
-          )}
+          ) : null}
         </>
       )}
     </div>

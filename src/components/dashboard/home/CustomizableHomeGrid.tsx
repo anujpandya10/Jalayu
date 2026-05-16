@@ -27,7 +27,11 @@ import {
   visibleMobileWidgets,
   hideWidget,
   showWidget,
+  getWidgetSize,
+  setWidgetSize,
+  widgetSpanClass,
   WIDGET_LABELS,
+  type WidgetSize,
 } from '@/lib/dashboard-layout'
 import HomeWidgetShell from './HomeWidgetShell'
 import { useStore } from '@/store/useStore'
@@ -37,13 +41,17 @@ type ContainerId = DashboardColumn | 'mobile'
 function SortableItem({
   id,
   editMode,
+  size,
   onHide,
+  onResize,
   children,
   className = '',
 }: {
   id: HomeWidgetId
   editMode: boolean
+  size: WidgetSize
   onHide: () => void
+  onResize: (size: WidgetSize) => void
   children: React.ReactNode
   className?: string
 }) {
@@ -62,7 +70,9 @@ function SortableItem({
       <HomeWidgetShell
         id={id}
         editMode={editMode}
+        size={size}
         onHide={onHide}
+        onResize={onResize}
         dragHandleRef={setActivatorNodeRef}
         dragListeners={editMode ? listeners : undefined}
         dragAttributes={editMode ? attributes : undefined}
@@ -81,7 +91,10 @@ function Column({
   className,
   style,
   onHide,
+  onResize,
+  getSize,
   renderWidget,
+  useGrid,
 }: {
   columnId: ContainerId
   title?: string
@@ -90,21 +103,35 @@ function Column({
   className?: string
   style?: React.CSSProperties
   onHide: (id: HomeWidgetId) => void
-  renderWidget: (id: HomeWidgetId, column: ContainerId) => React.ReactNode | null
+  onResize: (id: HomeWidgetId, size: WidgetSize) => void
+  getSize: (id: HomeWidgetId) => WidgetSize
+  renderWidget: (id: HomeWidgetId, column: ContainerId, size: WidgetSize) => React.ReactNode | null
+  useGrid?: boolean
 }) {
+  const colClass = useGrid ? 'widget-grid-col' : ''
   return (
-    <div className={className} style={{ display: 'flex', flexDirection: 'column', gap: 12, ...style }}>
+    <div className={`${colClass} ${className ?? ''}`.trim()} style={useGrid ? style : { display: 'flex', flexDirection: 'column', gap: 12, ...style }}>
       {editMode && title && (
-        <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, padding: '0 4px' }}>
+        <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, padding: '0 4px', gridColumn: useGrid ? '1 / -1' : undefined }}>
           {title}
         </p>
       )}
       <SortableContext items={items} strategy={verticalListSortingStrategy}>
         {items.map((id) => {
-          const node = renderWidget(id, columnId)
+          const size = getSize(id)
+          const node = renderWidget(id, columnId, size)
           if (!node) return null
+          const spanClass = useGrid ? widgetSpanClass(size, columnId === 'mobile' ? 'center' : columnId) : ''
           return (
-            <SortableItem key={id} id={id} editMode={editMode} onHide={() => onHide(id)}>
+            <SortableItem
+              key={id}
+              id={id}
+              editMode={editMode}
+              size={size}
+              className={spanClass}
+              onHide={() => onHide(id)}
+              onResize={(s) => onResize(id, s)}
+            >
               {node}
             </SortableItem>
           )
@@ -119,7 +146,7 @@ export default function CustomizableHomeGrid({
   renderWidget,
 }: {
   profile: Profile | null
-  renderWidget: (id: HomeWidgetId, column: ContainerId) => React.ReactNode | null
+  renderWidget: (id: HomeWidgetId, column: ContainerId, size: WidgetSize) => React.ReactNode | null
 }) {
   const setProfile = useStore((s) => s.setProfile)
   const [layout, setLayout] = useState<DashboardLayout>(() =>
@@ -240,6 +267,12 @@ export default function CustomizableHomeGrid({
     toast.success(`Hidden ${WIDGET_LABELS[id]}`)
   }
 
+  const handleResize = (id: HomeWidgetId, size: WidgetSize) => {
+    setLayout((prev) => setWidgetSize(prev, id, size))
+  }
+
+  const getSize = useCallback((id: HomeWidgetId) => getWidgetSize(layout, id), [layout])
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -305,7 +338,7 @@ export default function CustomizableHomeGrid({
           </button>
         ) : (
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>Drag to reorder · ✕ to hide</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>Drag · S/M/L size · ✕ hide</span>
             <button type="button" onClick={handleReset} style={toolbarBtnStyle}>
               <RotateCcw size={13} /> Reset
             </button>
@@ -362,25 +395,30 @@ export default function CustomizableHomeGrid({
             items={leftItems}
             editMode={editMode}
             onHide={handleHide}
+            onResize={handleResize}
+            getSize={getSize}
             renderWidget={renderWidget}
           />
 
           {isDesktop ? (
             <>
-              <Column columnId="center" title="Center" items={centerItems} editMode={editMode} onHide={handleHide} renderWidget={renderWidget} />
+              <Column columnId="center" title="Center" items={centerItems} editMode={editMode} onHide={handleHide} onResize={handleResize} getSize={getSize} renderWidget={renderWidget} useGrid />
               <Column
                 columnId="right"
                 title="Right"
                 items={rightItems}
                 editMode={editMode}
                 onHide={handleHide}
+                onResize={handleResize}
+                getSize={getSize}
                 renderWidget={renderWidget}
+                useGrid
                 className="home-right"
-                style={{ display: 'flex' }}
+                style={{ display: 'grid' }}
               />
             </>
           ) : (
-            <Column columnId="mobile" title="Widgets" items={mobileItems} editMode={editMode} onHide={handleHide} renderWidget={renderWidget} />
+            <Column columnId="mobile" title="Widgets" items={mobileItems} editMode={editMode} onHide={handleHide} onResize={handleResize} getSize={getSize} renderWidget={renderWidget} useGrid />
           )}
         </div>
 

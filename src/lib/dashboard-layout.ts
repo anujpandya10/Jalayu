@@ -1,5 +1,7 @@
 export type DashboardColumn = 'left' | 'center' | 'right'
 
+export type WidgetSize = 'small' | 'medium' | 'large'
+
 export type HomeWidgetId =
   | 'identity'
   | 'morning_note'
@@ -17,10 +19,11 @@ export type HomeWidgetId =
   | 'memory'
 
 export interface DashboardLayout {
-  version: 1
+  version: 2
   columns: Record<DashboardColumn, HomeWidgetId[]>
   mobile: HomeWidgetId[]
   hidden: HomeWidgetId[]
+  sizes: Partial<Record<HomeWidgetId, WidgetSize>>
 }
 
 export const WIDGET_LABELS: Record<HomeWidgetId, string> = {
@@ -40,8 +43,31 @@ export const WIDGET_LABELS: Record<HomeWidgetId, string> = {
   memory: 'Memory',
 }
 
+export const SIZE_LABELS: Record<WidgetSize, string> = {
+  small: 'Small',
+  medium: 'Medium',
+  large: 'Large',
+}
+
+const DEFAULT_SIZES: Partial<Record<HomeWidgetId, WidgetSize>> = {
+  identity: 'medium',
+  morning_note: 'medium',
+  ask_jalayu: 'medium',
+  quote: 'medium',
+  reflection: 'medium',
+  mood: 'small',
+  health: 'small',
+  schedule: 'large',
+  trading: 'medium',
+  north_star: 'small',
+  progress: 'small',
+  explore: 'medium',
+  strategy_lab: 'small',
+  memory: 'small',
+}
+
 const DEFAULT_LAYOUT: DashboardLayout = {
-  version: 1,
+  version: 2,
   columns: {
     left: ['identity', 'morning_note', 'ask_jalayu'],
     center: ['quote', 'mood', 'health', 'schedule', 'trading'],
@@ -61,12 +87,18 @@ const DEFAULT_LAYOUT: DashboardLayout = {
     'north_star',
   ],
   hidden: [],
+  sizes: { ...DEFAULT_SIZES },
 }
 
 const ALL_WIDGETS = new Set(Object.keys(WIDGET_LABELS) as HomeWidgetId[])
+const SIZE_ORDER: WidgetSize[] = ['small', 'medium', 'large']
 
 function isWidgetId(v: string): v is HomeWidgetId {
   return ALL_WIDGETS.has(v as HomeWidgetId)
+}
+
+function isWidgetSize(v: string): v is WidgetSize {
+  return v === 'small' || v === 'medium' || v === 'large'
 }
 
 function sanitizeList(raw: unknown): HomeWidgetId[] {
@@ -81,8 +113,16 @@ function sanitizeList(raw: unknown): HomeWidgetId[] {
   return out
 }
 
+function sanitizeSizes(raw: unknown): Partial<Record<HomeWidgetId, WidgetSize>> {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_SIZES }
+  const out: Partial<Record<HomeWidgetId, WidgetSize>> = { ...DEFAULT_SIZES }
+  for (const [k, v] of Object.entries(raw)) {
+    if (isWidgetId(k) && typeof v === 'string' && isWidgetSize(v)) out[k] = v
+  }
+  return out
+}
+
 function mergeLists(existing: HomeWidgetId[], defaults: HomeWidgetId[]): HomeWidgetId[] {
-  const hidden = new Set(existing)
   const out = [...existing]
   for (const id of defaults) {
     if (!out.includes(id)) out.push(id)
@@ -94,18 +134,18 @@ export function getDefaultDashboardLayout(): DashboardLayout {
   return JSON.parse(JSON.stringify(DEFAULT_LAYOUT)) as DashboardLayout
 }
 
+/** Migrate v1 layouts and merge sizes */
 export function parseDashboardLayout(raw: unknown): DashboardLayout {
   const base = getDefaultDashboardLayout()
   if (!raw || typeof raw !== 'object') return base
 
   const o = raw as Record<string, unknown>
   const columns = o.columns as Record<string, unknown> | undefined
-
   const hidden = sanitizeList(o.hidden)
   const hiddenSet = new Set(hidden)
 
   const parsed: DashboardLayout = {
-    version: 1,
+    version: 2,
     columns: {
       left: mergeLists(sanitizeList(columns?.left), base.columns.left).filter((id) => !hiddenSet.has(id)),
       center: mergeLists(sanitizeList(columns?.center), base.columns.center).filter((id) => !hiddenSet.has(id)),
@@ -113,9 +153,32 @@ export function parseDashboardLayout(raw: unknown): DashboardLayout {
     },
     mobile: mergeLists(sanitizeList(o.mobile), base.mobile).filter((id) => !hiddenSet.has(id)),
     hidden,
+    sizes: sanitizeSizes(o.sizes),
   }
 
   return parsed
+}
+
+export function getWidgetSize(layout: DashboardLayout, id: HomeWidgetId): WidgetSize {
+  return layout.sizes[id] ?? DEFAULT_SIZES[id] ?? 'medium'
+}
+
+export function setWidgetSize(layout: DashboardLayout, id: HomeWidgetId, size: WidgetSize): DashboardLayout {
+  return { ...layout, sizes: { ...layout.sizes, [id]: size } }
+}
+
+export function cycleWidgetSize(layout: DashboardLayout, id: HomeWidgetId): DashboardLayout {
+  const current = getWidgetSize(layout, id)
+  const idx = SIZE_ORDER.indexOf(current)
+  const next = SIZE_ORDER[(idx + 1) % SIZE_ORDER.length]
+  return setWidgetSize(layout, id, next)
+}
+
+/** CSS class for grid placement (center/right/mobile use 2-col grid on wide screens) */
+export function widgetSpanClass(size: WidgetSize, column: DashboardColumn | 'mobile'): string {
+  if (column === 'left') return 'widget-span-full'
+  if (size === 'small') return 'widget-span-half'
+  return 'widget-span-full'
 }
 
 export function visibleWidgets(layout: DashboardLayout, column: DashboardColumn): HomeWidgetId[] {
@@ -168,6 +231,7 @@ export function moveWidget(
     },
     mobile: [...layout.mobile],
     hidden: [...layout.hidden],
+    sizes: { ...layout.sizes },
   }
 
   const removeFrom = (list: HomeWidgetId[]) => list.filter((id) => id !== activeId)

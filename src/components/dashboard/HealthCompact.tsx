@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react'
 import { ChevronDown, ChevronUp, Stethoscope } from 'lucide-react'
 import type { HealthProfile, Medication, Reminder } from '@/lib/types'
+import type { WidgetSize } from '@/lib/dashboard-layout'
 
 const AMBER = '#00C9A7'
 
@@ -15,13 +16,16 @@ export default function HealthCompact({
   medications,
   reminders,
   onOpenHealth,
+  size = 'medium',
 }: {
   healthProfiles: HealthProfile[]
   medications: Medication[]
   reminders: Reminder[]
   onOpenHealth: () => void
+  size?: WidgetSize
 }) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(size === 'small')
+  const compact = size === 'small'
 
   const profile = selfProfile(healthProfiles)
   const pcpName = profile?.primary_care_name?.trim()
@@ -55,7 +59,7 @@ export default function HealthCompact({
       style={{
         width: '100%', height: '100%', textAlign: 'left', cursor: 'pointer',
         background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 18,
-        padding: '14px 16px', fontFamily: 'inherit', boxSizing: 'border-box',
+        padding: compact ? '10px 12px' : '14px 16px', fontFamily: 'inherit', boxSizing: 'border-box',
       }}
     >
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: collapsed ? 0 : 8 }}>
@@ -77,8 +81,8 @@ export default function HealthCompact({
           </span>
           <div>
             <p style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>Health</p>
-            <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
-              {hasPcp ? pcpName : 'Insurance & meds'}
+            <p style={{ fontSize: compact ? 12 : 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+              {compact ? `${activeMeds.length} meds` : hasPcp ? pcpName : 'Insurance & meds'}
             </p>
             {collapsed && hasContent && (
               <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 0' }}>Tap to open health</p>
@@ -88,7 +92,7 @@ export default function HealthCompact({
         <span style={{ fontSize: 11, color: 'var(--text-3)' }}>→</span>
       </div>
 
-      {!collapsed && (
+      {(!collapsed && !compact) || size === 'large' ? (
         hasContent ? (
           <div style={{ paddingLeft: 36 }}>
             {lines.map((line) => (
@@ -103,7 +107,7 @@ export default function HealthCompact({
             Coverage, appointments & records
           </p>
         )
-      )}
+      ) : null}
     </button>
   )
 }
