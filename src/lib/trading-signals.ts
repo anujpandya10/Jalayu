@@ -111,35 +111,36 @@ function stage2Score(
   // clears the per-setup threshold even when the 24h trend is flat/neutral.
   // Stage-1 score is additive so strong trending assets score even higher.
 
-  // MOMENTUM LONG — strong trend already in motion. High conviction.
-  // change24h >= 3.5: catches mid-day runners before they extend further.
-  // volSpike >= 1.8: real institutional buying behind the move.
-  // RSI 48-73: not yet overbought, still room to run.
-  if (change24h >= 3.5 && volSpike >= 1.8 && rsi >= 48 && rsi <= 73 && ema9 > ema21) {
-    score = Math.max(score, 3.0) + 2.5   // floor → guaranteed 5.5+ (well above threshold)
-    reasons.push(`Momentum breakout: +${change24h.toFixed(1)}% 24h, ${volSpike.toFixed(1)}× vol, RSI ${rsi.toFixed(0)}, EMA9>21`)
+  // MOMENTUM LONG — asset trending up with volume. Enter the move.
+  // Lowered to 2% 24h: assets up 2-3% in 24h with volume are mid-trend, not extended.
+  if (change24h >= 2.0 && volSpike >= 1.5 && rsi >= 45 && rsi <= 73 && ema9 > ema21) {
+    score = Math.max(score, 3.0) + 2.5   // floor → guaranteed 5.5+
+    reasons.push(`Momentum: +${change24h.toFixed(1)}% 24h, ${volSpike.toFixed(1)}× vol, RSI ${rsi.toFixed(0)}`)
     setupTag = 'MOMENTUM_LONG'
   }
-  // OVERSOLD BOUNCE — extreme dip with reversal. Big moves expected.
+  // OVERSOLD BOUNCE — extreme dip with reversal signals.
   else if (rsi < 35 && vwapDevPct < -1.0 && change24h < -5) {
     score = Math.max(score, 3.0) + 2.5
     reasons.push(`Oversold bounce: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'OVERSOLD_BOUNCE'
   }
-  // VWAP LONG — asset temporarily below its intraday fair value.
-  // vwapDevPct < -0.15%: a 0.15% dip below VWAP happens several times per hour
-  //   on any liquid crypto. -0.3% was too rare in sideways markets.
-  // ema9 >= ema21 * 0.995: 0.5% tolerance — sideways markets have EMAs nearly
-  //   equal and crossing constantly; 0.2% (0.998) was blocking too many valid entries.
-  else if (rsi >= 35 && rsi <= 65 && vwapDevPct < -0.15 && ema9 >= ema21 * 0.995) {
+  // VWAP LONG — two scenarios:
+  //   A) Below VWAP (dip-buy): classic value entry, vwapDevPct < -0.1%
+  //   B) At VWAP as support (trend-buy): price hovering just above VWAP in an uptrend
+  //      Real scalpers buy WHEN price touches VWAP from above, not just when below it.
+  //      vwapDevPct between -0.3% and +0.15% with RSI 42-60 and clear uptrend = valid entry.
+  else if (
+    rsi >= 35 && rsi <= 65 && ema9 >= ema21 * 0.995 &&
+    (vwapDevPct < -0.1 || (vwapDevPct < 0.15 && rsi >= 42 && rsi <= 60 && ema9 > ema21))
+  ) {
     score = Math.max(score, 2.5) + 1.5   // floor → guaranteed 4.0 score
-    reasons.push(`VWAP long: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
+    reasons.push(`VWAP ${vwapDevPct < 0 ? 'dip' : 'support'}: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP`)
     setupTag = 'VWAP_LONG'
   }
-  // MEAN REVERT — near VWAP with RSI fading. Catches micro-dips.
-  else if (rsi < 52 && vwapDevPct < -0.05 && change24h > -10 && ema9 >= ema21 * 0.995) {
+  // MEAN REVERT — mild pullback below VWAP in uptrend.
+  else if (rsi < 54 && vwapDevPct < 0.05 && change24h > -10 && ema9 >= ema21 * 0.995) {
     score = Math.max(score, 1.5) + 1.5   // floor → guaranteed 3.0 score
-    reasons.push(`Mean revert: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
+    reasons.push(`Mean revert: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP`)
     setupTag = 'MEAN_REVERT'
   }
 
