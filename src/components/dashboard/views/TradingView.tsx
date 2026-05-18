@@ -381,8 +381,11 @@ function PhaseBanner({ phase }: { phase: PhaseInfo | null }) {
 
 // ─── Main ──────────────────────────────────────────────────────────────────────
 
-/** Scan + UI refresh interval (tab open). Vercel cron also runs ~every 1 min when tab is closed. */
-const REFRESH_INTERVAL = 15000
+/** Scan + UI refresh interval (tab open). Vercel cron also runs ~every 1 min when tab is closed.
+ *  Set to 4s — UI polls every 4s, server enforces 8s gap so trades evaluate every 8-10s.
+ *  Can't go lower: a full trade tick takes 5-8s and API rate limits cap us at ~5s minimum.
+ */
+const REFRESH_INTERVAL = 4000
 
 export default function TradingView() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
