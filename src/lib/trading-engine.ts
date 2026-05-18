@@ -339,12 +339,17 @@ export async function runTradingTick(
       shouldExit = true
       exitReason = slLabel
     }
-    // 3. Quick win: bank decent profit after 2 min. High-frequency mode.
-    //    Fires anywhere between QUICK_WIN_MIN_PCT and 65% of TP. Above 65% of TP,
-    //    trade rides to hard TP or trailing stop.
+    // 3. Quick win: bank decent profit after 2 min.
     else if (allowQuickWin && heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * 0.65) {
       shouldExit = true
       exitReason = `Quick win +${(pnlPct * 100).toFixed(2)}% secured after ${Math.round(heldSecs)}s`
+    }
+    // 3b. Tiny win: positions sitting between 0 and quick-win threshold for 5+ min.
+    //     Lock in any positive instead of letting it drift back to a stale-cut loss.
+    //     This catches the "+0.18% drifting for 20 min" stagnant winner problem.
+    else if (heldSecs >= 300 && pnlPct >= 0.0018 && pnlPct < QUICK_WIN_MIN_PCT) {
+      shouldExit = true
+      exitReason = `Tiny win +${(pnlPct * 100).toFixed(2)}% locked after ${Math.round(heldSecs)}s — drift protection`
     }
     // 4. Time exit: held 12 min and at least 40% of the way to TP — take it
     else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {

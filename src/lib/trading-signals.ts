@@ -124,21 +124,23 @@ function stage2Score(
     reasons.push(`Oversold bounce: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'OVERSOLD_BOUNCE'
   }
-  // VWAP LONG — two scenarios:
-  //   A) Below VWAP (dip-buy): classic value entry, vwapDevPct < -0.1%
-  //   B) At VWAP as support (trend-buy): price hovering just above VWAP in an uptrend
-  //      Real scalpers buy WHEN price touches VWAP from above, not just when below it.
-  //      vwapDevPct between -0.3% and +0.15% with RSI 42-60 and clear uptrend = valid entry.
+  // VWAP LONG — two modes, both require asset NOT in a crash:
+  //   A) Dip-buy: vwapDevPct < -0.1%, change24h > -3% (not crashing)
+  //   B) Support-buy: price at VWAP in uptrend, RSI 42-60, clear EMA up
+  // Volume spike > 6× = panic dump, not value — block all entries.
   else if (
-    rsi >= 35 && rsi <= 65 && ema9 >= ema21 * 0.995 &&
+    rsi >= 38 && rsi <= 65 && ema9 >= ema21 * 0.997 && volSpike < 6 && change24h > -3 &&
     (vwapDevPct < -0.1 || (vwapDevPct < 0.15 && rsi >= 42 && rsi <= 60 && ema9 > ema21))
   ) {
     score = Math.max(score, 2.5) + 1.5   // floor → guaranteed 4.0 score
     reasons.push(`VWAP ${vwapDevPct < 0 ? 'dip' : 'support'}: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP`)
     setupTag = 'VWAP_LONG'
   }
-  // MEAN REVERT — mild pullback below VWAP in uptrend.
-  else if (rsi < 54 && vwapDevPct < 0.05 && change24h > -10 && ema9 >= ema21 * 0.995) {
+  // MEAN REVERT — mild pullback in uptrend. NOT for crashes.
+  // rsi >= 38: below 38 is panic territory, not mean-revert. Was no floor → knife-catch on RSI 8.
+  // change24h > -3: don't buy assets down >3% in 24h.
+  // volSpike < 5: huge volume = institutional dumping, not value.
+  else if (rsi >= 38 && rsi < 54 && vwapDevPct < 0.05 && change24h > -3 && ema9 >= ema21 * 0.997 && volSpike < 5) {
     score = Math.max(score, 1.5) + 1.5   // floor → guaranteed 3.0 score
     reasons.push(`Mean revert: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP`)
     setupTag = 'MEAN_REVERT'
