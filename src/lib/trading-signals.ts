@@ -136,15 +136,10 @@ function stage2Score(
     reasons.push(`VWAP ${vwapDevPct < 0 ? 'dip' : 'support'}: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP`)
     setupTag = 'VWAP_LONG'
   }
-  // MEAN REVERT — mild pullback in uptrend. NOT for crashes.
-  // rsi >= 38: below 38 is panic territory, not mean-revert. Was no floor → knife-catch on RSI 8.
-  // change24h > -3: don't buy assets down >3% in 24h.
-  // volSpike < 5: huge volume = institutional dumping, not value.
-  else if (rsi >= 38 && rsi < 54 && vwapDevPct < 0.05 && change24h > -3 && ema9 >= ema21 * 0.997 && volSpike < 5) {
-    score = Math.max(score, 1.5) + 1.5   // floor → guaranteed 3.0 score
-    reasons.push(`Mean revert: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP`)
-    setupTag = 'MEAN_REVERT'
-  }
+  // MEAN_REVERT removed — every backtest showed it was a knife-catcher and
+  // contributed most of the historical losses. A "mild dip in uptrend" is just
+  // VWAP_LONG with a worse name. If a setup doesn't qualify as MOMENTUM_LONG,
+  // OVERSOLD_BOUNCE, or VWAP_LONG, we shouldn't be in it.
 
   // Kill knife-catchers: deep dip with no volume = no buyer conviction
   if (setupTag === 'MEAN_REVERT' && change24h < -8 && volSpike < 1.5) {
@@ -199,9 +194,10 @@ function stage2Score(
 
   score = Math.max(-10, Math.min(10, score))
 
-  // Fallback tag if nothing matched
-  if (setupTag === 'UNTAGGED' && Math.abs(score) >= Math.abs(MIN_LONG_SCORE)) {
-    setupTag = score > 0 ? 'MEAN_REVERT' : 'PUMP_SHORT'
+  // No fallback for longs — if no specific named setup matched, we have no edge.
+  // UNTAGGED stays UNTAGGED and gets blocked downstream. Better to skip than guess.
+  if (setupTag === 'UNTAGGED' && score < 0 && Math.abs(score) >= Math.abs(MIN_SHORT_SCORE)) {
+    setupTag = 'PUMP_SHORT'  // Keep short fallback — pump fades have real edge
   }
 
   return { score, reasons, setupTag }

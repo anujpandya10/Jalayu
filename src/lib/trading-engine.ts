@@ -319,10 +319,11 @@ export async function runTradingTick(
     let exitReason = ''
     const eventType: TickEvent['type'] = isLong ? 'LONG_SELL' : 'SHORT_COVER'
 
-    // High-frequency mode: quick wins enabled for ALL setups.
-    // Cycle capital fast — 0.35% × N trades beats 1.5% × few trades when N is high.
-    // Trailing stop still protects bigger winners that go beyond quick-win range.
-    const allowQuickWin = true
+    // Quick wins ONLY for value-zone scalps (VWAP_LONG dips).
+    // MOMENTUM_LONG and OVERSOLD_BOUNCE are high-conviction trend trades —
+    // let them run to TP or trailing stop. Cutting them at +0.35% wastes the
+    // setup's edge (these have 5:1 R:R; you want the 1.5%+ moves, not 0.35%).
+    const allowQuickWin = ['VWAP_LONG', 'FOREX_DIP', 'FOREX_FADE'].includes(setupTag)
 
     // 1. Hard take-profit ceiling
     if (pnlPct >= tpPct) {
@@ -340,16 +341,10 @@ export async function runTradingTick(
       exitReason = slLabel
     }
     // 3. Quick win: bank decent profit after 2 min.
+    //    Only for value-zone setups. MOMENTUM/OVERSOLD ride to their targets.
     else if (allowQuickWin && heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * 0.65) {
       shouldExit = true
       exitReason = `Quick win +${(pnlPct * 100).toFixed(2)}% secured after ${Math.round(heldSecs)}s`
-    }
-    // 3b. Tiny win: positions sitting between 0 and quick-win threshold for 5+ min.
-    //     Lock in any positive instead of letting it drift back to a stale-cut loss.
-    //     This catches the "+0.18% drifting for 20 min" stagnant winner problem.
-    else if (heldSecs >= 300 && pnlPct >= 0.0018 && pnlPct < QUICK_WIN_MIN_PCT) {
-      shouldExit = true
-      exitReason = `Tiny win +${(pnlPct * 100).toFixed(2)}% locked after ${Math.round(heldSecs)}s — drift protection`
     }
     // 4. Time exit: held 12 min and at least 40% of the way to TP — take it
     else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
@@ -483,10 +478,64 @@ export async function runTradingTick(
     return true
   }
 
-  const longSignals = filterLongEntries(allSignals)
+  // ── MARKET REGIME GATE ───────────────────────────────────────────────────────
+  // Crypto is highly correlated with BTC. When BTC is weak, almost every long
+  // entry fights the market and stale-cuts at a loss. Use BTC's technical state
+  // as a regime filter for all crypto longs.
+  //
+  // BULL: BTC EMA9 > EMA21 + RSI ≥ 48 + near/above VWAP → take all setups
+  // NEUTRAL: BTC mixed → only score ≥ 5.5 setups (MOMENTUM_LONG quality)
+  // BEAR: BTC EMA9 < EMA21 or weak RSI + negative 24h → block all crypto longs
+  const btcSignal = allSignals.find((s) => s.asset.symbol === 'BTC')
+  let marketRegime: 'BULL' | 'BEAR' | 'NEUTRAL' = 'NEUTRAL'
+  let regimeNote = 'BTC data unavailable — treating as neutral'
+  if (btcSignal?.indicators) {
+    const { ema9, ema21, rsi, vwapDevPct } = btcSignal.indicators
+    const btcChange24h = btcSignal.asset.change24h
+    if (ema9 > ema21 * 1.001 && rsi >= 48 && vwapDevPct > -0.3 && btcChange24h > -1.0) {
+      marketRegime = 'BULL'
+      regimeNote = `BTC bullish: RSI ${rsi.toFixed(0)}, EMA9>21, VWAP ${vwapDevPct.toFixed(2)}%, 24h ${btcChange24h >= 0 ? '+' : ''}${btcChange24h.toFixed(1)}%`
+    } else if ((ema9 < ema21 * 0.999 && rsi < 50) || (rsi < 42) || btcChange24h < -2.5) {
+      marketRegime = 'BEAR'
+      regimeNote = `BTC bearish: RSI ${rsi.toFixed(0)}, EMA9${ema9 < ema21 ? '<' : '>'}21, 24h ${btcChange24h >= 0 ? '+' : ''}${btcChange24h.toFixed(1)}%`
+    } else {
+      regimeNote = `BTC neutral: RSI ${rsi.toFixed(0)}, 24h ${btcChange24h >= 0 ? '+' : ''}${btcChange24h.toFixed(1)}%`
+    }
+  }
+
+  events.push({
+    type: 'HOLD', symbol: 'BTC', name: 'Market', price: 0, direction: 'LONG',
+    reason: `📊 ${marketRegime === 'BULL' ? '🟢' : marketRegime === 'BEAR' ? '🔴' : '🟡'} ${marketRegime} — ${regimeNote}`,
+    ts: now,
+  })
+
+  let longSignals = filterLongEntries(allSignals)
     .filter((s) => !heldSet.has(s.asset.symbol))
     .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
+
+  // Apply regime gate to CRYPTO longs only (forex/stocks not BTC-correlated)
+  const beforeRegimeCount = longSignals.filter((s) => s.asset.assetType === 'crypto').length
+  if (marketRegime === 'BEAR') {
+    longSignals = longSignals.filter((s) => s.asset.assetType !== 'crypto')
+    if (beforeRegimeCount > 0) {
+      events.push({
+        type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+        reason: `🔴 Bear regime — blocked ${beforeRegimeCount} crypto long signals to protect capital`,
+        ts: now,
+      })
+    }
+  } else if (marketRegime === 'NEUTRAL') {
+    longSignals = longSignals.filter((s) => s.asset.assetType !== 'crypto' || s.score >= 5.5)
+    const filtered = beforeRegimeCount - longSignals.filter((s) => s.asset.assetType === 'crypto').length
+    if (filtered > 0) {
+      events.push({
+        type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+        reason: `🟡 Neutral regime — blocked ${filtered} sub-conviction crypto signals (need score ≥ 5.5)`,
+        ts: now,
+      })
+    }
+  }
 
   const shortSignals = filterShortEntries(allSignals)
     .filter((s) => !heldSet.has(s.asset.symbol))
