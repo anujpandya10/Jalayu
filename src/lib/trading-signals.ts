@@ -127,16 +127,17 @@ function stage2Score(
     setupTag = 'OVERSOLD_BOUNCE'
   }
   // VWAP LONG — asset temporarily below its intraday fair value.
-  // THE BREAD-AND-BUTTER SCALP. Fires on any asset below VWAP with sane RSI.
-  // REQUIRES ema9 >= ema21: don't buy a falling asset. If the short-term trend
-  // is already down (ema9 < ema21), this is a knife-catch, not a value buy.
-  else if (rsi >= 35 && rsi <= 65 && vwapDevPct < -0.3 && ema9 >= ema21 * 0.998) {
+  // vwapDevPct < -0.15%: a 0.15% dip below VWAP happens several times per hour
+  //   on any liquid crypto. -0.3% was too rare in sideways markets.
+  // ema9 >= ema21 * 0.995: 0.5% tolerance — sideways markets have EMAs nearly
+  //   equal and crossing constantly; 0.2% (0.998) was blocking too many valid entries.
+  else if (rsi >= 35 && rsi <= 65 && vwapDevPct < -0.15 && ema9 >= ema21 * 0.995) {
     score = Math.max(score, 2.5) + 1.5   // floor → guaranteed 4.0 score
-    reasons.push(`VWAP long: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP, EMA uptrend`)
+    reasons.push(`VWAP long: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'VWAP_LONG'
   }
-  // MEAN REVERT — mild dip below VWAP with RSI fading. Also requires uptrend.
-  else if (rsi < 52 && vwapDevPct < -0.1 && change24h > -10 && ema9 >= ema21 * 0.998) {
+  // MEAN REVERT — near VWAP with RSI fading. Catches micro-dips.
+  else if (rsi < 52 && vwapDevPct < -0.05 && change24h > -10 && ema9 >= ema21 * 0.995) {
     score = Math.max(score, 1.5) + 1.5   // floor → guaranteed 3.0 score
     reasons.push(`Mean revert: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% below VWAP`)
     setupTag = 'MEAN_REVERT'

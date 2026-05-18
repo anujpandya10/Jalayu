@@ -166,21 +166,18 @@ async function fetchCryptoPricesBinance(): Promise<AssetData[]> {
   }
 }
 
-// ── CoinGecko — primary crypto source; falls back to Binance on failure ────────
-async function fetchCryptoPrices(): Promise<AssetData[]> {
+// ── CoinGecko — secondary crypto source (Binance is primary) ─────────────────
+async function fetchCryptoPricesCoingecko(): Promise<AssetData[]> {
   const ids = CRYPTO_LIST.map((c) => c.id).join(',')
   const url =
     `https://api.coingecko.com/api/v3/simple/price` +
     `?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_7d_change=true`
 
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
-      cache: 'no-store',
-    })
-    if (!res.ok) {
-      console.warn('[market-data] CoinGecko HTTP', res.status, '— falling back to Binance')
-      return fetchCryptoPricesBinance()
+    const res = await fetchWithTimeout(url, 6000)  // hard 6s timeout — CoinGecko can hang
+    if (!res) {
+      console.warn('[market-data] CoinGecko timeout/failed')
+      return []
     }
     const json = await res.json() as Record<string, {
       usd?: number; usd_24h_change?: number; usd_7d_change?: number
@@ -197,15 +194,10 @@ async function fetchCryptoPrices(): Promise<AssetData[]> {
         isPumpCandidate: false,
       }]
     })
-    // If CoinGecko returned an empty body (rate-limited but 200 OK), fall back
-    if (results.length < 5) {
-      console.warn('[market-data] CoinGecko returned only', results.length, 'coins — falling back to Binance')
-      return fetchCryptoPricesBinance()
-    }
     return results
   } catch (err) {
-    console.error('[market-data] CoinGecko fetch failed:', err, '— falling back to Binance')
-    return fetchCryptoPricesBinance()
+    console.error('[market-data] CoinGecko fetch failed:', err)
+    return []
   }
 }
 
@@ -326,11 +318,21 @@ async function fetchForexRates(): Promise<AssetData[]> {
   }
 }
 
+// ── Crypto price fetch: Binance.us PRIMARY → Binance.com → CoinGecko ─────────
+// Binance.us is accessible from Vercel US with high rate limits.
+// CoinGecko free tier is heavily rate-limited — use last resort only.
+async function fetchCryptoPrices(): Promise<AssetData[]> {
+  const primary = await fetchCryptoPricesBinance()
+  if (primary.length >= 5) return primary
+  console.warn('[market-data] Binance failed — trying CoinGecko')
+  return fetchCryptoPricesCoingecko()
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function getAllAssets(): Promise<AssetData[]> {
   const results: AssetData[] = []
 
-  // Crypto is 24/7 — always fetch
+  // Crypto is 24/7 — always fetch (Binance.us primary, CoinGecko fallback)
   const crypto = await fetchCryptoPrices()
   results.push(...crypto)
 
