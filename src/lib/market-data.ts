@@ -116,17 +116,29 @@ const BINANCE_SYMBOL_MAP: Record<string, string> = {
   SHIB: 'SHIBUSDT', TRX: 'TRXUSDT', SUI: 'SUIUSDT', PEPE: 'PEPEUSDT',
 }
 
+async function fetchWithTimeout(url: string, ms = 6000): Promise<Response | null> {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), ms)
+  try {
+    const res = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    return res.ok ? res : null
+  } catch { return null } finally { clearTimeout(timer) }
+}
+
 async function fetchCryptoPricesBinance(): Promise<AssetData[]> {
   try {
     const binancePairs = CRYPTO_LIST.map((c) => BINANCE_SYMBOL_MAP[c.symbol]).filter(Boolean)
     const symbolsParam = JSON.stringify(binancePairs)
-    const url = `https://api.binance.com/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolsParam)}`
-    const res = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'application/json' },
-      cache: 'no-store',
-    })
-    if (!res.ok) {
-      console.error('[market-data] Binance fallback HTTP', res.status)
+    const path = `/api/v3/ticker/24hr?symbols=${encodeURIComponent(symbolsParam)}`
+    // Binance.us is US-accessible from Vercel; binance.com is often geo-blocked from US servers
+    const res = await fetchWithTimeout(`https://api.binance.us${path}`, 5000)
+             ?? await fetchWithTimeout(`https://api.binance.com${path}`, 5000)
+    if (!res) {
+      console.error('[market-data] Binance fallback: both endpoints failed')
       return []
     }
     const tickers = await res.json() as Array<{
