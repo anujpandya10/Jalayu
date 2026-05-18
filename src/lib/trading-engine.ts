@@ -81,13 +81,15 @@ function applyFees(notional: number, rawPnl: number): number {
 
 function getPositionLimits(phase: PhaseInfo) {
   if (phase.phase === 'STOCK_MARKET') {
-    return { maxLongs: 4, maxShorts: 2 }
+    return { maxLongs: 3, maxShorts: 2 }
   }
   if (phase.phase === 'PREMARKET') {
-    return { maxLongs: 4, maxShorts: 1 }
+    return { maxLongs: 3, maxShorts: 1 }
   }
-  // CRYPTO_NIGHT / AFTER_HOURS — more slots so the engine stays deployed
-  return { maxLongs: 5, maxShorts: 2 }
+  // CRYPTO_NIGHT / AFTER_HOURS — fewer but larger positions
+  // 3 slots × ~$140 each = $420 deployed, far better profit per trade
+  // than 5 × $80 (and shorts rarely fire in crypto night)
+  return { maxLongs: 3, maxShorts: 1 }
 }
 
 function computePortfolioEquity(
@@ -317,9 +319,10 @@ export async function runTradingTick(
     let exitReason = ''
     const eventType: TickEvent['type'] = isLong ? 'LONG_SELL' : 'SHORT_COVER'
 
-    // High-conviction setups run to TP or trailing stop — quick wins cut what could be +2% winners.
-    // VWAP/MEAN_REVERT/FOREX setups still benefit from quick-win exits in choppy markets.
-    const allowQuickWin = !['MOMENTUM_LONG', 'OVERSOLD_BOUNCE'].includes(setupTag)
+    // High-frequency mode: quick wins enabled for ALL setups.
+    // Cycle capital fast — 0.35% × N trades beats 1.5% × few trades when N is high.
+    // Trailing stop still protects bigger winners that go beyond quick-win range.
+    const allowQuickWin = true
 
     // 1. Hard take-profit ceiling
     if (pnlPct >= tpPct) {
@@ -336,9 +339,10 @@ export async function runTradingTick(
       shouldExit = true
       exitReason = slLabel
     }
-    // 3. Quick win: small but definite profit after 4 min (choppy market — take it and move on)
-    //    Disabled for MOMENTUM_LONG + OVERSOLD_BOUNCE so high-conviction setups run to trailing TP.
-    else if (allowQuickWin && heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * TIME_EXIT_TP_FRACTION) {
+    // 3. Quick win: bank decent profit after 2 min. High-frequency mode.
+    //    Fires anywhere between QUICK_WIN_MIN_PCT and 65% of TP. Above 65% of TP,
+    //    trade rides to hard TP or trailing stop.
+    else if (allowQuickWin && heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * 0.65) {
       shouldExit = true
       exitReason = `Quick win +${(pnlPct * 100).toFixed(2)}% secured after ${Math.round(heldSecs)}s`
     }
@@ -567,9 +571,11 @@ export async function runTradingTick(
     // Check if this setup is disabled by the user
     if (disabledTags.has(sig.setupTag)) continue
 
-    const slotsRemaining = maxSlots - openSlots
+    // Use LONG slots only — shorts rarely fire so dividing equity by total slots
+    // (longs+shorts) under-sizes longs. Long-side capital is what matters here.
+    const longSlotsRemaining = Math.max(1, limits.maxLongs - currentLongs)
     const equity = computePortfolioEquity(cash, positions, priceMap)
-    const budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag)
+    const budget = computeEntryBudget(cash, equity, longSlotsRemaining, sig.setupTag)
     if (budget < MIN_TRADE_USD) break
     const price = sig.asset.price
     const shares = parseFloat((budget / price).toFixed(8))

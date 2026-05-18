@@ -77,7 +77,7 @@ export const POSITION_SIZES: Record<string, number> = {
 export const DEFAULT_POSITION_SIZE_PCT = 0.70  // relative conviction vs best setups
 
 /** Target % of portfolio equity deployed across all open slots */
-export const TARGET_DEPLOY_PCT = 0.78
+export const TARGET_DEPLOY_PCT = 0.88
 
 /** Always keep a small cash buffer for fees / next entry */
 export const CASH_RESERVE_PCT = 0.08
@@ -153,9 +153,9 @@ export const TIME_EXIT_SECS     = 720   // 12 min: cut if position ≥ 50% towar
 export const STALE_EXIT_SECS    = 720   // 12 min: same — don't differentiate
 export const STALE_MIN_LOSS_PCT = 0.001 // cut ANY losing position after 12 min (not just -0.25%)
 
-/** Take a small winner rather than let it turn into a loser in sideways market */
-export const QUICK_WIN_MIN_PCT   = 0.005  // bank +0.5% quick wins
-export const QUICK_WIN_HOLD_SECS = 240    // after just 4 min
+/** Take small winners aggressively — high-frequency strategy, cycle capital fast */
+export const QUICK_WIN_MIN_PCT   = 0.0035 // bank +0.35% quick wins (was 0.5%)
+export const QUICK_WIN_HOLD_SECS = 120    // after just 2 min (was 4 min)
 
 /** Time-exit triggers when position is at least 40% of the way to TP */
 export const TIME_EXIT_TP_FRACTION = 0.40
@@ -191,15 +191,15 @@ export const SETUP_MIN_LONG_SCORE: Record<string, number> = {
  * R:R is 5:1+ so we're profitable even at 30% win rate.
  */
 export const SETUP_TP_SL: Record<string, { tp: number; sl: number }> = {
-  MOMENTUM_LONG   : { tp: 0.020, sl: 0.004 },  // 5:1 — trend already confirmed
-  OVERSOLD_BOUNCE : { tp: 0.025, sl: 0.005 },  // 5:1 — deep dip bounces hard
-  VWAP_LONG       : { tp: 0.015, sl: 0.004 },  // 3.75:1 — value play, modest target
-  PUMP_SHORT      : { tp: 0.018, sl: 0.004 },  // 4.5:1 — pump fades reliably
-  SUPERNOVA_SHORT : { tp: 0.025, sl: 0.005 },  // 5:1 — extreme pumps mean-revert hard
-  VWAP_SHORT      : { tp: 0.015, sl: 0.004 },  // 3.75:1
-  FOREX_DIP       : { tp: 0.006, sl: 0.002 },  // forex: tighter, faster moves
+  MOMENTUM_LONG   : { tp: 0.015, sl: 0.004 },  // 3.75:1 — tighter TP, faster cycling
+  OVERSOLD_BOUNCE : { tp: 0.020, sl: 0.005 },  // 4:1
+  VWAP_LONG       : { tp: 0.010, sl: 0.004 },  // 2.5:1 — high-frequency scalp
+  PUMP_SHORT      : { tp: 0.015, sl: 0.004 },
+  SUPERNOVA_SHORT : { tp: 0.020, sl: 0.005 },
+  VWAP_SHORT      : { tp: 0.010, sl: 0.004 },
+  FOREX_DIP       : { tp: 0.006, sl: 0.002 },
   FOREX_FADE      : { tp: 0.006, sl: 0.002 },
-  MEAN_REVERT     : { tp: 0.018, sl: 0.004 },  // 4.5:1
+  MEAN_REVERT     : { tp: 0.010, sl: 0.004 },  // 2.5:1 — scalp
 }
 
 export function getMinLongScore(setupTag: string): number {
