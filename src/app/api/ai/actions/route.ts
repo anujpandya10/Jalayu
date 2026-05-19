@@ -60,12 +60,12 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: 'save_memory',
-    description: 'Save a note to memory. Use when user says "save this", "remember", "add to memory", "capture this".',
+    description: 'Save a note to the user\'s Notes section. ALWAYS use this when the user says ANY of: "add this to my notes", "save this note", "make a note", "note this down", "remember this", "save this", "capture this", "add to memory", "jot this down", "write this down", "save to notes". Save the content close to verbatim — do NOT paraphrase what the user said unless they ask you to. The note is automatically timestamped with the current date and time when saved. After saving, briefly confirm: "Saved to your notes."',
     input_schema: {
       type: 'object' as const,
       properties: {
-        content: { type: 'string', description: 'What to save, close to verbatim' },
-        type: { type: 'string', enum: ['note', 'learning', 'mind', 'people'], description: 'Category — default note' },
+        content: { type: 'string', description: 'The note content — keep it close to what the user said verbatim. Do not paraphrase unless asked.' },
+        type: { type: 'string', enum: ['note', 'learning', 'mind', 'people'], description: 'Category — default "note" for general notes' },
       },
       required: ['content'],
     },

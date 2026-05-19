@@ -217,6 +217,7 @@ export type SidebarView =
   | 'calendar'
   | 'reminders'
   | 'mind'
+  | 'notes'
   | 'progress'
   | 'wellness'
   | 'learning'

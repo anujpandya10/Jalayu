@@ -17,6 +17,7 @@ export type HomeWidgetId =
   | 'explore'
   | 'strategy_lab'
   | 'memory'
+  | 'notes'
 
 export interface DashboardLayout {
   version: 2
@@ -41,6 +42,7 @@ export const WIDGET_LABELS: Record<HomeWidgetId, string> = {
   explore: 'Explore',
   strategy_lab: 'Strategy Lab',
   memory: 'Memory',
+  notes: 'Notes',
 }
 
 export const SIZE_LABELS: Record<WidgetSize, string> = {
@@ -64,17 +66,19 @@ const DEFAULT_SIZES: Partial<Record<HomeWidgetId, WidgetSize>> = {
   explore: 'medium',
   strategy_lab: 'small',
   memory: 'small',
+  notes: 'medium',
 }
 
 const DEFAULT_LAYOUT: DashboardLayout = {
   version: 2,
   columns: {
-    left: ['identity', 'morning_note', 'ask_jalayu'],
+    left: ['identity', 'morning_note', 'ask_jalayu', 'notes'],
     center: ['quote', 'mood', 'health', 'schedule', 'trading'],
     right: ['reflection', 'north_star', 'progress', 'explore', 'strategy_lab', 'memory'],
   },
   mobile: [
     'quote',
+    'notes',
     'reflection',
     'mood',
     'health',

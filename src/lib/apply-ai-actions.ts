@@ -48,7 +48,7 @@ export function applyAiActions(actions: AiExecutedAction[]) {
         break
       case 'memory_saved':
         addNote(action.data as unknown as Note)
-        toast.success('Saved to memory ✦')
+        toast.success('Saved to your notes ✦')
         break
       case 'task_completed': {
         const task = action.data as unknown as Task

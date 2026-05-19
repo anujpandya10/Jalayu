@@ -13,6 +13,7 @@ import HealthCompact from '@/components/dashboard/HealthCompact'
 import ReflectionCompact from '@/components/dashboard/ReflectionCompact'
 import GalaxyOrb from '@/components/GalaxyOrb'
 import PorscheClock from '@/components/dashboard/PorscheClock'
+import NotesWidget from '@/components/dashboard/home/NotesWidget'
 import type { HealthProfile, Medication, HealthAppointment } from '@/lib/types'
 import type { TradingPosition } from '@/components/dashboard/views/HomeContent'
 
@@ -754,6 +755,10 @@ export function renderHomeWidget(
           )}
         </W>
       )
+
+    // ── Notes ───────────────────────────────────────────────────────────────
+    case 'notes':
+      return <NotesWidget size={size} setSidebarView={ctx.setSidebarView} />
 
     // ── Memory ──────────────────────────────────────────────────────────────
     case 'memory':
