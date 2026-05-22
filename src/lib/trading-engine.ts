@@ -406,26 +406,62 @@ export async function runTradingTick(
   const held = heldRaw ?? []
   const heldSet = new Set(held.map((r: { symbol: string }) => r.symbol))
 
-  // ── Symbol cooldown: different durations for wins vs losses ─────────────────
-  // After a loss/stale-cut: 5 min cooldown — the asset isn't cooperating, leave it alone.
-  // After a win: 90s cooldown — quick re-entry if a new signal appears.
-  const LOSS_COOLDOWN_SECS = 300  // 5 min after any losing exit
-  const WIN_COOLDOWN_SECS  = SYMBOL_COOLDOWN_SECS  // 60s after a win
-  const lossCutoff = new Date(now - LOSS_COOLDOWN_SECS * 1000).toISOString()
-  const winCutoff  = new Date(now - WIN_COOLDOWN_SECS  * 1000).toISOString()
+  // ── Symbol cooldown: differential, with multi-loss block ────────────────────
+  // After 1 loss: 30 min cooldown (was 5 min). Pumps/dumps last hours, not minutes —
+  //   a 5-min cooldown causes the "short NEAR → lose → short NEAR → lose" death loop.
+  // After 2+ losses in 24h: 4 HOUR block. If we've been wrong twice on the same
+  //   symbol in a day, that symbol is moving against our model — stop fighting it.
+  // After a win: 60s cooldown (unchanged) — quick re-entry on new signals.
+  const LOSS_COOLDOWN_SECS         = 1800   // 30 min after any losing exit
+  const MULTI_LOSS_BLOCK_SECS      = 14400  // 4 hours if 2+ losses in 24h on same symbol
+  const WIN_COOLDOWN_SECS          = SYMBOL_COOLDOWN_SECS
+  const lossCutoff      = new Date(now - LOSS_COOLDOWN_SECS * 1000).toISOString()
+  const winCutoff       = new Date(now - WIN_COOLDOWN_SECS * 1000).toISOString()
+  const dayLookback     = new Date(now - 24 * 60 * 60 * 1000).toISOString()
+  const multiLossCutoff = new Date(now - MULTI_LOSS_BLOCK_SECS * 1000).toISOString()
 
-  const [{ data: lossExits }, { data: winExits }] = await Promise.all([
+  const [{ data: lossExits }, { data: winExits }, { data: recentLosses }] = await Promise.all([
     supabase.from('paper_trades').select('symbol')
       .eq('user_id', userId).in('action', ['SELL', 'BUY']).lt('pnl', 0)
       .gte('created_at', lossCutoff),
     supabase.from('paper_trades').select('symbol')
       .eq('user_id', userId).in('action', ['SELL', 'BUY']).gte('pnl', 0).neq('pnl', null)
       .gte('created_at', winCutoff),
+    supabase.from('paper_trades').select('symbol, created_at')
+      .eq('user_id', userId).in('action', ['SELL', 'BUY']).lt('pnl', 0)
+      .gte('created_at', dayLookback),
   ])
+
+  // Count losses per symbol in 24h; if >= 2 AND most recent within MULTI_LOSS_BLOCK_SECS, block
+  const lossCountBySymbol = new Map<string, { count: number; latestIso: string }>()
+  for (const t of (recentLosses ?? []) as { symbol: string; created_at: string }[]) {
+    const cur = lossCountBySymbol.get(t.symbol)
+    if (!cur) lossCountBySymbol.set(t.symbol, { count: 1, latestIso: t.created_at })
+    else {
+      cur.count++
+      if (t.created_at > cur.latestIso) cur.latestIso = t.created_at
+    }
+  }
+  const multiLossBlocked = new Set<string>()
+  for (const [symbol, info] of lossCountBySymbol.entries()) {
+    if (info.count >= 2 && info.latestIso >= multiLossCutoff) {
+      multiLossBlocked.add(symbol)
+    }
+  }
+
   const cooldownSet = new Set([
     ...(lossExits ?? []).map((t: { symbol: string }) => t.symbol),
     ...(winExits  ?? []).map((t: { symbol: string }) => t.symbol),
+    ...multiLossBlocked,
   ])
+
+  if (multiLossBlocked.size > 0) {
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `⛔ Multi-loss block: ${[...multiLossBlocked].join(', ')} — 2+ losses in 24h, blocked for 4h`,
+      ts: now,
+    })
+  }
   let currentLongs = 0
   let currentShorts = 0
   for (const h of held) {
@@ -537,10 +573,43 @@ export async function runTradingTick(
     }
   }
 
-  const shortSignals = filterShortEntries(allSignals)
+  let shortSignals = filterShortEntries(allSignals)
     .filter((s) => !heldSet.has(s.asset.symbol))
     .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
+
+  // Shorts: gate by regime. In BULL or NEUTRAL, "pump shorts" usually keep
+  // pumping — that's the NEAR loop that just destroyed us. Only short when
+  // the overall market regime confirms the downward bias.
+  const beforeShortCount = shortSignals.filter((s) => s.asset.assetType === 'crypto').length
+  if (marketRegime !== 'BEAR') {
+    shortSignals = shortSignals.filter((s) => s.asset.assetType !== 'crypto')
+    if (beforeShortCount > 0) {
+      events.push({
+        type: 'HOLD', symbol: '', name: '', price: 0, direction: 'SHORT',
+        reason: `${marketRegime === 'BULL' ? '🟢' : '🟡'} ${marketRegime} regime — blocked ${beforeShortCount} crypto short signals (only short in BEAR)`,
+        ts: now,
+      })
+    }
+  }
+
+  // ── Capital drawdown circuit breaker ────────────────────────────────────────
+  // Independent from daily-loss limit (which resets each UTC day). This tracks
+  // total drawdown from seed across all time. At >5% drawdown ($25 on $500),
+  // pause ALL new entries until equity recovers above the threshold.
+  const currentEquityForDrawdown = computePortfolioEquity(cash, positions, priceMap)
+  const drawdownPct = (currentEquityForDrawdown - SEED_CAPITAL) / SEED_CAPITAL
+  const DRAWDOWN_PAUSE_PCT = -0.05  // -5% from seed
+  const drawdownPaused = drawdownPct <= DRAWDOWN_PAUSE_PCT
+  if (drawdownPaused) {
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `⛔ Drawdown circuit breaker: equity $${currentEquityForDrawdown.toFixed(2)} (${(drawdownPct * 100).toFixed(2)}% from seed). No new entries until equity recovers above $${(SEED_CAPITAL * (1 + DRAWDOWN_PAUSE_PCT)).toFixed(2)}.`,
+      ts: now,
+    })
+    longSignals = []
+    shortSignals = []
+  }
 
   // ── Helper: check if this setup tag is disabled by user ──────────────────
   const { data: strategyConfigs } = await supabase

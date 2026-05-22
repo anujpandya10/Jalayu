@@ -161,16 +161,20 @@ function stage2Score(
     reasons.push(`Supernova: +${change24h.toFixed(0)}%, ${volSpike.toFixed(1)}× vol, RSI ${rsi.toFixed(0)}`)
     setupTag = 'SUPERNOVA_SHORT'
   }
-  // PUMP SHORT — standard overextension fade
-  else if (change24h > 12 && rsi >= 70 && volSpike >= 2 && score < 0) {
+  // PUMP SHORT — fade an extended pump only when it's STARTING TO TURN.
+  // Critical: require ema9 < ema21 — short-term momentum has rolled over.
+  // Without this, we keep shorting pumps that have hours of upside left.
+  // The NEAR death loop happened here: rsi 70+ but ema9 still > ema21 = still pumping.
+  else if (change24h > 15 && rsi >= 72 && volSpike >= 2 && score < 0 && ema9 < ema21) {
     score   -= 1.5
-    reasons.push(`Pump fade: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% above VWAP`)
+    reasons.push(`Pump fade: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% above VWAP, EMA9<21 (turning)`)
     setupTag = 'PUMP_SHORT'
   }
-  // VWAP SHORT — extended above fair value, calm market
-  else if (vwapDevPct > 1.5 && rsi >= 65 && rsi <= 80 && regime !== 'HIGH_VOL') {
+  // VWAP SHORT — extended above fair value AND momentum turning down.
+  // Requires ema9 < ema21 for the same reason as PUMP_SHORT.
+  else if (vwapDevPct > 1.5 && rsi >= 68 && rsi <= 80 && regime !== 'HIGH_VOL' && ema9 < ema21) {
     score   -= 1.5
-    reasons.push(`VWAP short: ${vwapDevPct.toFixed(2)}% above VWAP, RSI ${rsi.toFixed(0)}`)
+    reasons.push(`VWAP short: ${vwapDevPct.toFixed(2)}% above VWAP, RSI ${rsi.toFixed(0)}, EMA9<21`)
     if (setupTag === 'UNTAGGED') setupTag = 'VWAP_SHORT'
   }
   // Kill weak shorts if RSI deeply oversold — risk of violent bounce
