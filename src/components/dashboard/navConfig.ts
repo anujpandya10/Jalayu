@@ -5,6 +5,7 @@ import {
   CheckSquare,
   BookOpen,
   StickyNote,
+  Shield,
   TrendingUp,
   Heart,
   Users,
@@ -29,7 +30,8 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
     items: [
       { key: 'dashboard', icon: Home, label: 'Home' },
       { key: 'calendar', icon: CheckSquare, label: 'Calendar' },
-      { key: 'notes', icon: StickyNote, label: 'Notes', badge: 'new-pill' },
+      { key: 'notes', icon: StickyNote, label: 'Notes' },
+      { key: 'vault', icon: Shield, label: 'Vault', badge: 'new-pill' },
       { key: 'memory', icon: BookOpen, label: 'Memory' },
       { key: 'insights', icon: Brain, label: 'Intelligence' },
     ],

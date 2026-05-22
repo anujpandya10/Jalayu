@@ -298,8 +298,9 @@ export default function CustomizableHomeGrid({
   }
 
   const handleReset = () => {
+    if (!confirm('Reset to the focused layout?\n\nThis hides:\n• Quote, Reflection, Health, North star, Progress, Explore, Strategy Lab, Memory\n\nKeeps on home:\n• Identity, Morning note, Ask Jalayu, Schedule, Mood, Trading, Notes, Vault\n\nYou can unhide any widget from this panel. Continue?')) return
     setLayout(getDefaultDashboardLayout())
-    toast.success('Reset to default — tap Done to save')
+    toast.success('Switched to focused layout — tap Done to save')
   }
 
   const hiddenWidgets = layout.hidden
@@ -341,7 +342,7 @@ export default function CustomizableHomeGrid({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)' }}>Drag · S/M/L size · ✕ hide</span>
             <button type="button" onClick={handleReset} style={toolbarBtnStyle}>
-              <RotateCcw size={13} /> Reset
+              <RotateCcw size={13} /> Use focused layout
             </button>
             <button type="button" onClick={() => setEditMode(false)} style={toolbarBtnStyle}>
               Cancel

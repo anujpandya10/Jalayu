@@ -18,9 +18,10 @@ export type HomeWidgetId =
   | 'strategy_lab'
   | 'memory'
   | 'notes'
+  | 'vault'
 
 export interface DashboardLayout {
-  version: 2
+  version: 2 | 3
   columns: Record<DashboardColumn, HomeWidgetId[]>
   mobile: HomeWidgetId[]
   hidden: HomeWidgetId[]
@@ -43,6 +44,7 @@ export const WIDGET_LABELS: Record<HomeWidgetId, string> = {
   strategy_lab: 'Strategy Lab',
   memory: 'Memory',
   notes: 'Notes',
+  vault: 'Vault',
 }
 
 export const SIZE_LABELS: Record<WidgetSize, string> = {
@@ -67,30 +69,34 @@ const DEFAULT_SIZES: Partial<Record<HomeWidgetId, WidgetSize>> = {
   strategy_lab: 'small',
   memory: 'small',
   notes: 'medium',
+  vault: 'medium',
 }
 
+/**
+ * V3 layout — focused "Daily + trading" default.
+ * Only essentials show on home. Everything else accessible via sidebar.
+ * Existing users keep their v2 layout until they hit "Reset to focused layout"
+ * in the Widgets manager.
+ */
 const DEFAULT_LAYOUT: DashboardLayout = {
-  version: 2,
+  version: 3,
   columns: {
-    left: ['identity', 'morning_note', 'ask_jalayu', 'notes'],
-    center: ['quote', 'mood', 'health', 'schedule', 'trading'],
-    right: ['reflection', 'north_star', 'progress', 'explore', 'strategy_lab', 'memory'],
+    left: ['identity', 'morning_note', 'ask_jalayu'],
+    center: ['schedule', 'mood', 'trading'],
+    right: ['notes', 'vault'],
   },
   mobile: [
-    'quote',
-    'notes',
-    'reflection',
-    'mood',
-    'health',
+    'identity',
+    'morning_note',
+    'ask_jalayu',
     'schedule',
+    'mood',
     'trading',
-    'progress',
-    'explore',
-    'strategy_lab',
-    'memory',
-    'north_star',
+    'notes',
+    'vault',
   ],
-  hidden: [],
+  // Everything below is available via the Widgets manager — just not shown by default.
+  hidden: ['quote', 'reflection', 'health', 'north_star', 'progress', 'explore', 'strategy_lab', 'memory'],
   sizes: { ...DEFAULT_SIZES },
 }
 

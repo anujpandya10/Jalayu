@@ -13,6 +13,7 @@ import MindView from '@/components/dashboard/views/MindView'
 import LearningView from '@/components/dashboard/views/LearningView'
 import MemoryView from '@/components/dashboard/views/MemoryView'
 import NotesView from '@/components/dashboard/views/NotesView'
+import VaultView from '@/components/dashboard/views/VaultView'
 import ProgressView from '@/components/dashboard/views/ProgressView'
 import WellnessView from '@/components/dashboard/views/WellnessView'
 import PeopleView from '@/components/dashboard/views/PeopleView'
@@ -383,6 +384,8 @@ export default function DashboardPage() {
         )
       case 'notes':
         return <NotesView name={name} />
+      case 'vault':
+        return <VaultView />
       case 'memory':
         return (
           <MemoryView

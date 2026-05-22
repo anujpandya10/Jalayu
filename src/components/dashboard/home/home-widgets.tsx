@@ -14,6 +14,7 @@ import ReflectionCompact from '@/components/dashboard/ReflectionCompact'
 import GalaxyOrb from '@/components/GalaxyOrb'
 import PorscheClock from '@/components/dashboard/PorscheClock'
 import NotesWidget from '@/components/dashboard/home/NotesWidget'
+import VaultWidget from '@/components/dashboard/home/VaultWidget'
 import type { HealthProfile, Medication, HealthAppointment } from '@/lib/types'
 import type { TradingPosition } from '@/components/dashboard/views/HomeContent'
 
@@ -759,6 +760,10 @@ export function renderHomeWidget(
     // ── Notes ───────────────────────────────────────────────────────────────
     case 'notes':
       return <NotesWidget size={size} setSidebarView={ctx.setSidebarView} />
+
+    // ── Vault ───────────────────────────────────────────────────────────────
+    case 'vault':
+      return <VaultWidget size={size} setSidebarView={ctx.setSidebarView} />
 
     // ── Memory ──────────────────────────────────────────────────────────────
     case 'memory':
