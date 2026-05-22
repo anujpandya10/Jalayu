@@ -1,4 +1,6 @@
 import type { ChatMsg } from '@/lib/types'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 interface ChatMessageProps {
   message: ChatMsg
@@ -16,6 +18,7 @@ export default function ChatMessage({ message }: ChatMessageProps) {
       }}
     >
       <div
+        className={isUser ? undefined : 'md-body chat-md'}
         style={{
           maxWidth: '82%',
           padding: '9px 12px',
@@ -26,9 +29,18 @@ export default function ChatMessage({ message }: ChatMessageProps) {
           fontSize: 13,
           lineHeight: 1.6,
           boxShadow: isUser ? '0 2px 8px rgba(28,25,23,0.12)' : 'none',
+          // Preserve user-typed line breaks; markdown handles the assistant side
+          whiteSpace: isUser ? 'pre-wrap' : undefined,
+          wordBreak: 'break-word',
         }}
       >
-        {message.content}
+        {isUser ? (
+          message.content
+        ) : (
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {message.content}
+          </ReactMarkdown>
+        )}
       </div>
     </div>
   )

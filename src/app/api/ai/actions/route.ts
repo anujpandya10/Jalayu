@@ -490,23 +490,57 @@ If intent is purely conversational with zero action content, call no tools.`,
           topic_hint?: string
         }
 
-        // 1. Find the folder by name (case-insensitive partial match)
+        // 1. Find the folder by name. We try several matching strategies because
+        //    users type folders different ways than they name them:
+        //      • "fresh dabba" should match "FreshDabba"
+        //      • "Q3 launch" should match "Q3 Product Launch"
+        //      • "client meeting" should match "Client Meetings"
         const { data: folders } = await supabase
           .from('notes')
           .select('id, content')
           .eq('user_id', user.id)
           .eq('is_folder', true)
 
-        const needle = input.folder_name.toLowerCase().trim()
-        const folder = (folders ?? []).find((f) =>
-          (f.content as string).toLowerCase().includes(needle)
+        const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+        const tokens = (s: string) =>
+          s.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+
+        const needleRaw = input.folder_name.trim()
+        const needleNorm = normalize(needleRaw)
+        const needleTokens = tokens(needleRaw)
+
+        const list = folders ?? []
+
+        // Strategy A: normalized substring match (handles spaces/case)
+        let folder = list.find((f) =>
+          normalize(f.content as string).includes(needleNorm)
         )
 
+        // Strategy B: every word in the needle appears in the folder name
+        if (!folder && needleTokens.length > 0) {
+          folder = list.find((f) => {
+            const folderNorm = normalize(f.content as string)
+            return needleTokens.every((t) => folderNorm.includes(t))
+          })
+        }
+
+        // Strategy C: reverse — folder name appears in the user's needle
+        // (covers "the FreshDabba pitch deck folder" wanting "FreshDabba")
         if (!folder) {
+          folder = list.find((f) => {
+            const folderNorm = normalize(f.content as string)
+            return folderNorm.length >= 4 && needleNorm.includes(folderNorm)
+          })
+        }
+
+        if (!folder) {
+          const folderNames = list.map((f) => `"${f.content}"`).slice(0, 8).join(', ')
           executed.push({
             type: 'compose_failed',
-            data: { folder_name: input.folder_name } as Record<string, unknown>,
-            message: `Could not find a folder matching "${input.folder_name}". Open the Notes tab and create one, or check the name.`,
+            data: { folder_name: input.folder_name, available: list.map((f) => f.content) } as Record<string, unknown>,
+            message: list.length === 0
+              ? `You don't have any folders yet. Open the Notes tab → New folder.`
+              : `Couldn't find a folder matching "${input.folder_name}". Your folders: ${folderNames}.`,
           })
         } else {
           // 2. Load all notes in that folder (and one level of subfolders)
