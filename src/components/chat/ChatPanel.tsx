@@ -112,6 +112,16 @@ export default function ChatPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages])
 
+  // Auto-grow textarea height as the user types (capped at maxHeight)
+  useEffect(() => {
+    const ta = inputRef.current
+    if (!ta) return
+    // Reset so scrollHeight reflects actual content height accurately
+    ta.style.height = 'auto'
+    const next = Math.min(ta.scrollHeight, 160)
+    ta.style.height = Math.max(next, 60) + 'px'
+  }, [input, mode])
+
   const toggleExplain = () => {
     setExplainWhy((v) => {
       const n = !v
@@ -841,12 +851,12 @@ export default function ChatPanel() {
                 onKeyDown={handleKeyDown}
                 placeholder={
                   listening ? 'Listening — speak now…' :
-                  mode === 'capture' ? 'Type any thought — Jalayu auto-routes it…' :
-                  mode === 'search'  ? 'Search notes, tasks, vault names…' :
-                  mode === 'ask'     ? 'Ask a one-off question — answer based on your data…' :
+                  mode === 'capture' ? 'Type a thought — Jalayu routes it' :
+                  mode === 'search'  ? 'Search notes, tasks, vault…' :
+                  mode === 'ask'     ? 'Ask anything — uses your data' :
                   `Talk to Jalayu, ${name}…`
                 }
-                rows={1}
+                rows={2}
                 style={{
                   flex: 1,
                   resize: 'none',
@@ -858,8 +868,10 @@ export default function ChatPanel() {
                   background: 'var(--surface-2)',
                   outline: 'none',
                   lineHeight: 1.5,
-                  maxHeight: 100,
+                  minHeight: 60,
+                  maxHeight: 160,
                   overflowY: 'auto',
+                  fontFamily: 'inherit',
                 }}
                 onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
                 onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
