@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Loader2, Sparkles, Mic, MicOff, BookmarkPlus, Lightbulb, Trash2, Zap, Search as SearchIcon, MessageSquare, FileText, CalendarDays, FolderOpen } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, Mic, MicOff, BookmarkPlus, Lightbulb, Trash2, Zap, Search as SearchIcon, MessageSquare, FileText, CalendarDays, FolderOpen, BookOpen } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import { generateId } from '@/lib/utils'
@@ -359,6 +359,56 @@ export default function ChatPanel() {
     void assistantId  // keep for potential future use
   }
 
+  // ── Today's Story — the WOW feature ─────────────────────────────────────
+  // Generates a personal narrative of the user's day using ALL their data
+  // (notes, tasks, mood, trades, chat, reflection) and saves it as a permanent
+  // note in the "📖 Daily Story" folder. Over time → a real lifeline.
+  const requestDailyStory = async (regen = false) => {
+    if (streaming) return
+    setStreaming(true)
+    const today = new Date()
+    const dateLabel = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    const userMsg = {
+      id: generateId(),
+      role: 'user' as const,
+      content: regen ? `Re-generate today's story` : `Tell me today's story`,
+      timestamp: new Date().toISOString(),
+    }
+    addChatMessage(userMsg)
+    const assistantId = generateId()
+    addChatMessage({ id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() })
+    try {
+      const date = today.toISOString().split('T')[0]
+      const url = `/api/ai/daily-story?date=${date}${regen ? '&regen=1' : ''}`
+      const res = await fetch(url)
+      if (!res.ok) throw new Error('Story generation failed')
+      const json = await res.json() as {
+        story: string
+        cached?: boolean
+        empty?: boolean
+        note?: Record<string, unknown>
+      }
+      let display = ''
+      if (json.empty) {
+        display = json.story
+      } else {
+        const header = json.cached
+          ? `**${dateLabel}** _(saved earlier today — ask me to regenerate if you want a fresh version)_\n\n`
+          : `**${dateLabel}**\n\n`
+        display = header + json.story
+        display += `\n\n_📖 Saved to your **Daily Story** folder._`
+      }
+      updateLastChatMessage(display)
+      if (json.note) upsertNote(json.note as unknown as Note)
+      if (display.trim()) await persistMessages(userMsg.content, display.trim())
+    } catch {
+      updateLastChatMessage('Sorry, could not generate today\'s story. Try again in a moment.')
+    } finally {
+      setStreaming(false)
+    }
+    void assistantId
+  }
+
   const send = async () => {
     const text = input.trim()
     if (!text || streaming) return
@@ -625,6 +675,71 @@ export default function ChatPanel() {
                 )
               })}
             </div>
+
+            {/* Today's Story — the marquee feature. Always visible at top when
+                thread is empty, in any mode. Click → generates a personal
+                narrative of the user's day from ALL their data. */}
+            {chatMessages.length === 0 && (
+              <div style={{
+                padding: '10px 12px',
+                background: 'linear-gradient(135deg, rgba(139,92,246,0.06), rgba(217,119,87,0.05))',
+                borderBottom: '1px solid var(--border)',
+              }}>
+                <button
+                  type="button"
+                  onClick={() => void requestDailyStory(false)}
+                  disabled={streaming}
+                  style={{
+                    width: '100%',
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px',
+                    background: 'var(--surface)',
+                    border: '1px solid var(--border-2)',
+                    borderRadius: 10,
+                    cursor: streaming ? 'not-allowed' : 'pointer',
+                    textAlign: 'left',
+                    fontFamily: 'inherit',
+                    transition: 'border-color 0.15s, transform 0.1s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#8B5CF6'
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = 'var(--border-2)'
+                  }}
+                >
+                  <div style={{
+                    width: 32, height: 32, borderRadius: 9,
+                    background: 'linear-gradient(135deg, #8B5CF6, #D97757)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <BookOpen size={14} color="#fff" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 12.5, fontWeight: 600, color: 'var(--text)',
+                      display: 'flex', alignItems: 'center', gap: 6,
+                    }}>
+                      Today&apos;s Story
+                      <span style={{
+                        fontSize: 9, fontWeight: 500,
+                        padding: '1px 6px', borderRadius: 4,
+                        background: 'linear-gradient(90deg, #8B5CF6, #D97757)',
+                        color: '#fff',
+                      }}>NEW</span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1 }}>
+                      A narrative of your day — written from your actual notes, tasks, trades, mood
+                    </div>
+                  </div>
+                  {streaming
+                    ? <Loader2 size={13} className="animate-spin" color="var(--text-3)" />
+                    : <Sparkles size={13} color="#8B5CF6" />
+                  }
+                </button>
+              </div>
+            )}
 
             {/* Quick prompt chips — "Brief Me" feature */}
             {mode === 'ask' && chatMessages.length === 0 && (
