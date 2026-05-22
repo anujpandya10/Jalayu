@@ -102,6 +102,14 @@ export default function CommandPalette({ open, onClose, voiceOnOpen }: CommandPa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, voiceOnOpen])
 
+  // Auto-grow textarea height based on content (capped at 200px)
+  useEffect(() => {
+    const ta = inputRef.current
+    if (!ta) return
+    ta.style.height = 'auto'
+    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px'
+  }, [text])
+
   // Auto-detect mode while typing
   useEffect(() => {
     if (!autoMode) return

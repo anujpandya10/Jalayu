@@ -23,12 +23,14 @@ interface PatchNoteBody {
   title?: string | null
   tags?: string[] | null
   pinned?: boolean
+  hideFromHome?: boolean
   parent_id?: string | null   // null clears parent (moves to root); UUID moves to a folder
 }
 
 interface NoteMeta {
   title?: string
   pinned?: boolean
+  hideFromHome?: boolean
 }
 
 interface Attachment {
@@ -173,6 +175,11 @@ export async function PATCH(
     if (body.pinned !== undefined) {
       if (body.pinned === true) nextMeta.pinned = true
       else delete nextMeta.pinned
+      metaChanged = true
+    }
+    if (body.hideFromHome !== undefined) {
+      if (body.hideFromHome === true) nextMeta.hideFromHome = true
+      else delete nextMeta.hideFromHome
       metaChanged = true
     }
     if (metaChanged) {

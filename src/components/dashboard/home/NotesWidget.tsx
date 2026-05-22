@@ -9,6 +9,7 @@ import type { WidgetSize } from '@/lib/dashboard-layout'
 interface NoteMeta {
   title?: string
   pinned?: boolean
+  hideFromHome?: boolean
 }
 
 interface Note {
@@ -60,10 +61,10 @@ export default function NotesWidget({ size, setSidebarView }: Props) {
       const res = await fetch(`/api/notes?limit=${limit + 10}`, { cache: 'no-store' })
       if (!res.ok) return
       const json = await res.json() as { notes: Note[] }
-      // Exclude folders from the home widget — they're navigation, not content.
+      // Exclude folders and any notes the user has marked "hide from home".
       // Sort pinned first then newest.
       const sorted = [...(json.notes ?? [])]
-        .filter((n) => !n.is_folder)
+        .filter((n) => !n.is_folder && !n.meta?.hideFromHome)
         .sort((a, b) => {
           const ap = a.meta?.pinned ? 1 : 0
           const bp = b.meta?.pinned ? 1 : 0

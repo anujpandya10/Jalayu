@@ -371,21 +371,88 @@ async function runSearch(query: string, userId: string, supabase: Awaited<Return
 // QUERY MODE — answer a contextual question (what now, summarize today, etc.)
 // ────────────────────────────────────────────────────────────────────────────
 
-async function runQuery(question: string, userId: string, supabase: Awaited<ReturnType<typeof createClient>>): Promise<string> {
+async function runQuery(
+  question: string,
+  userId: string,
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  screen?: ScreenContext,
+): Promise<string> {
   const today = new Date().toISOString().split('T')[0]
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
 
-  const [profileRes, tasksRes, moodsRes, calRes] = await Promise.all([
+  const [profileRes, tasksRes, moodsRes, calRes, foldersRes] = await Promise.all([
     supabase.from('profiles').select('nickname, full_name, biggest_goal, peak_hours').eq('id', userId).single(),
     supabase.from('tasks').select('title, due_date, priority, completed').eq('user_id', userId).eq('completed', false).order('due_date', { ascending: true }).limit(15),
     supabase.from('moods').select('score, date, note').eq('user_id', userId).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false }).limit(7),
     supabase.from('tasks').select('title, due_date').eq('user_id', userId).eq('completed', false).gte('due_date', today).order('due_date', { ascending: true }).limit(5),
+    // All folders so we can match references like "my FreshDabba folder"
+    supabase.from('notes').select('id, content').eq('user_id', userId).eq('is_folder', true),
   ])
 
   const profile = profileRes.data
   const openTasks = tasksRes.data ?? []
   const moods = moodsRes.data ?? []
   const nextItems = calRes.data ?? []
+  const folders = foldersRes.data ?? []
+
+  // ── Fuzzy-match any folder name mentioned in the question ────────────────
+  // If found OR if the user is currently inside a folder, load that folder's
+  // notes so the AI can answer questions like "is this pitch good?"
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+  const questionNorm = normalize(question)
+
+  let referencedFolder: { id: string; content: string } | null = null
+  // First: explicit folder name match in the question
+  for (const f of folders) {
+    const fNorm = normalize(f.content as string)
+    if (fNorm.length >= 3 && questionNorm.includes(fNorm)) {
+      referencedFolder = { id: f.id as string, content: f.content as string }
+      break
+    }
+  }
+  // Fall back to the folder the user is currently viewing in the workspace
+  if (!referencedFolder && screen?.folderId && screen?.folderName) {
+    referencedFolder = { id: screen.folderId, content: screen.folderName }
+  }
+
+  let folderBlock = ''
+  if (referencedFolder) {
+    const { data: folderNotes } = await supabase
+      .from('notes')
+      .select('content, body_md, attachments')
+      .eq('user_id', userId)
+      .eq('parent_id', referencedFolder.id)
+      .eq('is_folder', false)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (folderNotes && folderNotes.length > 0) {
+      const corpus = folderNotes.map((n, i) => {
+        const title = (n.content as string).split('\n')[0].slice(0, 100)
+        const body = ((n.body_md as string | null) || '').slice(0, 2500)
+        const atts = (n.attachments as Array<{ name: string }> | null) ?? []
+        const attLine = atts.length > 0 ? ` [attachments: ${atts.map((a) => a.name).join(', ')}]` : ''
+        return `--- NOTE ${i + 1}: ${title}${attLine} ---\n${body || '(no body)'}`
+      }).join('\n\n')
+      folderBlock = `\n\nFOLDER IN CONTEXT — "${referencedFolder.content}" (${folderNotes.length} notes):\n${corpus}`
+    } else {
+      folderBlock = `\n\nFOLDER IN CONTEXT — "${referencedFolder.content}" is empty.`
+    }
+  }
+
+  // If user is viewing a specific note, also load it
+  let noteBlock = ''
+  if (screen?.noteId) {
+    const { data: noteRow } = await supabase
+      .from('notes')
+      .select('content, body_md')
+      .eq('id', screen.noteId)
+      .eq('user_id', userId)
+      .maybeSingle()
+    if (noteRow) {
+      const body = ((noteRow.body_md as string | null) || (noteRow.content as string) || '').slice(0, 3000)
+      noteBlock = `\n\nNOTE CURRENTLY OPEN — "${screen.noteName ?? 'untitled'}":\n${body}`
+    }
+  }
 
   const now = new Date()
   const hour = now.getHours()
@@ -398,7 +465,9 @@ async function runQuery(question: string, userId: string, supabase: Awaited<Retu
   const goal = profile?.biggest_goal || 'not stated'
   const peak = profile?.peak_hours || 'unknown'
 
-  const system = `You are answering ${name}'s question concisely. Use their actual data. ONE direct answer, max 4 short sentences. No hedging.
+  const allFolderNames = folders.map((f) => `"${f.content}"`).join(', ') || '(no folders)'
+
+  const system = `You are answering ${name}'s question concisely and HELPFULLY. Use the data below. Max 5 short paragraphs. No hedging. NEVER say "I don't have access to your folders" — the folder contents are right here if relevant.
 
 NOW: ${now.toLocaleString('en-US', { weekday: 'long', hour: 'numeric', minute: '2-digit' })} (${partOfDay})
 GOAL: ${goal}
@@ -411,12 +480,18 @@ ${openTasks.map((t) => `• ${t.title}${t.due_date ? ` (due ${t.due_date})` : ''
 NEXT ON CALENDAR:
 ${nextItems.map((t) => `• ${t.due_date}: ${t.title}`).join('\n') || '(nothing scheduled)'}
 
-If the question is "what now" / "what should I do" / "what's next": pick ONE specific thing from their tasks/calendar based on time-of-day and their peak hours. Give the FIRST CONCRETE STEP (15 min slice), not the whole task.
-If it's a general question: answer it directly using the data above + your general knowledge.`
+ALL FOLDERS THEY HAVE: ${allFolderNames}
+${folderBlock}
+${noteBlock}
+
+GUIDANCE BY QUESTION TYPE:
+- "what now" / "what should I do" / "what's next": pick ONE specific thing from tasks/calendar based on time-of-day. Give the FIRST CONCRETE STEP (15 min slice).
+- Questions about a specific folder/project (e.g., "is my FreshDabba pitch good?", "what's in my X folder?"): the folder's notes are loaded above. Read them, then give specific, grounded feedback referencing actual content. If asked to improve something, write the improved version directly.
+- General questions: answer using the data above + your knowledge.`
 
   const resp = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 350,
+    max_tokens: 1200,
     system,
     messages: [{ role: 'user', content: question }],
   })
@@ -451,7 +526,7 @@ export async function POST(request: Request) {
     }
 
     if (mode === 'query') {
-      const answer = await runQuery(text, user.id, supabase)
+      const answer = await runQuery(text, user.id, supabase, body.context)
       return NextResponse.json({ mode, answer })
     }
 

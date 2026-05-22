@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Loader2, Search, Pin, PinOff, Trash2, Pencil, Plus, X, Check,
   StickyNote, FolderPlus, Folder, FolderOpen, ChevronRight, ChevronDown,
-  FileText, Paperclip, Download, Eye, Upload, ArrowLeft, Move, Lock,
+  FileText, Paperclip, Download, Eye, EyeOff, Upload, ArrowLeft, Move, Lock,
   Image as ImageIcon, File as FileIcon, FolderSymlink, Maximize2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -16,6 +16,7 @@ import VaultUnlockDialog from '@/components/chat/VaultUnlockDialog'
 interface NoteMeta {
   title?: string
   pinned?: boolean
+  hideFromHome?: boolean
 }
 
 interface Attachment {
@@ -297,6 +298,30 @@ export default function NotesView({ name }: Props) {
     }
   }
 
+  /**
+   * Toggle whether this note shows on the home dashboard's Notes widget.
+   * Pin = float to top in workspace. Hide from home = stop appearing on home.
+   * Two separate concepts.
+   */
+  const toggleHideFromHome = async (note: Note) => {
+    const nextHidden = !note.meta?.hideFromHome
+    setNotes((prev) => prev.map((n) => (
+      n.id === note.id ? { ...n, meta: { ...(n.meta ?? {}), hideFromHome: nextHidden } } : n
+    )))
+    try {
+      const res = await fetch(`/api/notes/${note.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hideFromHome: nextHidden }),
+      })
+      if (!res.ok) throw new Error()
+      toast.success(nextHidden ? 'Hidden from home dashboard' : 'Showing on home dashboard')
+    } catch {
+      setNotes((prev) => prev.map((n) => (n.id === note.id ? note : n)))
+      toast.error('Could not update')
+    }
+  }
+
   const deleteNote = async (note: Note) => {
     const msg = note.is_folder
       ? `Delete folder "${previewTitle(note)}" and ALL its contents? This cannot be undone.`
@@ -556,6 +581,7 @@ export default function NotesView({ name }: Props) {
             onCloseMove={() => setMoveDialogOpen(false)}
             onUploadClick={() => fileInputRef.current?.click()}
             onDeleteAttachment={(idx) => deleteAttachment(selectedNote.id, idx)}
+            onToggleHideFromHome={() => toggleHideFromHome(selectedNote)}
             onMoveToVault={() => {
               // Pre-fill the vault dialog with the note's body (the actual
               // sensitive content). Dialog will encrypt + create vault entry
@@ -705,6 +731,7 @@ interface NoteEditorProps {
   onUploadClick: () => void
   onDeleteAttachment: (idx: number) => void
   onMoveToVault: () => void
+  onToggleHideFromHome: () => void
 }
 
 function NoteEditor(props: NoteEditorProps) {
@@ -754,9 +781,25 @@ function NoteEditor(props: NoteEditorProps) {
           <button type="button" onClick={props.onOpenMove} style={btnSecondary} title="Move">
             <Move size={11} /> Move
           </button>
-          <button type="button" onClick={props.onPin} style={btnSecondary}>
+          <button
+            type="button"
+            onClick={props.onPin}
+            style={btnSecondary}
+            title="Pin floats this note to the top of the workspace list (still shows on home — use Hide-from-home for that)"
+          >
             {note.meta?.pinned ? <PinOff size={11} /> : <Pin size={11} />}
             {note.meta?.pinned ? 'Unpin' : 'Pin'}
+          </button>
+          <button
+            type="button"
+            onClick={props.onToggleHideFromHome}
+            style={btnSecondary}
+            title={note.meta?.hideFromHome
+              ? 'Currently hidden from home — click to show again'
+              : 'Hide this note from the home dashboard Notes widget'}
+          >
+            {note.meta?.hideFromHome ? <Eye size={11} /> : <EyeOff size={11} />}
+            {note.meta?.hideFromHome ? 'Show on home' : 'Hide from home'}
           </button>
           <button type="button" onClick={props.onDelete} style={btnSecondary} title="Delete"
             onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444' }}
