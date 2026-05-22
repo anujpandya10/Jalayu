@@ -50,6 +50,14 @@ export function applyAiActions(actions: AiExecutedAction[]) {
         addNote(action.data as unknown as Note)
         toast.success('Saved to your notes ✦')
         break
+      case 'compose_saved':
+        // The composed note IS a regular note — add it so the home widget refreshes
+        addNote(action.data as unknown as Note)
+        toast.success(action.message || 'Created ✦', { duration: 5000 })
+        break
+      case 'compose_failed':
+        toast.error(action.message || 'Could not compose')
+        break
       case 'task_completed': {
         const task = action.data as unknown as Task
         updateTask(task.id, { completed: true, completed_at: task.completed_at ?? null })

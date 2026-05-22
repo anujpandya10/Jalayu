@@ -59,6 +59,23 @@ const TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: 'compose_from_folder',
+    description: 'Compose a polished output (pitch, summary, document, slide outline) from all notes in a workspace folder. Use when the user says: "create a pitch from my [folder] notes", "make slides from [folder]", "summarize my [folder] folder", "build a presentation about [project]", "compose a pitch about [topic]", "give me a pitch deck for [project]", "turn my [folder] into a doc". You MUST extract the folder name they referenced. The composed output is saved as a NEW NOTE inside that same folder. After composing, confirm: "Created [output_type] in your [folder] folder — open it to view and edit."',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        folder_name: { type: 'string', description: 'The folder name the user referenced. We do a case-insensitive partial match against their folder names.' },
+        output_type: {
+          type: 'string',
+          enum: ['pitch', 'summary', 'slide_outline', 'doc'],
+          description: 'pitch = 5-minute investor/audience pitch with outline + speaker notes. summary = concise overview. slide_outline = bullet-point slide structure. doc = polished narrative document.',
+        },
+        topic_hint: { type: 'string', description: 'Optional extra context, e.g., "focus on the product side" or "5-minute version".' },
+      },
+      required: ['folder_name', 'output_type'],
+    },
+  },
+  {
     name: 'save_memory',
     description: 'Save a note to the user\'s Notes section. ALWAYS use this when the user says ANY of: "add this to my notes", "save this note", "make a note", "note this down", "remember this", "save this", "capture this", "add to memory", "jot this down", "write this down", "save to notes". Save the content close to verbatim — do NOT paraphrase what the user said unless they ask you to. The note is automatically timestamped with the current date and time when saved. After saving, briefly confirm: "Saved to your notes."',
     input_schema: {
@@ -205,6 +222,8 @@ export type ExecutedAction = {
     | 'mood_logged'
     | 'reminder_added'
     | 'memory_saved'
+    | 'compose_saved'
+    | 'compose_failed'
     | 'task_completed'
     | 'decision_tracked'
     | 'insurance_saved'
@@ -462,6 +481,169 @@ If intent is purely conversational with zero action content, call no tools.`,
           .select()
           .single()
         if (!error && data) executed.push({ type: 'memory_saved', data: data as Record<string, unknown>, message: `Saved to memory` })
+      }
+
+      if (block.name === 'compose_from_folder') {
+        const input = block.input as {
+          folder_name: string
+          output_type: 'pitch' | 'summary' | 'slide_outline' | 'doc'
+          topic_hint?: string
+        }
+
+        // 1. Find the folder by name (case-insensitive partial match)
+        const { data: folders } = await supabase
+          .from('notes')
+          .select('id, content')
+          .eq('user_id', user.id)
+          .eq('is_folder', true)
+
+        const needle = input.folder_name.toLowerCase().trim()
+        const folder = (folders ?? []).find((f) =>
+          (f.content as string).toLowerCase().includes(needle)
+        )
+
+        if (!folder) {
+          executed.push({
+            type: 'compose_failed',
+            data: { folder_name: input.folder_name } as Record<string, unknown>,
+            message: `Could not find a folder matching "${input.folder_name}". Open the Notes tab and create one, or check the name.`,
+          })
+        } else {
+          // 2. Load all notes in that folder (and one level of subfolders)
+          const { data: directNotes } = await supabase
+            .from('notes')
+            .select('id, content, body_md, attachments, is_folder, created_at')
+            .eq('user_id', user.id)
+            .eq('parent_id', folder.id)
+            .order('created_at', { ascending: true })
+
+          const sourceNotes = (directNotes ?? []).filter((n) => !n.is_folder)
+
+          if (sourceNotes.length === 0) {
+            executed.push({
+              type: 'compose_failed',
+              data: { folder_name: folder.content } as Record<string, unknown>,
+              message: `The "${folder.content}" folder is empty. Add some notes first.`,
+            })
+          } else {
+            // 3. Build a corpus of the folder's content for Claude
+            const corpus = sourceNotes
+              .map((n, i) => {
+                const title = (n.content as string).split('\n')[0].slice(0, 100)
+                const body = (n.body_md as string | null) ?? (n.content as string)
+                const atts = (n.attachments as Array<{ name: string; mime: string }> | null) ?? []
+                const attLine = atts.length > 0
+                  ? `\n[Attachments: ${atts.map((a) => `${a.name} (${a.mime})`).join(', ')}]`
+                  : ''
+                return `--- NOTE ${i + 1}: ${title} ---\n${body}${attLine}`
+              })
+              .join('\n\n')
+
+            // 4. Compose the output via Claude
+            const typeInstructions: Record<typeof input.output_type, string> = {
+              pitch: `Create a polished 5-minute pitch. Output format in markdown:
+## Hook (30 sec) — the opening line that grabs attention
+## Problem (1 min) — what's broken and who suffers from it
+## Solution (1.5 min) — what we built / are building, with one concrete demo example
+## Why now / why us (1 min) — market timing + unfair advantage drawn from these notes
+## Traction & ask (1 min) — what we've done, what we need next
+
+After the pitch, add a "## Speaker notes" section with delivery tips: where to pause, what to emphasize, what objections to preempt.`,
+              summary: `Create a concise summary of this folder's contents. Output format in markdown:
+## TL;DR (2-3 sentences)
+## Key themes
+## Important details
+## Open questions / next steps
+Keep it under 400 words.`,
+              slide_outline: `Create a slide deck outline in markdown. Each \`## Slide N: <title>\` is one slide. Under each, bullet points (3-5 max) for what goes on that slide. Add \`> speaker note: ...\` for delivery notes. Aim for 8-12 slides total.`,
+              doc: `Create a polished narrative document in markdown. Use \`#\` for the title, \`##\` for major sections, \`###\` for subsections. Use lists, bold, blockquotes as appropriate. Write in clear professional prose, not bullets. Length: as long as the content warrants — don't pad.`,
+            }
+
+            const composeSystem = `You are creating a polished output from a person's working notes. The notes are raw, sometimes scrappy — your job is to extract what's important, structure it, and write it like a professional.
+
+Rules:
+- Stay grounded in what's actually in the notes. Don't invent facts.
+- If something is unclear or missing, leave a [TODO: needs clarification] marker rather than making it up.
+- Write in the user's voice (first person where they used first person; team voice where they used "we").
+- Concrete > abstract. Use specific examples and numbers from the notes whenever possible.
+- ${input.topic_hint ? `User hint: "${input.topic_hint}"` : ''}
+
+${typeInstructions[input.output_type]}`
+
+            try {
+              const composed = await anthropic.messages.create({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 4000,
+                system: composeSystem,
+                messages: [
+                  {
+                    role: 'user',
+                    content: `Here are my notes from the "${folder.content}" folder. Compose a ${input.output_type} from them.\n\n${corpus}`,
+                  },
+                ],
+              })
+
+              const composedText = composed.content
+                .filter((b) => b.type === 'text')
+                .map((b) => (b as { text: string }).text)
+                .join('\n')
+                .trim()
+
+              if (!composedText) {
+                executed.push({
+                  type: 'compose_failed',
+                  data: { folder_name: folder.content } as Record<string, unknown>,
+                  message: `Composition came back empty — try again or refine your folder contents.`,
+                })
+              } else {
+                // 5. Save the result as a new note in the same folder
+                const typeLabels: Record<typeof input.output_type, string> = {
+                  pitch: 'Pitch',
+                  summary: 'Summary',
+                  slide_outline: 'Slide outline',
+                  doc: 'Document',
+                }
+                const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                const title = `${typeLabels[input.output_type]} — ${folder.content} (${today})`
+                const firstLine = composedText.split('\n').find((l) => l.trim()) ?? title
+
+                const { data: newNote, error: insertErr } = await supabase
+                  .from('notes')
+                  .insert({
+                    user_id: user.id,
+                    content: firstLine.replace(/^#+\s*/, '').slice(0, 500) || title,
+                    body_md: composedText,
+                    type: 'note',
+                    parent_id: folder.id,
+                    meta: { title },
+                  })
+                  .select()
+                  .single()
+
+                if (insertErr || !newNote) {
+                  executed.push({
+                    type: 'compose_failed',
+                    data: { folder_name: folder.content } as Record<string, unknown>,
+                    message: `Composed but could not save the note — try again.`,
+                  })
+                } else {
+                  executed.push({
+                    type: 'compose_saved',
+                    data: newNote as Record<string, unknown>,
+                    message: `Created ${typeLabels[input.output_type].toLowerCase()} in your "${folder.content}" folder — open it to view and edit.`,
+                  })
+                }
+              }
+            } catch (composeErr) {
+              console.error('[compose_from_folder] AI error', composeErr)
+              executed.push({
+                type: 'compose_failed',
+                data: { folder_name: folder.content } as Record<string, unknown>,
+                message: `Composition failed — please try again.`,
+              })
+            }
+          }
+        }
       }
 
       if (block.name === 'complete_task') {

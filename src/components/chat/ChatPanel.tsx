@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Loader2, Sparkles, Mic, MicOff, BookmarkPlus, Lightbulb } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, Mic, MicOff, BookmarkPlus, Lightbulb, Trash2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import { generateId } from '@/lib/utils'
@@ -148,6 +148,30 @@ export default function ChatPanel() {
     })
     if (res.ok) toast.success('Saved to long-term memory')
     else toast.error('Could not save')
+  }
+
+  /**
+   * Clear chat history. Hold Shift while clicking to also wipe saved memory facts.
+   */
+  const clearHistory = async (alsoWipeFacts: boolean) => {
+    const msg = alsoWipeFacts
+      ? 'Wipe EVERYTHING from chat?\n\nThis deletes:\n• All chat messages\n• All facts Jalayu has remembered about you from chat\n\nNotes, tasks, and other data are NOT affected. This cannot be undone.'
+      : 'Clear chat history?\n\nMessages will be deleted. Jalayu keeps any facts it has remembered about you (you can wipe those too by holding Shift when you click Clear). This cannot be undone.'
+    if (!confirm(msg)) return
+    try {
+      const url = alsoWipeFacts ? '/api/chat/messages?facts=1' : '/api/chat/messages'
+      const res = await fetch(url, { method: 'DELETE' })
+      if (!res.ok) throw new Error('clear failed')
+      setChatMessages([])
+      const json = await res.json() as { facts_deleted?: number }
+      toast.success(
+        alsoWipeFacts && json.facts_deleted
+          ? `Cleared chat + ${json.facts_deleted} facts`
+          : 'Chat cleared',
+      )
+    } catch {
+      toast.error('Could not clear')
+    }
   }
 
   const stopVoice = () => {
@@ -423,6 +447,20 @@ export default function ChatPanel() {
                   }}
                 >
                   <BookmarkPlus size={14} color="var(--accent)" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => clearHistory(e.shiftKey)}
+                  title="Clear chat history (hold Shift to also wipe saved facts)"
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: 'var(--surface-2)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Trash2 size={14} color="var(--text-2)" />
                 </button>
                 <button
                   type="button"
