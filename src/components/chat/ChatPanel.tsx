@@ -594,6 +594,24 @@ export default function ChatPanel() {
                 </button>
                 <button
                   type="button"
+                  onClick={() => void requestDailyStory(false)}
+                  disabled={streaming}
+                  title="Today's Story — a narrative of your day from your actual data"
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    background: 'linear-gradient(135deg, rgba(139,92,246,0.12), rgba(217,119,87,0.10))',
+                    cursor: streaming ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    fontSize: 11, fontWeight: 500, color: '#7c3aed',
+                  }}
+                >
+                  <BookOpen size={12} />
+                  Story
+                </button>
+                <button
+                  type="button"
                   onClick={saveTakeaway}
                   title="Save takeaway"
                   style={{
