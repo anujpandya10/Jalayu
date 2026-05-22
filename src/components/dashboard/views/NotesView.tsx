@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Loader2, Search, Pin, PinOff, Trash2, Pencil, Plus, X, Check,
   StickyNote, FolderPlus, Folder, FolderOpen, ChevronRight, ChevronDown,
-  FileText, Paperclip, Download, Eye, Upload, ArrowLeft, Move,
+  FileText, Paperclip, Download, Eye, Upload, ArrowLeft, Move, Lock,
   Image as ImageIcon, File as FileIcon, FolderSymlink, Maximize2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '@/store/useStore'
+import VaultUnlockDialog from '@/components/chat/VaultUnlockDialog'
 
 interface NoteMeta {
   title?: string
@@ -104,6 +105,15 @@ export default function NotesView({ name }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [uploading, setUploading] = useState(false)
   const [moveDialogOpen, setMoveDialogOpen] = useState(false)
+  // Vault encryption dialog state — set when user clicks "Move to Vault"
+  // on a sensitive note. The dialog encrypts the note's body into vault_entries
+  // and deletes the source note on success.
+  const [vaultMigrate, setVaultMigrate] = useState<{
+    noteId: string
+    name: string
+    value: string
+    kind: 'password' | 'note' | 'card' | 'secret'
+  } | null>(null)
 
   // Refresh all notes (we load the whole tree, then partition in memory)
   const refresh = useCallback(async () => {
@@ -546,6 +556,21 @@ export default function NotesView({ name }: Props) {
             onCloseMove={() => setMoveDialogOpen(false)}
             onUploadClick={() => fileInputRef.current?.click()}
             onDeleteAttachment={(idx) => deleteAttachment(selectedNote.id, idx)}
+            onMoveToVault={() => {
+              // Pre-fill the vault dialog with the note's body (the actual
+              // sensitive content). Dialog will encrypt + create vault entry
+              // + delete the source note on success.
+              const noteName = previewTitle(selectedNote).replace(/^🔒\s*/, '')
+              const value = (selectedNote.body_md || selectedNote.content || '').trim()
+              const kind: 'password' | 'note' | 'card' | 'secret' =
+                /password|pin|code|key/i.test(noteName) ? 'password' : 'note'
+              setVaultMigrate({
+                noteId: selectedNote.id,
+                name: noteName || 'Secret',
+                value,
+                kind,
+              })
+            }}
           />
         )}
       </div>
@@ -559,6 +584,23 @@ export default function NotesView({ name }: Props) {
           const f = e.target.files?.[0]
           if (f) void handleUpload(f)
           e.target.value = ''
+        }}
+      />
+
+      {/* Vault migration dialog — encrypts sensitive note → vault entry → deletes note */}
+      <VaultUnlockDialog
+        open={vaultMigrate !== null}
+        payload={vaultMigrate}
+        deleteNoteOnSuccess={vaultMigrate?.noteId ?? null}
+        onClose={() => setVaultMigrate(null)}
+        onSuccess={() => {
+          const migratedId = vaultMigrate?.noteId
+          setVaultMigrate(null)
+          if (migratedId) {
+            setNotes((prev) => prev.filter((n) => n.id !== migratedId))
+            if (selectedNoteId === migratedId) setSelectedNoteId(null)
+          }
+          toast.success('Encrypted into Vault — source note removed')
         }}
       />
     </div>
@@ -662,6 +704,7 @@ interface NoteEditorProps {
   onCloseMove: () => void
   onUploadClick: () => void
   onDeleteAttachment: (idx: number) => void
+  onMoveToVault: () => void
 }
 
 function NoteEditor(props: NoteEditorProps) {
@@ -697,6 +740,17 @@ function NoteEditor(props: NoteEditorProps) {
             {uploading ? <Loader2 size={11} className="animate-spin" /> : <Paperclip size={11} />}
             Attach
           </button>
+          {/* Move to Vault — only shown if note is tagged 'sensitive' */}
+          {note.tags?.includes('sensitive') && (
+            <button
+              type="button"
+              onClick={props.onMoveToVault}
+              style={{ ...btnSecondary, color: 'var(--accent)', borderColor: 'var(--accent)' }}
+              title="Encrypt this note's content into your Vault and delete the note"
+            >
+              <Lock size={11} /> Move to Vault
+            </button>
+          )}
           <button type="button" onClick={props.onOpenMove} style={btnSecondary} title="Move">
             <Move size={11} /> Move
           </button>

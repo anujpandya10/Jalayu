@@ -9,6 +9,7 @@ import {
 import toast from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import type { SidebarView, Note, Task } from '@/lib/types'
+import VaultUnlockDialog from '@/components/chat/VaultUnlockDialog'
 
 type Mode = 'capture' | 'search' | 'query'
 
@@ -76,6 +77,8 @@ export default function CommandPalette({ open, onClose, voiceOnOpen }: CommandPa
   const [queryAnswer, setQueryAnswer] = useState<string | null>(null)
   const [classification, setClassification] = useState<Classification | null>(null)
   const [needsConfirm, setNeedsConfirm] = useState(false)
+  // Vault encryption dialog state — appears when AI classifies as sensitive
+  const [vaultDialog, setVaultDialog] = useState<{ name: string; value: string; kind?: 'password' | 'note' | 'card' | 'secret' } | null>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SR | null>(null)
 
@@ -194,6 +197,14 @@ export default function CommandPalette({ open, onClose, voiceOnOpen }: CommandPa
         setQueryAnswer(json.answer ?? '')
       } else if (json.mode === 'capture') {
         setClassification(json.classification)
+        // Sensitive content path: AI flagged this as needing encryption.
+        // Don't save anything yet — open the vault dialog with the value
+        // pre-loaded. User unlocks PIN → value gets encrypted client-side
+        // → saves to vault_entries → never persisted in plaintext.
+        if (json.needsVaultEncryption && json.vaultPayload) {
+          setVaultDialog(json.vaultPayload)
+          return
+        }
         if (json.executed) {
           const dest = json.destLabel || DEST_META[json.destination]?.label || json.destination
           toast.success(`Saved to ${dest}`, { duration: 4000 })
@@ -419,6 +430,21 @@ export default function CommandPalette({ open, onClose, voiceOnOpen }: CommandPa
           )}
         </div>
       </div>
+
+      {/* Vault unlock dialog — appears when sensitive content is captured */}
+      <VaultUnlockDialog
+        open={vaultDialog !== null}
+        payload={vaultDialog}
+        onClose={() => {
+          setVaultDialog(null)
+          // Don't auto-close palette on cancel — user might want to retype
+        }}
+        onSuccess={() => {
+          setVaultDialog(null)
+          // Close palette after successful encryption
+          setTimeout(() => onClose(), 300)
+        }}
+      />
     </div>
   )
 }

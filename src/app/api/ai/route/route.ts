@@ -249,24 +249,22 @@ async function executeCapture(
     }
 
     case 'vault_hint': {
-      // We can't actually encrypt without the user's PIN. Save the title (a
-      // label) as a note tagged 'sensitive', and tell the user to move it
-      // into the Vault from there.
-      const { data, error } = await supabase
-        .from('notes')
-        .insert({
-          user_id: userId,
-          content: `🔒 ${title}`,
-          body_md: 'Sensitive — move to Vault when you unlock it.',
-          type: 'note',
-          tags: ['sensitive'],
-          parent_id: screen?.folderId ?? null,
-        })
-        .select()
-        .single()
-      return error
-        ? { ok: false, destLabel: 'Notes (sensitive)', error: error.message }
-        : { ok: true, record: data, destLabel: 'Notes (sensitive — encrypt in Vault when you unlock it)' }
+      // SECURITY: do NOT persist plaintext sensitive content to the notes
+      // table. Return a signal to the client that says "this needs vault
+      // encryption" — the client opens the vault unlock dialog, user enters
+      // PIN, the secret gets encrypted client-side and saved to vault_entries
+      // (where the server only ever sees ciphertext). The plaintext value
+      // never touches our database.
+      //
+      // Caller (CommandPalette) reads the returned sensitive_value + name
+      // from the JSON response in memory and immediately offers the vault
+      // unlock dialog. If the user cancels, nothing is saved.
+      return {
+        ok: true,
+        destLabel: 'Vault (needs PIN to encrypt)',
+        // No DB record — the value is returned in the API response payload
+        // (see POST handler) for the client to handle.
+      }
     }
 
     case 'trading_note': {
@@ -459,8 +457,33 @@ export async function POST(request: Request) {
 
     // CAPTURE mode — always execute the best guess. "note" is a safe
     // fallback for ambiguous thoughts; user can move items later if needed.
-    // The confidence value is still returned so the toast can hint at it.
     const classification = await classifyCapture(text, body.context)
+
+    // Special path: vault_hint never auto-saves. Return the raw value so
+    // the client can prompt for PIN and encrypt it client-side.
+    if (classification.destination === 'vault_hint') {
+      // Build a sensible default name + value for the vault dialog. The
+      // classifier's title is usually the LABEL ("WiFi password"), and the
+      // body OR the original text is the VALUE.
+      const name = (classification.title || 'Secret').replace(/^🔒\s*/, '').slice(0, 200)
+      // Best effort: if body has content, that's the value. Otherwise fall
+      // back to the raw captured text minus the obvious label words.
+      const value =
+        (classification.body && classification.body.trim() && classification.body !== classification.title)
+          ? classification.body.trim()
+          : text.trim()
+      const kind: 'password' | 'note' | 'secret' =
+        /password|pin|code|key/i.test(name) ? 'password' : 'secret'
+
+      return NextResponse.json({
+        mode: 'capture',
+        destination: 'vault_hint',
+        needsVaultEncryption: true,
+        vaultPayload: { name, value, kind },
+        classification,
+      })
+    }
+
     const result = await executeCapture(classification, user.id, text, body.context, supabase)
 
     return NextResponse.json({
