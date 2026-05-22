@@ -22,6 +22,8 @@ export default function VaultWidget({ size, setSidebarView }: Props) {
 
   // Load minimal meta: is vault initialized? how many entries?
   // We DON'T fetch any encrypted content here — that's gated by PIN unlock.
+  // Silently handles the case where the DB tables haven't been provisioned —
+  // widget just shows "Set up vault" state, no scary errors on the home page.
   const load = useCallback(async () => {
     try {
       const [settingsRes, entriesRes] = await Promise.all([
@@ -29,10 +31,8 @@ export default function VaultWidget({ size, setSidebarView }: Props) {
         fetch('/api/vault/entries', { cache: 'no-store' }),
       ])
       const settings = settingsRes.ok ? await settingsRes.json() : { initialized: false }
-      // Note: if vault is locked client-side, entries endpoint still returns
-      // the ciphertext list (it's RLS-scoped to the user). Counting is fine.
       const entries = entriesRes.ok ? (await entriesRes.json()).entries ?? [] : []
-      setMeta({ initialized: settings.initialized, entry_count: entries.length })
+      setMeta({ initialized: !!settings.initialized, entry_count: entries.length })
     } catch {
       setMeta({ initialized: false })
     }

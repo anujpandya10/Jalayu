@@ -49,6 +49,7 @@ function formatDate(iso: string): string {
 export default function VaultView() {
   const [settings, setSettings] = useState<VaultSettings | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [vaultKey, setVaultKey] = useState<CryptoKey | null>(null)
   const [entries, setEntries] = useState<VaultEntry[]>([])
   const [decrypted, setDecrypted] = useState<DecryptedMap>({})
@@ -74,12 +75,21 @@ export default function VaultView() {
 
   // ── Load settings ─────────────────────────────────────────────────────────
   const loadSettings = useCallback(async () => {
+    setLoadError(null)
     try {
       const res = await fetch('/api/vault/settings', { cache: 'no-store' })
-      if (!res.ok) throw new Error('load failed')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string }
+        // 500 with this message specifically means the DB tables don't exist
+        const msg = body.error || `Vault unavailable (status ${res.status})`
+        setLoadError(msg)
+        toast.error('Vault not ready')
+        return
+      }
       const json = await res.json() as VaultSettings
       setSettings(json)
     } catch {
+      setLoadError('Could not reach vault service')
       toast.error('Could not load vault')
     } finally {
       setLoading(false)
@@ -379,6 +389,45 @@ export default function VaultView() {
     )
   }
 
+  // ── Load error (e.g. DB tables missing, network issue) ────────────────────
+  if (loadError && !settings) {
+    return (
+      <div style={wrapStyle}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <ShieldAlert size={20} color="#ef4444" />
+          <h2 style={{ fontSize: 19, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+            Vault unavailable
+          </h2>
+        </div>
+        <div style={{
+          padding: 16, marginTop: 14,
+          border: '1px solid rgba(239,68,68,0.2)', borderRadius: 12,
+          background: 'rgba(239,68,68,0.05)',
+        }}>
+          <p style={{ fontSize: 13, color: 'var(--text)', margin: '0 0 8px', lineHeight: 1.6 }}>
+            <strong>{loadError}</strong>
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.6 }}>
+            The vault database tables haven&apos;t been created yet. An administrator needs to apply
+            migration <code style={{ background: 'var(--morning)', padding: '1px 5px', borderRadius: 4 }}>019_vault.sql</code> to
+            the Supabase project.
+          </p>
+          <button
+            type="button"
+            onClick={() => { setLoading(true); void loadSettings() }}
+            style={{
+              padding: '8px 14px', fontSize: 12, fontWeight: 500,
+              background: 'var(--accent)', color: '#fff',
+              border: 'none', borderRadius: 8, cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   // ── Setup screen (first time) ─────────────────────────────────────────────
   if (settings && !settings.initialized) {
     return (
@@ -475,7 +524,8 @@ export default function VaultView() {
   }
 
   // ── Unlock screen ─────────────────────────────────────────────────────────
-  if (!vaultKey) {
+  // Only reachable if settings loaded AND vault is initialized AND not unlocked yet.
+  if (!vaultKey && settings?.initialized) {
     const isLocked = (settings?.locked_seconds_remaining ?? 0) > 0
     return (
       <div style={wrapStyle}>
@@ -548,6 +598,18 @@ export default function VaultView() {
           >
             Forgot PIN? Reset vault (wipes all entries)
           </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Defensive fallback: if we got here without vaultKey, show loading
+  //    (covers the case where load just succeeded but key isn't set yet)
+  if (!vaultKey) {
+    return (
+      <div style={wrapStyle}>
+        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
+          <Loader2 size={20} className="animate-spin" color="var(--text-3)" />
         </div>
       </div>
     )
