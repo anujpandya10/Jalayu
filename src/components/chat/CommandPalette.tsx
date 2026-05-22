@@ -66,7 +66,7 @@ interface CommandPaletteProps {
 }
 
 export default function CommandPalette({ open, onClose, voiceOnOpen }: CommandPaletteProps) {
-  const { chatContext, setSidebarView, addNote, addTask } = useStore()
+  const { chatContext, setSidebarView, addNote, upsertNote, addTask } = useStore()
 
   const [text, setText] = useState('')
   const [mode, setMode] = useState<Mode>('capture')
@@ -203,6 +203,16 @@ export default function CommandPalette({ open, onClose, voiceOnOpen }: CommandPa
         if ((json.results ?? []).length === 0) toast('No matches', { icon: '🔍' })
       } else if (json.mode === 'query') {
         setQueryAnswer(json.answer ?? '')
+        // If the AI took an action (e.g., updated a note), show a toast
+        // and update the store so the workspace reflects the change immediately
+        if (json.action) {
+          if (json.action.ok) {
+            toast.success(json.action.message || 'Note updated', { duration: 5000 })
+            if (json.action.note) upsertNote(json.action.note as Note)
+          } else {
+            toast.error(json.action.message || 'Action failed')
+          }
+        }
       } else if (json.mode === 'capture') {
         setClassification(json.classification)
         // Sensitive content path: AI flagged this as needing encryption.

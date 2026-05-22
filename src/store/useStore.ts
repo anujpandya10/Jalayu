@@ -75,6 +75,7 @@ interface JalayuStore {
   setTodayMood: (m: Mood | null) => void
   setNotes: (n: Note[]) => void
   addNote: (n: Note) => void
+  upsertNote: (n: Note) => void
   setTodayReflection: (r: Reflection | null) => void
   setInsights: (i: Insight[]) => void
   setReminders: (r: Reminder[]) => void
@@ -154,6 +155,16 @@ export const useStore = create<JalayuStore>((set) => ({
   setTodayMood: (todayMood) => set({ todayMood }),
   setNotes: (notes) => set({ notes }),
   addNote: (note) => set((s) => ({ notes: [note, ...s.notes] })),
+  /** Replace if id exists, otherwise prepend. Used after AI updates a note. */
+  upsertNote: (note) => set((s) => {
+    const idx = s.notes.findIndex((n) => n.id === note.id)
+    if (idx >= 0) {
+      const next = [...s.notes]
+      next[idx] = note
+      return { notes: next }
+    }
+    return { notes: [note, ...s.notes] }
+  }),
   setTodayReflection: (todayReflection) => set({ todayReflection }),
   setInsights: (insights) => set({ insights }),
   setReminders: (reminders) => set({ reminders }),

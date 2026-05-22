@@ -376,7 +376,7 @@ async function runQuery(
   userId: string,
   supabase: Awaited<ReturnType<typeof createClient>>,
   screen?: ScreenContext,
-): Promise<string> {
+): Promise<{ answer: string; action: { type: string; ok: boolean; message: string; note?: Record<string, unknown> } | null }> {
   const today = new Date().toISOString().split('T')[0]
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
 
@@ -416,22 +416,28 @@ async function runQuery(
   }
 
   let folderBlock = ''
+  // Track note IDs so the update_note tool can target a specific one by index
+  let folderNotesIndex: { id: string; title: string }[] = []
   if (referencedFolder) {
     const { data: folderNotes } = await supabase
       .from('notes')
-      .select('content, body_md, attachments')
+      .select('id, content, body_md, attachments')
       .eq('user_id', userId)
       .eq('parent_id', referencedFolder.id)
       .eq('is_folder', false)
       .order('created_at', { ascending: false })
       .limit(20)
     if (folderNotes && folderNotes.length > 0) {
+      folderNotesIndex = folderNotes.map((n) => ({
+        id: n.id as string,
+        title: (n.content as string).split('\n')[0].slice(0, 100),
+      }))
       const corpus = folderNotes.map((n, i) => {
         const title = (n.content as string).split('\n')[0].slice(0, 100)
         const body = ((n.body_md as string | null) || '').slice(0, 2500)
         const atts = (n.attachments as Array<{ name: string }> | null) ?? []
         const attLine = atts.length > 0 ? ` [attachments: ${atts.map((a) => a.name).join(', ')}]` : ''
-        return `--- NOTE ${i + 1}: ${title}${attLine} ---\n${body || '(no body)'}`
+        return `--- NOTE ${i + 1} (id=${n.id}): ${title}${attLine} ---\n${body || '(no body)'}`
       }).join('\n\n')
       folderBlock = `\n\nFOLDER IN CONTEXT — "${referencedFolder.content}" (${folderNotes.length} notes):\n${corpus}`
     } else {
@@ -487,20 +493,100 @@ ${noteBlock}
 GUIDANCE BY QUESTION TYPE:
 - "what now" / "what should I do" / "what's next": pick ONE specific thing from tasks/calendar based on time-of-day. Give the FIRST CONCRETE STEP (15 min slice).
 - Questions about a specific folder/project (e.g., "is my FreshDabba pitch good?", "what's in my X folder?"): the folder's notes are loaded above. Read them, then give specific, grounded feedback referencing actual content. If asked to improve something, write the improved version directly.
-- General questions: answer using the data above + your knowledge.`
+- General questions: answer using the data above + your knowledge.
+
+UPDATE/EDIT REQUESTS — call the update_note tool:
+If the user says "update my pitch", "make those changes", "apply the suggestions", "save the revised version", "rewrite it and save", "replace my note with..." — and a folder is in context with notes loaded — you MUST call the update_note tool with:
+  • folder_name: the folder this belongs to (must match an existing folder)
+  • note_id: the id of the note to update (you'll see "(id=...)" in the NOTE headers above — copy that exact id)
+  • revised_body_md: the COMPLETE new markdown body. Don't just describe changes — write the full new version.
+  • brief_summary: one sentence summary of what changed (for the toast)
+
+After calling the tool, your text reply should be a 1-2 line confirmation, not a re-paste of the content. The tool result already saves the note.
+
+If the user asks for suggestions WITHOUT asking to save them (e.g., "what could be better?"), give suggestions in text — DON'T call the tool.`
+
+  // Tools the AI can call while answering. Currently only update_note —
+  // we deliberately keep this small so the AI doesn't get confused.
+  const tools: Anthropic.Tool[] = folderNotesIndex.length > 0 ? [
+    {
+      name: 'update_note',
+      description: 'Replace the body content of an existing note in a workspace folder. Use ONLY when the user explicitly asks to update/save/apply/rewrite a note. Never call this proactively.',
+      input_schema: {
+        type: 'object' as const,
+        properties: {
+          folder_name: { type: 'string', description: 'Name of the folder the note is in' },
+          note_id: { type: 'string', description: 'UUID of the note to update — find it in the NOTE headers in the system prompt ("id=...")' },
+          revised_body_md: { type: 'string', description: 'The complete new markdown body to save' },
+          brief_summary: { type: 'string', description: 'One-sentence summary of the change (for the user toast)' },
+        },
+        required: ['folder_name', 'note_id', 'revised_body_md'],
+      },
+    },
+  ] : []
 
   const resp = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 1200,
+    max_tokens: 4000,
     system,
+    tools: tools.length > 0 ? tools : undefined,
     messages: [{ role: 'user', content: question }],
   })
 
-  return resp.content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as { text: string }).text)
-    .join('')
-    .trim()
+  // Process response: text + any tool calls
+  let textOut = ''
+  let actionResult: { type: string; ok: boolean; message: string; note?: Record<string, unknown> } | null = null
+
+  for (const block of resp.content) {
+    if (block.type === 'text') {
+      textOut += block.text
+    } else if (block.type === 'tool_use' && block.name === 'update_note') {
+      const input = block.input as {
+        folder_name?: string
+        note_id?: string
+        revised_body_md?: string
+        brief_summary?: string
+      }
+      // Validate the note belongs to the user (defense-in-depth — RLS does this too)
+      // AND that it's in the referenced folder
+      if (!input.note_id || !input.revised_body_md) {
+        actionResult = { type: 'update_note', ok: false, message: 'AI called update tool without note id or content' }
+        continue
+      }
+      const validIds = new Set(folderNotesIndex.map((n) => n.id))
+      if (!validIds.has(input.note_id)) {
+        actionResult = {
+          type: 'update_note',
+          ok: false,
+          message: `Could not find that note in the folder. AI tried id="${input.note_id.slice(0, 8)}…"`,
+        }
+        continue
+      }
+      const { data: updated, error } = await supabase
+        .from('notes')
+        .update({
+          body_md: input.revised_body_md,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', input.note_id)
+        .eq('user_id', userId)
+        .select()
+        .single()
+      if (error || !updated) {
+        actionResult = { type: 'update_note', ok: false, message: error?.message || 'Update failed' }
+      } else {
+        const title = (updated.content as string).split('\n')[0].slice(0, 60)
+        actionResult = {
+          type: 'update_note',
+          ok: true,
+          note: updated as Record<string, unknown>,
+          message: input.brief_summary || `Updated "${title}"`,
+        }
+      }
+    }
+  }
+
+  return { answer: textOut.trim(), action: actionResult }
 }
 
 // ── Handler ────────────────────────────────────────────────────────────────
@@ -526,8 +612,12 @@ export async function POST(request: Request) {
     }
 
     if (mode === 'query') {
-      const answer = await runQuery(text, user.id, supabase, body.context)
-      return NextResponse.json({ mode, answer })
+      const result = await runQuery(text, user.id, supabase, body.context)
+      return NextResponse.json({
+        mode,
+        answer: result.answer,
+        action: result.action,
+      })
     }
 
     // CAPTURE mode — always execute the best guess. "note" is a safe
