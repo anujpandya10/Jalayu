@@ -18,6 +18,21 @@ import type {
   MedicalRecord,
 } from '@/lib/types'
 
+/**
+ * Context describing what the user is currently looking at on screen.
+ * Passed to the chat API so Jalayu understands phrases like "this folder",
+ * "the note I have open", "what I have here", etc.
+ */
+export interface ChatContextState {
+  view: SidebarView
+  folderId?: string | null
+  folderName?: string | null
+  noteId?: string | null
+  noteName?: string | null
+  /** Free-form label for non-folder/note contexts (e.g. "Trading dashboard") */
+  label?: string | null
+}
+
 interface JalayuStore {
   // User data
   profile: Profile | null
@@ -42,6 +57,14 @@ interface JalayuStore {
   chatMessages: ChatMsg[]
   journeyView: JourneyView
   isLoading: boolean
+
+  /**
+   * What is the user currently looking at? Updated by views (e.g. NotesView)
+   * when the user navigates into a folder or opens a note. Read by the chat
+   * API so Jalayu knows the user's screen context — "what I have here", "this
+   * folder", "look at this" all resolve correctly.
+   */
+  chatContext: ChatContextState
 
   // Data actions
   setProfile: (p: Profile | null) => void
@@ -86,6 +109,7 @@ interface JalayuStore {
   setChatMessages: (msgs: ChatMsg[]) => void
   setJourneyView: (v: JourneyView) => void
   setLoading: (l: boolean) => void
+  setChatContext: (ctx: Partial<ChatContextState>) => void
 }
 
 export const useStore = create<JalayuStore>((set) => ({
@@ -105,6 +129,7 @@ export const useStore = create<JalayuStore>((set) => ({
   medicalRecords: [],
   sidebarView: 'dashboard',
   showChatPanel: false,
+  chatContext: { view: 'dashboard' },
   chatMessages: [],
   journeyView: 'day1',
   isLoading: false,
@@ -179,8 +204,13 @@ export const useStore = create<JalayuStore>((set) => ({
   removeMedicalRecord: (id) =>
     set((s) => ({ medicalRecords: s.medicalRecords.filter((x) => x.id !== id) })),
 
-  setSidebarView: (sidebarView) => set({ sidebarView }),
+  setSidebarView: (sidebarView) => set((s) => ({
+    sidebarView,
+    // Reset context when view changes — components push fresh context as needed
+    chatContext: { ...s.chatContext, view: sidebarView, folderId: null, folderName: null, noteId: null, noteName: null, label: null },
+  })),
   setShowChatPanel: (showChatPanel) => set({ showChatPanel }),
+  setChatContext: (ctx) => set((s) => ({ chatContext: { ...s.chatContext, ...ctx } })),
   addChatMessage: (msg) =>
     set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
   updateLastChatMessage: (content) =>

@@ -25,7 +25,7 @@ function toneFromProfile(workType: string | null, struggles: string[] | null) {
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { messages, explainWhy, patterns } = body as {
+    const { messages, explainWhy, patterns, context: screenContext } = body as {
       messages: { role: string; content: string }[]
       explainWhy?: boolean
       patterns?: Array<{
@@ -36,6 +36,14 @@ export async function POST(request: Request) {
         tags: string[]
         life_chapter: string | null
       }>
+      context?: {
+        view?: string
+        folderId?: string | null
+        folderName?: string | null
+        noteId?: string | null
+        noteName?: string | null
+        label?: string | null
+      }
     }
 
     if (!messages || !Array.isArray(messages)) {
@@ -214,6 +222,72 @@ TRADING RULES (when the user asks about their trades or strategy):
 - You can suggest the user visit the Strategy Lab to see win rates by setup and disable underperforming ones`
     }
 
+    // ── Screen context block — what view/folder/note user is currently viewing
+    // Phrases like "this folder", "the note I have open", "what I have here"
+    // resolve against this context. When a folder is in context, we also load
+    // its contents so the AI can actually look at what's inside.
+    let screenContextBlock = ''
+    if (screenContext && screenContext.view && screenContext.view !== 'dashboard') {
+      const viewLabel = screenContext.view
+      const parts: string[] = [`User is currently viewing the **${viewLabel}** section.`]
+
+      if (screenContext.noteId && screenContext.noteName) {
+        // Load the actual note body so AI can read it
+        const { data: noteRow } = await supabase
+          .from('notes')
+          .select('id, content, body_md, attachments, parent_id')
+          .eq('id', screenContext.noteId)
+          .eq('user_id', user.id)
+          .maybeSingle()
+        if (noteRow) {
+          parts.push(`They have the note **"${screenContext.noteName}"** open.`)
+          const bodySnippet = ((noteRow.body_md as string | null) || (noteRow.content as string) || '')
+            .slice(0, 3000)
+          if (bodySnippet) {
+            parts.push(`Note contents (first ~3000 chars):\n---\n${bodySnippet}\n---`)
+          }
+          const atts = (noteRow.attachments as Array<{ name: string; mime: string }> | null) ?? []
+          if (atts.length > 0) {
+            parts.push(`Attached files on this note: ${atts.map((a) => `${a.name} (${a.mime})`).join(', ')}`)
+          }
+        }
+      } else if (screenContext.folderId && screenContext.folderName) {
+        // Load the folder's contents
+        const { data: kids } = await supabase
+          .from('notes')
+          .select('id, content, body_md, is_folder, attachments')
+          .eq('user_id', user.id)
+          .eq('parent_id', screenContext.folderId)
+          .order('created_at', { ascending: false })
+          .limit(40)
+        parts.push(`They have the folder **"${screenContext.folderName}"** open.`)
+        if (kids && kids.length > 0) {
+          const subfolders = kids.filter((k) => k.is_folder)
+          const notesIn = kids.filter((k) => !k.is_folder)
+          if (subfolders.length > 0) {
+            parts.push(`Subfolders: ${subfolders.map((f) => `"${f.content}"`).join(', ')}`)
+          }
+          if (notesIn.length > 0) {
+            const summary = notesIn.map((n) => {
+              const title = (n.content as string).split('\n')[0].slice(0, 80)
+              const preview = ((n.body_md as string | null) || '').slice(0, 200).replace(/\n+/g, ' ')
+              const atts = (n.attachments as Array<{ name: string }> | null) ?? []
+              const attLine = atts.length > 0 ? ` [${atts.length} attachment${atts.length === 1 ? '' : 's'}]` : ''
+              return `  • "${title}"${attLine}${preview ? `\n    ${preview}${preview.length >= 200 ? '…' : ''}` : ''}`
+            }).join('\n')
+            parts.push(`Notes inside this folder (${notesIn.length}):\n${summary}`)
+          }
+        } else {
+          parts.push(`This folder is currently empty.`)
+        }
+      } else if (screenContext.label) {
+        parts.push(`Specifically: ${screenContext.label}`)
+      }
+
+      parts.push(`When the user says "this folder", "the note here", "look at this", "what I have", "suggest something here" — they mean the context above. Use it specifically.`)
+      screenContextBlock = `\n━━━ WHAT'S ON THEIR SCREEN RIGHT NOW ━━━\n${parts.join('\n\n')}`
+    }
+
     // Build community patterns block if patterns were provided
     const positivePatterns = (patterns ?? []).filter(
       (p) => p.advice_given && (p.mood_delta == null || p.mood_delta > 0 || p.user_came_back),
@@ -275,6 +349,7 @@ RECENT CONVERSATION:
 ${threadBlock}
 ${healthBlock}
 ${tradingBlock}
+${screenContextBlock}
 
 ━━━ ANTI-REPETITION LAW ━━━
 You have already said things like: ${previousSuggestions.length > 20 ? `"${previousSuggestions.slice(0, 400)}..."` : '(nothing yet)'}

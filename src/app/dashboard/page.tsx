@@ -25,6 +25,7 @@ import UnifiedCalendarView from '@/components/dashboard/views/UnifiedCalendarVie
 import TradingView from '@/components/dashboard/views/TradingView'
 import StrategyLabView from '@/components/dashboard/views/StrategyLabView'
 import SettingsView from '@/components/dashboard/views/SettingsView'
+import FloatingChatButton from '@/components/chat/FloatingChatButton'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
 import { applyAiActions } from '@/lib/apply-ai-actions'
 
@@ -453,6 +454,8 @@ export default function DashboardPage() {
           {viewContent}
         </motion.div>
       </AnimatePresence>
+
+      <FloatingChatButton />
     </div>
   )
 }

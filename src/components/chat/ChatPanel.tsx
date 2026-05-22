@@ -294,12 +294,17 @@ export default function ChatPanel() {
         })
         .catch(() => {})
 
+      // Include current screen context so Jalayu knows what "this folder",
+      // "the note I'm looking at", "what I have here" refer to.
+      const ctx = useStore.getState().chatContext
+
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...chatMessages, userMsg].map((m) => ({ role: m.role, content: m.content })),
           explainWhy,
+          context: ctx,
         }),
       })
 

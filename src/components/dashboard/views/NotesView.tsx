@@ -10,6 +10,7 @@ import {
 import toast from 'react-hot-toast'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { useStore } from '@/store/useStore'
 
 interface NoteMeta {
   title?: string
@@ -91,6 +92,7 @@ export default function NotesView({ name }: Props) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
+  const setChatContext = useStore((s) => s.setChatContext)
 
   // Editor state for the selected note
   const [editTitle, setEditTitle] = useState('')
@@ -150,6 +152,20 @@ export default function NotesView({ name }: Props) {
       setEditTitle(''); setEditContent(''); setEditBodyMd(''); setDirty(false)
     }
   }, [selectedNote?.id, selectedNote])
+
+  // Push the user's current context (folder/note) to the global store so the
+  // floating chat button + chat API know what "this folder" / "what I have
+  // here" refers to.
+  useEffect(() => {
+    const folder = currentFolderId ? byId.get(currentFolderId) : null
+    setChatContext({
+      view: 'notes',
+      folderId: folder?.id ?? null,
+      folderName: folder ? previewTitle(folder) : null,
+      noteId: selectedNote?.id ?? null,
+      noteName: selectedNote ? previewTitle(selectedNote) : null,
+    })
+  }, [currentFolderId, selectedNote, byId, setChatContext])
 
   // Breadcrumb path to current folder
   const breadcrumb = useMemo(() => {
