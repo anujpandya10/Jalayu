@@ -14,6 +14,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import Anthropic from '@anthropic-ai/sdk'
+import { snapshotNote } from '@/lib/note-revisions'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -562,6 +563,13 @@ If the user asks for suggestions WITHOUT asking to save them (e.g., "what could 
         }
         continue
       }
+      // Snapshot the current state BEFORE overwriting — so user can undo
+      await snapshotNote(supabase, {
+        noteId: input.note_id,
+        userId,
+        updatedBy: 'ai',
+        source: question.slice(0, 500),
+      })
       const { data: updated, error } = await supabase
         .from('notes')
         .update({

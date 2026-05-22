@@ -5,6 +5,7 @@ import {
   Loader2, Search, Pin, PinOff, Trash2, Pencil, Plus, X, Check,
   StickyNote, FolderPlus, Folder, FolderOpen, ChevronRight, ChevronDown,
   FileText, Paperclip, Download, Eye, EyeOff, Upload, ArrowLeft, Move, Lock,
+  History,
   Image as ImageIcon, File as FileIcon, FolderSymlink, Maximize2,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
@@ -12,6 +13,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { useStore } from '@/store/useStore'
 import VaultUnlockDialog from '@/components/chat/VaultUnlockDialog'
+import NoteHistoryDialog from '@/components/dashboard/views/NoteHistoryDialog'
 
 interface NoteMeta {
   title?: string
@@ -115,6 +117,8 @@ export default function NotesView({ name }: Props) {
     value: string
     kind: 'password' | 'note' | 'card' | 'secret'
   } | null>(null)
+  // Version history dialog state
+  const [historyNoteId, setHistoryNoteId] = useState<string | null>(null)
 
   // Refresh all notes (we load the whole tree, then partition in memory)
   const refresh = useCallback(async () => {
@@ -582,6 +586,7 @@ export default function NotesView({ name }: Props) {
             onUploadClick={() => fileInputRef.current?.click()}
             onDeleteAttachment={(idx) => deleteAttachment(selectedNote.id, idx)}
             onToggleHideFromHome={() => toggleHideFromHome(selectedNote)}
+            onShowHistory={() => setHistoryNoteId(selectedNote.id)}
             onMoveToVault={() => {
               // Pre-fill the vault dialog with the note's body (the actual
               // sensitive content). Dialog will encrypt + create vault entry
@@ -627,6 +632,19 @@ export default function NotesView({ name }: Props) {
             if (selectedNoteId === migratedId) setSelectedNoteId(null)
           }
           toast.success('Encrypted into Vault — source note removed')
+        }}
+      />
+
+      {/* Note version history dialog */}
+      <NoteHistoryDialog
+        open={historyNoteId !== null}
+        noteId={historyNoteId}
+        noteName={historyNoteId ? previewTitle(byId.get(historyNoteId) ?? { content: 'Untitled' } as Note) : undefined}
+        onClose={() => setHistoryNoteId(null)}
+        onRestored={(restoredNote) => {
+          // Replace the note in state with the restored version
+          const r = restoredNote as Note
+          setNotes((prev) => prev.map((n) => (n.id === r.id ? r : n)))
         }}
       />
     </div>
@@ -732,6 +750,7 @@ interface NoteEditorProps {
   onDeleteAttachment: (idx: number) => void
   onMoveToVault: () => void
   onToggleHideFromHome: () => void
+  onShowHistory: () => void
 }
 
 function NoteEditor(props: NoteEditorProps) {
@@ -800,6 +819,14 @@ function NoteEditor(props: NoteEditorProps) {
           >
             {note.meta?.hideFromHome ? <Eye size={11} /> : <EyeOff size={11} />}
             {note.meta?.hideFromHome ? 'Show on home' : 'Hide from home'}
+          </button>
+          <button
+            type="button"
+            onClick={props.onShowHistory}
+            style={btnSecondary}
+            title="View previous versions and restore any of them"
+          >
+            <History size={11} /> History
           </button>
           <button type="button" onClick={props.onDelete} style={btnSecondary} title="Delete"
             onMouseEnter={(e) => { e.currentTarget.style.color = '#ef4444' }}

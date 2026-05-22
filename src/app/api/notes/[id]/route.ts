@@ -10,6 +10,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { snapshotNote } from '@/lib/note-revisions'
 
 const MAX_CONTENT_LEN = 8000
 const MAX_BODY_MD_LEN = 200000
@@ -184,6 +185,20 @@ export async function PATCH(
     }
     if (metaChanged) {
       update.meta = Object.keys(nextMeta).length > 0 ? nextMeta : null
+    }
+
+    // Snapshot the current state BEFORE updating — but only if the content
+    // is actually changing (body_md or content). Metadata-only changes like
+    // pinning, hiding, moving don't deserve a history entry.
+    const contentChanging =
+      update.body_md !== undefined && update.body_md !== existing.body_md ||
+      update.content !== undefined && update.content !== existing.content
+    if (contentChanging && !existing.is_folder) {
+      await snapshotNote(supabase, {
+        noteId: id,
+        userId: user.id,
+        updatedBy: 'user',
+      })
     }
 
     const { data, error } = await supabase
