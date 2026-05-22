@@ -2,11 +2,15 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { X, Send, Loader2, Sparkles, Mic, MicOff, BookmarkPlus, Lightbulb, Trash2 } from 'lucide-react'
+import { X, Send, Loader2, Sparkles, Mic, MicOff, BookmarkPlus, Lightbulb, Trash2, Zap, Search as SearchIcon, MessageSquare, FileText, CalendarDays, FolderOpen } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import { generateId } from '@/lib/utils'
 import ChatMessage from './ChatMessage'
+import VaultUnlockDialog from '@/components/chat/VaultUnlockDialog'
+import type { Note, Task } from '@/lib/types'
+
+type ChatMode = 'talk' | 'capture' | 'search' | 'ask'
 
 declare global {
   interface Window {
@@ -56,6 +60,10 @@ export default function ChatPanel() {
   const [streaming, setStreaming] = useState(false)
   const [explainWhy, setExplainWhy] = useState(false)
   const [listening, setListening] = useState(false)
+  const [mode, setMode] = useState<ChatMode>('talk')
+  // Sensitive content captured → opens vault unlock dialog inline in panel
+  const [vaultDialog, setVaultDialog] = useState<{ name: string; value: string; kind?: 'password' | 'note' | 'card' | 'secret' } | null>(null)
+  const upsertNote = useStore((s) => s.upsertNote)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const recognitionRef = useRef<SpeechRec | null>(null)
@@ -263,9 +271,94 @@ export default function ChatPanel() {
     rec.start()
   }
 
+  // ── Capture / Search / Ask via /api/ai/route ────────────────────────────
+  // Non-talk modes don't stream — they go through the route endpoint and
+  // their result gets injected into the chat thread as an assistant message
+  // so the user can see what happened and follow up on it.
+  const sendViaRoute = async (text: string, requestMode: 'capture' | 'search' | 'ask') => {
+    const userMsg = { id: generateId(), role: 'user' as const, content: text, timestamp: new Date().toISOString() }
+    addChatMessage(userMsg)
+    setInput('')
+    setStreaming(true)
+    const assistantId = generateId()
+    addChatMessage({ id: assistantId, role: 'assistant', content: '', timestamp: new Date().toISOString() })
+
+    try {
+      const ctx = useStore.getState().chatContext
+      const res = await fetch('/api/ai/route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          mode: requestMode === 'ask' ? 'query' : requestMode,
+          context: ctx,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Request failed')
+      }
+      const json = await res.json()
+
+      let summary = ''
+      if (json.mode === 'capture') {
+        if (json.needsVaultEncryption && json.vaultPayload) {
+          summary = `🔒 That looks sensitive. Opening the vault to encrypt it — your PIN never leaves this browser.`
+          setVaultDialog(json.vaultPayload)
+        } else if (json.executed) {
+          const where = json.destLabel || json.destination
+          summary = `✓ Saved to **${where}**.`
+          // Optimistic store update
+          if (json.record) {
+            if (json.destination === 'task' || json.destination === 'calendar') {
+              addTask(json.record as Task)
+            } else {
+              addNote(json.record as Note)
+            }
+          }
+        } else if (json.error) {
+          summary = `Couldn't save — ${json.error}`
+        }
+      } else if (json.mode === 'search') {
+        const hits = (json.results as Array<{ type: string; title: string; meta?: string; snippet?: string }>) ?? []
+        if (hits.length === 0) {
+          summary = `No matches for "${text}".`
+        } else {
+          summary = `Found ${hits.length} ${hits.length === 1 ? 'match' : 'matches'}:\n\n` +
+            hits.map((h) => `- **${h.title}** _(${h.meta ?? h.type})_${h.snippet ? `\n  ${h.snippet}` : ''}`).join('\n')
+        }
+      } else if (json.mode === 'query') {
+        summary = json.answer || '(no answer)'
+        // Handle inline tool actions (e.g., AI updated a note)
+        if (json.action?.ok) {
+          summary += `\n\n_✓ ${json.action.message}_`
+          if (json.action.note) upsertNote(json.action.note as Note)
+        } else if (json.action?.ok === false) {
+          summary += `\n\n_⚠ ${json.action.message}_`
+        }
+      }
+
+      updateLastChatMessage(summary)
+      // Persist to chat history so it shows next time the panel opens
+      if (summary.trim()) await persistMessages(text, summary.trim())
+    } catch (err) {
+      updateLastChatMessage(err instanceof Error ? `Error: ${err.message}` : 'Sorry, something went wrong.')
+    } finally {
+      setStreaming(false)
+    }
+    void assistantId  // keep for potential future use
+  }
+
   const send = async () => {
     const text = input.trim()
     if (!text || streaming) return
+
+    // Branch on mode: Talk uses the streaming chat endpoint; everything else
+    // routes through /api/ai/route and renders its result inline in the thread.
+    if (mode !== 'talk') {
+      await sendViaRoute(text, mode)
+      return
+    }
 
     const userMsg = { id: generateId(), role: 'user' as const, content: text, timestamp: new Date().toISOString() }
     addChatMessage(userMsg)
@@ -487,6 +580,88 @@ export default function ChatPanel() {
               </div>
             </div>
 
+            {/* Mode tabs — single surface for Talk / Capture / Search / Ask */}
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 2,
+              padding: '4px 8px 0',
+              background: 'var(--surface)',
+              borderBottom: '1px solid var(--border)',
+              flexShrink: 0,
+            }}>
+              {([
+                { id: 'talk',    icon: MessageSquare, label: 'Talk',    color: 'var(--accent)' },
+                { id: 'capture', icon: Zap,           label: 'Capture', color: '#0A7B6A' },
+                { id: 'search',  icon: SearchIcon,    label: 'Search',  color: '#3B82F6' },
+                { id: 'ask',     icon: Sparkles,      label: 'Ask',     color: '#8B5CF6' },
+              ] as const).map((tab) => {
+                const Icon = tab.icon
+                const active = mode === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setMode(tab.id)}
+                    style={{
+                      padding: '6px 10px', fontSize: 11, fontWeight: 500,
+                      background: 'transparent', border: 'none', cursor: 'pointer',
+                      color: active ? tab.color : 'var(--text-3)',
+                      borderBottom: active ? `2px solid ${tab.color}` : '2px solid transparent',
+                      marginBottom: -1, display: 'flex', alignItems: 'center', gap: 4,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    <Icon size={11} /> {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Quick prompt chips — "Brief Me" feature */}
+            {mode === 'ask' && chatMessages.length === 0 && (
+              <div style={{
+                padding: '10px 12px',
+                background: 'var(--surface)',
+                borderBottom: '1px solid var(--border)',
+                display: 'flex', flexWrap: 'wrap', gap: 6,
+              }}>
+                <div style={{ fontSize: 10, color: 'var(--text-3)', width: '100%', marginBottom: 2 }}>
+                  Quick briefs:
+                </div>
+                {[
+                  { label: 'Today', icon: CalendarDays, prompt: 'Brief me on today — where do I stand right now? Mood + tasks + calendar + the ONE thing I should focus on next. Keep it under 200 words.' },
+                  { label: 'This week', icon: CalendarDays, prompt: 'Give me a brief on this week — what have I been working on, mood patterns, what got done, what stalled. Use my recent notes and trades. Under 300 words.' },
+                  { label: 'Current folder', icon: FolderOpen, prompt: 'Brief me on the folder I currently have open: TLDR of what\'s in it, latest activity, open questions I wrote about, suggested next step.' },
+                  { label: 'What\'s stale', icon: FileText, prompt: 'What have I been ignoring? Look through my notes/folders and tell me what\'s been quiet — projects I haven\'t touched in a while, things I wrote follow-up notes about but never followed up on, decisions I tracked but never resolved.' },
+                ].map((chip) => {
+                  const Icon = chip.icon
+                  return (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={() => {
+                        setInput(chip.prompt)
+                        // Auto-send after a tick so the user sees the input update
+                        setTimeout(() => {
+                          void sendViaRoute(chip.prompt, 'ask')
+                        }, 50)
+                      }}
+                      disabled={streaming}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                        padding: '5px 10px', fontSize: 11, fontWeight: 500,
+                        background: 'var(--surface-2, var(--surface))', color: 'var(--text-2)',
+                        border: '1px solid var(--border)', borderRadius: 999,
+                        cursor: streaming ? 'not-allowed' : 'pointer',
+                        fontFamily: 'inherit',
+                      }}
+                    >
+                      <Icon size={10} /> Brief: {chip.label}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
               {chatMessages.length === 0 && (
                 <div style={{ textAlign: 'center', paddingTop: 40 }}>
@@ -664,7 +839,13 @@ export default function ChatPanel() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder={listening ? 'Listening — speak now…' : `Ask anything, ${name}…`}
+                placeholder={
+                  listening ? 'Listening — speak now…' :
+                  mode === 'capture' ? 'Type any thought — Jalayu auto-routes it…' :
+                  mode === 'search'  ? 'Search notes, tasks, vault names…' :
+                  mode === 'ask'     ? 'Ask a one-off question — answer based on your data…' :
+                  `Talk to Jalayu, ${name}…`
+                }
                 rows={1}
                 style={{
                   flex: 1,
@@ -713,6 +894,17 @@ export default function ChatPanel() {
         </>
       )}
     </AnimatePresence>
+
+    {/* Vault unlock for sensitive captures (mode === 'capture' with vault_hint) */}
+    <VaultUnlockDialog
+      open={vaultDialog !== null}
+      payload={vaultDialog}
+      onClose={() => setVaultDialog(null)}
+      onSuccess={() => {
+        setVaultDialog(null)
+        toast.success('Encrypted to vault')
+      }}
+    />
     </>
   )
 }
