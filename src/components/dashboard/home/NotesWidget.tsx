@@ -17,6 +17,7 @@ interface Note {
   type: string
   meta: NoteMeta | null
   created_at: string
+  is_folder?: boolean
 }
 
 const ACCENT = '#D97757'
@@ -55,16 +56,20 @@ export default function NotesWidget({ size, setSidebarView }: Props) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch(`/api/notes?limit=${limit + 2}`, { cache: 'no-store' })
+      // Load a few extra so we can filter out folders and still have enough
+      const res = await fetch(`/api/notes?limit=${limit + 10}`, { cache: 'no-store' })
       if (!res.ok) return
       const json = await res.json() as { notes: Note[] }
-      // Pinned first then newest
-      const sorted = [...(json.notes ?? [])].sort((a, b) => {
-        const ap = a.meta?.pinned ? 1 : 0
-        const bp = b.meta?.pinned ? 1 : 0
-        if (ap !== bp) return bp - ap
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      })
+      // Exclude folders from the home widget — they're navigation, not content.
+      // Sort pinned first then newest.
+      const sorted = [...(json.notes ?? [])]
+        .filter((n) => !n.is_folder)
+        .sort((a, b) => {
+          const ap = a.meta?.pinned ? 1 : 0
+          const bp = b.meta?.pinned ? 1 : 0
+          if (ap !== bp) return bp - ap
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        })
       setNotes(sorted)
     } catch {
       // silent fail on widget — not critical
