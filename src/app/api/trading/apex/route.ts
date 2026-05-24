@@ -210,7 +210,49 @@ Produce your decision as the specified JSON object. Stop loss and take profit MU
       }
     }
 
+    // ── PERSIST: log every Apex evaluation for later EV analysis ────────────
+    // Failure to log shouldn't block the response — the user still sees the
+    // decision. We catch + warn so analytics gaps are visible but UX intact.
+    const ind = candles1m.length >= 15 ? computeIndicators(candles1m) : null
+    const rsi15m = candles15m.length >= 15
+      ? calculateRSI(candles15m.map((c) => c.close), 14)
+      : null
+
+    const { data: persisted, error: persistErr } = await supabase
+      .from('apex_decisions')
+      .insert({
+        user_id: user.id,
+        symbol: asset.symbol,
+        asset_type: asset.assetType,
+        current_price: asset.price,
+        ema9: ind?.ema9 ?? null,
+        ema21: ind?.ema21 ?? null,
+        vwap_dev_pct: ind?.vwapDevPct ?? null,
+        atr_pct: ind?.atrPct ?? null,
+        regime: ind?.regime ?? null,
+        rsi_1m: ind?.rsi ?? null,
+        rsi_15m: rsi15m,
+        vol_spike: ind?.volSpike ?? null,
+        equity_at_decision: equity,
+        drawdown_pct: drawdownPct,
+        drawdown_active: drawdownPct < -3,
+        decision: decision.decision,
+        conviction_score: decision.conviction_score,
+        rationale: decision.rationale,
+        suggested_position_size_pct: decision.risk_parameters?.suggested_position_size_pct ?? null,
+        stop_loss_target: decision.risk_parameters?.stop_loss_target ?? null,
+        take_profit_target: decision.risk_parameters?.take_profit_target ?? null,
+        rr_ratio: rrRatio,
+      })
+      .select('id')
+      .single()
+
+    if (persistErr) {
+      console.warn('[apex] persistence failed (table may not exist yet):', persistErr.message)
+    }
+
     return NextResponse.json({
+      id: persisted?.id ?? null,
       symbol: asset.symbol,
       name: asset.name,
       assetType: asset.assetType,

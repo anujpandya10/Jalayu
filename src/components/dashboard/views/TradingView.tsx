@@ -8,6 +8,7 @@ import EquityChart from '@/components/dashboard/trading/EquityChart'
 import TradeStories from '@/components/dashboard/trading/TradeStories'
 import TradingHero, { LearningPanel, RealMoneyCTA } from '@/components/dashboard/trading/TradingHero'
 import ApexTake from '@/components/dashboard/trading/ApexTake'
+import ApexHistory from '@/components/dashboard/trading/ApexHistory'
 import { useStore } from '@/store/useStore'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -712,6 +713,11 @@ export default function TradingView() {
         {/* ── APEX — institutional-grade on-demand intelligence ── */}
         <div style={{ marginBottom: 20 }}>
           <ApexTake />
+        </div>
+
+        {/* ── APEX HISTORY + EV ANALYTICS — what's actually paying off ── */}
+        <div style={{ marginBottom: 20 }}>
+          <ApexHistory />
         </div>
 
         {/* ── EQUITY CURVE — the journey visualized ── */}
