@@ -707,6 +707,21 @@ export async function runTradingTick(
     setupMultiplier.set(tag, Math.max(0.6, Math.min(1.5, raw)))
   }
 
+  // ── Reconciliation: don't let auto-learning collide with drawdown mode ──
+  // If we're in CAUTIOUS or RECOVERY mode, the system only allows specific
+  // setup types. If auto-learning has ALSO disabled those, NOTHING can fire
+  // and we deadlock. Recovery overrides auto-learning for the setups it
+  // needs — the alternative is doing nothing for days. Risk is bounded by
+  // the 33% position size in recovery and the higher score bar.
+  if (ddMode === 'recovery') {
+    autoDisabledTags.delete('MOMENTUM_LONG')
+    autoDisabledTags.delete('OVERSOLD_BOUNCE')
+  } else if (ddMode === 'cautious') {
+    autoDisabledTags.delete('MOMENTUM_LONG')
+    autoDisabledTags.delete('OVERSOLD_BOUNCE')
+    autoDisabledTags.delete('VWAP_LONG')
+  }
+
   if (autoDisabledTags.size > 0) {
     events.push({
       type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',

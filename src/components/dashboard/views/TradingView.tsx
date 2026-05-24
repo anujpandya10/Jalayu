@@ -1,6 +1,9 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
+import AssetMap from '@/components/dashboard/trading/AssetMap'
+import BotConstellation from '@/components/dashboard/trading/BotConstellation'
+import CandleScanner from '@/components/dashboard/trading/CandleScanner'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -728,6 +731,13 @@ export default function TradingView() {
               {totalPnL >= 0 ? '+' : ''}{fmtPct(totalPnLPct)}
             </div>
           </div>
+        </div>
+
+        {/* ── BOT CONSTELLATION + ASSET MAP + CANDLE SCANNER ── */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 20 }}>
+          <BotConstellation />
+          <AssetMap />
+          <CandleScanner />
         </div>
 
         {/* ── POSITIONS + TRADE HISTORY ── */}
