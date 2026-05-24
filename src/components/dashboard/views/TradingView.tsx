@@ -327,6 +327,15 @@ export default function TradingView() {
   const [settingsBusy, setSettingsBusy] = useState(false)
   const [tickError, setTickError] = useState<string | null>(null)
   const [disabledSetups, setDisabledSetups] = useState<string[]>([])
+  const [lastDiagnostics, setLastDiagnostics] = useState<{
+    ddMode: string
+    drawdownPct: number
+    marketRegime: string
+    longSlotsFree: number
+    longCandidates: number
+    circuitBreaker: boolean
+    topLong: { symbol: string; score: number; setup: string } | null
+  } | null>(null)
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -424,7 +433,9 @@ export default function TradingView() {
         phase?: PhaseInfo
         tradesExecuted?: number
         skipped?: boolean
+        diagnostics?: typeof lastDiagnostics
       }
+      if (data.diagnostics) setLastDiagnostics(data.diagnostics)
       if (data.events?.length) addActivity(data.events)
       setOpenLongs(data.currentLongs ?? 0)
       setOpenShorts(data.currentShorts ?? 0)
@@ -629,7 +640,15 @@ export default function TradingView() {
 
       <InsightCard
         headline={insight.headline}
-        detail={insight.detail}
+        detail={
+          lastDiagnostics
+            ? `${insight.detail} Last scan: ${lastDiagnostics.marketRegime} BTC · ${lastDiagnostics.ddMode} (${(lastDiagnostics.drawdownPct * 100).toFixed(1)}%) · ${lastDiagnostics.longCandidates} long candidate(s) · ${lastDiagnostics.longSlotsFree} slot(s) free${
+              lastDiagnostics.topLong
+                ? ` · best: ${lastDiagnostics.topLong.symbol} ${lastDiagnostics.topLong.setup} (${lastDiagnostics.topLong.score.toFixed(1)})`
+                : ''
+            }.`
+            : insight.detail
+        }
         tone={insight.tone}
         blockers={insight.blockers}
         showDetails={showScanDetails}

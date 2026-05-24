@@ -20,7 +20,9 @@ export interface EngineInsight {
 const BLOCKER_PATTERNS: { pattern: RegExp; label: string }[] = [
   { pattern: /Daily loss limit/i, label: 'Daily loss limit reached' },
   { pattern: /Deep drawdown|Hard stop/i, label: 'Deep drawdown — micro-size entries only' },
-  { pattern: /Recovery mode/i, label: 'Recovery mode — only top signals' },
+  { pattern: /Recovery mode|Recovery \(/i, label: 'Recovery mode — smaller size, core setups only' },
+  { pattern: /all .* slots full/i, label: 'All position slots full — wait for exit' },
+  { pattern: /No entry candidates/i, label: 'No setup passed filters this scan' },
   { pattern: /Cautious mode/i, label: 'Cautious mode — smaller size, higher bar' },
   { pattern: /Bear regime/i, label: 'Bear regime — crypto longs blocked' },
   { pattern: /Neutral regime/i, label: 'Neutral BTC — weak crypto signals filtered' },

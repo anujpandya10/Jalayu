@@ -231,8 +231,14 @@ export const SEED_CAPITAL = 500
 /** Setups the engine should never auto-disable from learning (core crypto edge) */
 export const CORE_LONG_SETUPS = ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE', 'VWAP_LONG'] as const
 
-/** Below this equity % from seed, only high-conviction recovery entries (not a full freeze) */
+/** Below this equity % from seed, micro-size entries only */
 export const DRAWDOWN_HARD_STOP_PCT = -0.10
+
+/** Recovery band starts here (above = cautious, not recovery) */
+export const DRAWDOWN_RECOVERY_PCT = -0.07
+
+/** Min position in recovery/cautious — normal $40 is too high after size cuts */
+export const MIN_TRADE_USD_RECOVERY = 28
 
 /** Regime gates — loosened so crypto can trade in chop, not only perfect BTC bull */
 export const NEUTRAL_CRYPTO_MIN_SCORE = 4.5

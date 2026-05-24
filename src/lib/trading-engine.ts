@@ -34,6 +34,8 @@ import {
   ENRICH_TOP_N,
   CORE_LONG_SETUPS,
   DRAWDOWN_HARD_STOP_PCT,
+  DRAWDOWN_RECOVERY_PCT,
+  MIN_TRADE_USD_RECOVERY,
   NEUTRAL_CRYPTO_MIN_SCORE,
   BEAR_CRYPTO_MIN_SCORE,
   getTpSl,
@@ -58,6 +60,19 @@ export interface TickEvent {
   ts: number
 }
 
+export interface TradingDiagnostics {
+  ddMode: 'normal' | 'cautious' | 'recovery' | 'hard_stop'
+  drawdownPct: number
+  marketRegime: 'BULL' | 'BEAR' | 'NEUTRAL'
+  openLongs: number
+  openShorts: number
+  longSlotsFree: number
+  longCandidates: number
+  shortCandidates: number
+  circuitBreaker: boolean
+  topLong: { symbol: string; score: number; setup: string } | null
+}
+
 export interface TradingTickResult {
   events: TickEvent[]
   cash: number
@@ -68,6 +83,7 @@ export interface TradingTickResult {
   phase: PhaseInfo
   tradesExecuted: number
   skipped?: boolean
+  diagnostics?: TradingDiagnostics
 }
 
 interface PositionRow {
@@ -625,8 +641,10 @@ export async function runTradingTick(
   type DDMode = 'normal' | 'cautious' | 'recovery' | 'hard_stop'
   const ddMode: DDMode =
     drawdownPct <= DRAWDOWN_HARD_STOP_PCT ? 'hard_stop' :
-    drawdownPct <= -0.05 ? 'recovery' :
+    drawdownPct <= DRAWDOWN_RECOVERY_PCT ? 'recovery' :
     drawdownPct <= -0.03 ? 'cautious' : 'normal'
+
+  const minTradeUsd = ddMode === 'normal' ? MIN_TRADE_USD : MIN_TRADE_USD_RECOVERY
 
   let drawdownPositionMultiplier = 1.0
   if (ddMode === 'hard_stop') {
@@ -643,15 +661,15 @@ export async function runTradingTick(
       ts: now,
     })
   } else if (ddMode === 'recovery') {
-    drawdownPositionMultiplier = 0.33
+    drawdownPositionMultiplier = 0.5
     const before = longSignals.length + shortSignals.length
     longSignals = longSignals
-      .filter((s) => s.score >= 5.5)
-      .filter((s) => ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE'].includes(s.setupTag))
-    shortSignals = []  // no shorts in recovery — they bled us into this hole
+      .filter((s) => s.score >= 4.5)
+      .filter((s) => (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag))
+    shortSignals = []
     events.push({
       type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-      reason: `🔁 Recovery mode: equity ${(drawdownPct * 100).toFixed(2)}% from seed. Only top-quality signals (score ≥ 5.5, MOMENTUM/OVERSOLD only), 33% position size, no shorts. Filtered ${before} → ${longSignals.length} signals.`,
+      reason: `🔁 Recovery (${(drawdownPct * 100).toFixed(1)}%): core setups score ≥ 4.5, 50% size. ${before} → ${longSignals.length} long candidates.`,
       ts: now,
     })
   } else if (ddMode === 'cautious') {
@@ -809,13 +827,47 @@ export async function runTradingTick(
   const maxSlots = limits.maxLongs + limits.maxShorts
   let openSlots = currentLongs + currentShorts
 
+  const longSlotsFree = Math.max(0, limits.maxLongs - currentLongs)
+  const shortSlotsFree = Math.max(0, limits.maxShorts - currentShorts)
+
   const longsToOpen = circuitBreakerOn
     ? []
-    : longSignals.slice(0, Math.max(0, limits.maxLongs - currentLongs))
+    : longSignals.slice(0, longSlotsFree)
 
   const shortsToOpen = circuitBreakerOn
     ? []
-    : shortSignals.slice(0, Math.max(0, limits.maxShorts - currentShorts))
+    : shortSignals.slice(0, shortSlotsFree)
+
+  const topLong = longSignals[0]
+    ? { symbol: longSignals[0].asset.symbol, score: longSignals[0].score, setup: longSignals[0].setupTag }
+    : null
+
+  const diagnostics: TradingDiagnostics = {
+    ddMode,
+    drawdownPct,
+    marketRegime,
+    openLongs: currentLongs,
+    openShorts: currentShorts,
+    longSlotsFree,
+    longCandidates: longSignals.length,
+    shortCandidates: shortSignals.length,
+    circuitBreaker: circuitBreakerOn,
+    topLong,
+  }
+
+  if (!circuitBreakerOn && longSlotsFree > 0 && longSignals.length === 0) {
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `📋 No entry candidates after filters (${marketRegime} BTC, ${ddMode} mode) — waiting for setup`,
+      ts: now,
+    })
+  } else if (!circuitBreakerOn && longSlotsFree === 0 && longSignals.length > 0) {
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `📋 ${longSignals.length} signal(s) ready but all ${limits.maxLongs} long slots full — exits free a slot`,
+      ts: now,
+    })
+  }
 
   const entrySymbols = [
     ...longsToOpen.map((s) => s.asset.symbol),
@@ -872,10 +924,10 @@ export async function runTradingTick(
     if (apexVeto.positionMultiplier !== 1) {
       budget = parseFloat((budget * apexVeto.positionMultiplier).toFixed(2))
     }
-    if (budget < MIN_TRADE_USD) break
+    if (budget < minTradeUsd) continue
     const shares = parseFloat((budget / price).toFixed(8))
     const total = parseFloat((price * shares).toFixed(2))
-    if (total > cash) continue
+    if (total > cash || total < minTradeUsd) continue
 
     const indStr = sig.indicators
       ? ` RSI:${sig.indicators.rsi.toFixed(0)} VWAP:${sig.indicators.vwapDevPct.toFixed(2)}% vol:${sig.indicators.volSpike.toFixed(1)}×`
@@ -985,11 +1037,11 @@ export async function runTradingTick(
     if (apexVeto.positionMultiplier !== 1) {
       budget = parseFloat((budget * apexVeto.positionMultiplier).toFixed(2))
     }
-    if (budget < MIN_TRADE_USD) break
+    if (budget < minTradeUsd) continue
 
     const shares = parseFloat((budget / price).toFixed(8))
     const total = parseFloat((price * shares).toFixed(2))
-    if (total > cash) continue
+    if (total > cash || total < minTradeUsd) continue
 
     const indStr = sig.indicators
       ? ` RSI:${sig.indicators.rsi.toFixed(0)} VWAP:${sig.indicators.vwapDevPct.toFixed(2)}%`
@@ -1081,5 +1133,6 @@ export async function runTradingTick(
     currentShorts,
     phase: phaseInfo,
     tradesExecuted,
+    diagnostics,
   }
 }
