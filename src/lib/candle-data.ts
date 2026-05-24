@@ -62,11 +62,12 @@ async function fetchWithTimeout(url: string, timeoutMs = 6000): Promise<Response
 export async function fetchBinanceCandles(
   symbol: string,
   limit = 50,
+  interval: '1m' | '5m' | '15m' | '1h' = '1m',
 ): Promise<CandleInput[]> {
   const pair = BINANCE_SYMBOL_MAP[symbol.toUpperCase()] ??
                (symbol.toUpperCase().endsWith('USDT') ? symbol.toUpperCase() : `${symbol.toUpperCase()}USDT`)
 
-  const path = `/api/v3/klines?symbol=${pair}&interval=1m&limit=${limit}`
+  const path = `/api/v3/klines?symbol=${pair}&interval=${interval}&limit=${limit}`
 
   // Try Binance US first (Vercel US servers can reach this), then global
   const res = await fetchWithTimeout(`https://api.binance.us${path}`, 5000)
@@ -212,16 +213,18 @@ export async function fetchCandles(
   symbol   : string,
   assetType: 'crypto' | 'stock' | 'forex',
   limit    = 50,
+  interval : '1m' | '5m' | '15m' = '1m',
 ): Promise<CandleInput[]> {
   if (assetType === 'crypto') {
-    return fetchBinanceCandles(symbol, limit)
+    return fetchBinanceCandles(symbol, limit, interval)
   }
 
   if (assetType === 'stock') {
-    return fetchYahooCandles(symbol, '1m')
+    return fetchYahooCandles(symbol, interval)
   }
 
   if (assetType === 'forex') {
+    // Forex only has daily data on our free tier — interval ignored
     const base = FOREX_BASE_MAP[symbol.toUpperCase()] ?? symbol.replace('USD', '')
     return fetchForexDailyCandles(base, 25)
   }
