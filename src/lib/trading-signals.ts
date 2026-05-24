@@ -112,8 +112,10 @@ function stage2Score(
   // Stage-1 score is additive so strong trending assets score even higher.
 
   // MOMENTUM LONG — asset trending up with volume. Enter the move.
-  // Lowered to 2% 24h: assets up 2-3% in 24h with volume are mid-trend, not extended.
-  if (change24h >= 2.0 && volSpike >= 1.5 && rsi >= 45 && rsi <= 73 && ema9 > ema21) {
+  // Crypto: 1.5% 24h catches active sessions when alts lead while BTC 1m lags.
+  const mom24hMin = assetType === 'crypto' ? 1.5 : 2.0
+  const momVolMin = assetType === 'crypto' ? 1.3 : 1.5
+  if (change24h >= mom24hMin && volSpike >= momVolMin && rsi >= 42 && rsi <= 75 && ema9 > ema21) {
     score = Math.max(score, 3.0) + 2.5   // floor → guaranteed 5.5+
     reasons.push(`Momentum: +${change24h.toFixed(1)}% 24h, ${volSpike.toFixed(1)}× vol, RSI ${rsi.toFixed(0)}`)
     setupTag = 'MOMENTUM_LONG'
@@ -397,6 +399,21 @@ export async function rankSignalsEnriched(
     if (r.status === 'fulfilled') out.push(r.value)
   }
   return out
+}
+
+/** Alt pumping on its own tape — don't block because BTC 1m structure lags */
+export function isStrongAltMomentum(s: Signal): boolean {
+  if (s.asset.assetType !== 'crypto' || !s.indicators) return false
+  const { rsi, ema9, ema21, volSpike } = s.indicators
+  const ch = s.asset.change24h
+  return (
+    ch >= 1.5
+    && volSpike >= 1.2
+    && ema9 > ema21
+    && rsi >= 40
+    && rsi <= 78
+    && (s.setupTag === 'MOMENTUM_LONG' || s.score >= 4.5)
+  )
 }
 
 /** Long entry candidates from enriched signals only (not Stage-1-only rankLongs). */

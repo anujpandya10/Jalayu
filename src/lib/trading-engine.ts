@@ -7,6 +7,7 @@ import {
   rankSignalsEnriched,
   filterLongEntries,
   filterShortEntries,
+  isStrongAltMomentum,
   type Signal,
 } from '@/lib/trading-signals'
 import { getCurrentPhase, type PhaseInfo } from '@/lib/trading-phase'
@@ -558,9 +559,16 @@ export async function runTradingTick(
     if (ema9 > ema21 * 1.001 && rsi >= 48 && vwapDevPct > -0.3 && btcChange24h > -1.0) {
       marketRegime = 'BULL'
       regimeNote = `BTC bullish: RSI ${rsi.toFixed(0)}, EMA9>21, VWAP ${vwapDevPct.toFixed(2)}%, 24h ${btcChange24h >= 0 ? '+' : ''}${btcChange24h.toFixed(1)}%`
-    } else if ((ema9 < ema21 * 0.999 && rsi < 50) || (rsi < 42) || btcChange24h < -2.5) {
+    } else if (
+      btcChange24h < -2.5
+      || (ema9 < ema21 * 0.999 && rsi < 45 && btcChange24h < -0.5)
+      || (rsi < 28 && btcChange24h < -1.5)
+    ) {
       marketRegime = 'BEAR'
       regimeNote = `BTC bearish: RSI ${rsi.toFixed(0)}, EMA9${ema9 < ema21 ? '<' : '>'}21, 24h ${btcChange24h >= 0 ? '+' : ''}${btcChange24h.toFixed(1)}%`
+    } else if (rsi < 42 || ema9 < ema21 * 0.999) {
+      marketRegime = 'NEUTRAL'
+      regimeNote = `BTC oversold/mixed (RSI ${rsi.toFixed(0)}, 24h ${btcChange24h >= 0 ? '+' : ''}${btcChange24h.toFixed(1)}%) — alts use own momentum`
     } else {
       regimeNote = `BTC neutral: RSI ${rsi.toFixed(0)}, 24h ${btcChange24h >= 0 ? '+' : ''}${btcChange24h.toFixed(1)}%`
     }
@@ -583,25 +591,31 @@ export async function runTradingTick(
     const btcRsi = btcSignal?.indicators?.rsi ?? 50
     const btcWashout = btcRsi < BEAR_BTC_OVERSOLD_RSI
     const bearMinLong = btcWashout ? BEAR_BTC_OVERSOLD_MIN_SCORE : BEAR_CRYPTO_MIN_SCORE
+    longSignals = longSignals.filter((s) => {
+      if (s.asset.assetType !== 'crypto') return true
+      if (isStrongAltMomentum(s)) return true
+      return s.score >= bearMinLong
+        && (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag)
+    })
+    const filtered = beforeRegimeCount - longSignals.filter((s) => s.asset.assetType === 'crypto').length
+    if (filtered > 0) {
+      events.push({
+        type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+        reason: `🔴 Bear — dips ≥ ${bearMinLong} or alt momentum; filtered ${filtered} weak crypto`,
+        ts: now,
+      })
+    }
+  } else if (marketRegime === 'NEUTRAL') {
     longSignals = longSignals.filter((s) =>
       s.asset.assetType !== 'crypto'
-      || (s.score >= bearMinLong && (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag)),
+      || isStrongAltMomentum(s)
+      || s.score >= NEUTRAL_CRYPTO_MIN_SCORE,
     )
     const filtered = beforeRegimeCount - longSignals.filter((s) => s.asset.assetType === 'crypto').length
     if (filtered > 0) {
       events.push({
         type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-        reason: `🔴 Bear — core dips score ≥ ${bearMinLong}${btcWashout ? ` (BTC RSI ${btcRsi.toFixed(0)} oversold)` : ''}; filtered ${filtered}`,
-        ts: now,
-      })
-    }
-  } else if (marketRegime === 'NEUTRAL') {
-    longSignals = longSignals.filter((s) => s.asset.assetType !== 'crypto' || s.score >= NEUTRAL_CRYPTO_MIN_SCORE)
-    const filtered = beforeRegimeCount - longSignals.filter((s) => s.asset.assetType === 'crypto').length
-    if (filtered > 0) {
-      events.push({
-        type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-        reason: `🟡 Neutral regime — blocked ${filtered} sub-conviction crypto (need score ≥ ${NEUTRAL_CRYPTO_MIN_SCORE})`,
+        reason: `🟡 Neutral — blocked ${filtered} weak crypto (need score ≥ ${NEUTRAL_CRYPTO_MIN_SCORE} or alt momentum)`,
         ts: now,
       })
     }
