@@ -23,13 +23,57 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const [assets, { data: positions }] = await Promise.all([
+  const [assets, { data: positions }, { data: setupHistory }] = await Promise.all([
     getAllAssets(),
     supabase
       .from('paper_positions')
       .select('symbol, direction, shares, avg_buy_price, created_at')
       .eq('user_id', user.id),
+    // For the bot constellation — last 100 closed trades grouped by setup
+    supabase
+      .from('trade_setups')
+      .select('setup_tag, won, outcome_pnl, closed_at, opened_at')
+      .eq('user_id', user.id)
+      .not('closed_at', 'is', null)
+      .order('closed_at', { ascending: false })
+      .limit(300),
   ])
+
+  // ── Per-setup "bot" stats ─────────────────────────────────────────────────
+  type BotStats = {
+    setup: string
+    trades: number
+    wins: number
+    losses: number
+    netPnl: number
+    winRate: number
+    avgPnl: number
+    lastTradeAt: string | null
+    last30Pnl: number
+  }
+  const botMap = new Map<string, BotStats>()
+  for (const t of setupHistory ?? []) {
+    const tag = (t.setup_tag as string) || 'UNTAGGED'
+    let b = botMap.get(tag)
+    if (!b) {
+      b = { setup: tag, trades: 0, wins: 0, losses: 0, netPnl: 0, winRate: 0, avgPnl: 0, lastTradeAt: null, last30Pnl: 0 }
+      botMap.set(tag, b)
+    }
+    if (b.trades >= 50) continue
+    b.trades++
+    const pnl = Number(t.outcome_pnl ?? 0)
+    b.netPnl += pnl
+    if (b.trades <= 30) b.last30Pnl += pnl
+    if (t.won) b.wins++; else b.losses++
+    if (!b.lastTradeAt || (t.closed_at as string) > b.lastTradeAt) {
+      b.lastTradeAt = t.closed_at as string
+    }
+  }
+  const bots = [...botMap.values()].map((b) => ({
+    ...b,
+    winRate: b.trades > 0 ? b.wins / b.trades : 0,
+    avgPnl: b.trades > 0 ? b.netPnl / b.trades : 0,
+  })).sort((a, b) => b.trades - a.trades)
 
   // Score every asset cheaply (stage-1 only — no candle fetch per request)
   const signals = rankSignals(assets)
@@ -76,5 +120,6 @@ export async function GET() {
       shortSignals: map.filter((m) => m.action === 'SELL_SHORT').length,
     },
     assets: map,
+    bots,
   })
 }
