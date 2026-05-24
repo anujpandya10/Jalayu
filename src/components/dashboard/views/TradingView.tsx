@@ -263,6 +263,9 @@ function ActivityFeed({ items, scanning }: { items: ActivityItem[]; scanning: bo
         } else if (event.type === 'SCAN') {
           color = '#60a5fa'
           prefix = '⟳ SCAN'
+        } else if (event.reason.includes('🛡️ Apex veto')) {
+          color = '#c4b5fd'
+          prefix = '🛡️ VETO'
         } else {
           color = '#475569'
           prefix = '— HOLD'

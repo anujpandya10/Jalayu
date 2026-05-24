@@ -21,6 +21,7 @@ import { getAllAssets } from '@/lib/market-data'
 import { fetchCandles } from '@/lib/candle-data'
 import { computeIndicators, calculateRSI } from '@/lib/indicators'
 import { SEED_CAPITAL } from '@/lib/trading-config'
+import { scoreAssetFull } from '@/lib/trading-signals'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -86,12 +87,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: `Symbol ${symbol} not in scan universe` }, { status: 404 })
     }
 
-    // Pull 1m + 15m candles in parallel (forex skips 15m — daily only on free tier)
-    const [candles1m, candles15m] = await Promise.all([
+    // Pull candles + engine score in parallel (for disagreement-as-signal logging)
+    const [candles1m, candles15m, engineSignal] = await Promise.all([
       fetchCandles(asset.symbol, asset.assetType, 50, '1m'),
       asset.assetType === 'forex'
         ? Promise.resolve([])
         : fetchCandles(asset.symbol, asset.assetType, 50, '15m'),
+      scoreAssetFull(asset),
     ])
 
     let indBlock = '(no candle data available)'
@@ -243,6 +245,8 @@ Produce your decision as the specified JSON object. Stop loss and take profit MU
         stop_loss_target: decision.risk_parameters?.stop_loss_target ?? null,
         take_profit_target: decision.risk_parameters?.take_profit_target ?? null,
         rr_ratio: rrRatio,
+        engine_score_at_decision: engineSignal.score,
+        engine_setup_at_decision: engineSignal.setupTag,
       })
       .select('id')
       .single()
@@ -261,6 +265,8 @@ Produce your decision as the specified JSON object. Stop loss and take profit MU
       rrRatio,
       drawdownActive: drawdownPct < -3,
       drawdownPct,
+      engineScore: engineSignal.score,
+      engineSetup: engineSignal.setupTag,
       generatedAt: new Date().toISOString(),
     })
   } catch (err) {

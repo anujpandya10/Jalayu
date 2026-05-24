@@ -36,6 +36,8 @@ interface DecisionRow {
   stop_loss_target: number | null
   take_profit_target: number | null
   rr_ratio: number | null
+  engine_score_at_decision: number | null
+  engine_setup_at_decision: string | null
   created_at: string
 }
 
@@ -72,6 +74,26 @@ function volBucket(vs: number | null): string {
   if (vs >= 3)   return 'high spike (3×+)'
   if (vs >= 1.5) return 'moderate (1.5-3×)'
   return 'low (<1.5×)'
+}
+
+/** Engine vs Apex agreement bucket for EV breakdown */
+function agreementBucket(
+  engineScore: number | null,
+  apexDecision: 'BUY' | 'SELL' | 'HOLD',
+  apexConviction: number,
+): string {
+  if (engineScore == null) return 'engine score unknown'
+  const engineBull = engineScore >= 4.5
+  const engineBear = engineScore <= -4.5
+  const apexBull = apexDecision === 'BUY' && apexConviction >= 7
+  const apexBear = apexDecision === 'SELL' && apexConviction >= 7
+  if (engineBull && apexBull) return 'both agree (bullish)'
+  if (engineBear && apexBear) return 'both agree (bearish)'
+  if (engineBull && !apexBull) return 'engine high, apex low'
+  if (!engineBull && apexBull) return 'engine low, apex high'
+  if (engineBear && apexDecision === 'BUY') return 'engine short, apex long'
+  if (engineBull && apexDecision === 'SELL') return 'engine long, apex short'
+  return 'both idle / mixed'
 }
 
 export async function GET(req: Request) {
@@ -154,6 +176,11 @@ export async function GET(req: Request) {
       conviction_bucket: convictionBucket(r.conviction_score),
       rsi_alignment: rsiAlignment(r.rsi_1m, r.rsi_15m),
       vol_bucket: volBucket(r.vol_spike),
+      agreement_bucket: agreementBucket(
+        r.engine_score_at_decision != null ? Number(r.engine_score_at_decision) : null,
+        r.decision,
+        Number(r.conviction_score),
+      ),
     }
   })
 
@@ -161,7 +188,7 @@ export async function GET(req: Request) {
   // Only count rows where we have a realized outcome AND the decision was BUY/SELL.
   const actedRows = enriched.filter((r) => r.outcome != null && r.decision !== 'HOLD')
 
-  const byDim = (key: 'conviction_bucket' | 'rsi_alignment' | 'regime' | 'vol_bucket') => {
+  const byDim = (key: 'conviction_bucket' | 'rsi_alignment' | 'regime' | 'vol_bucket' | 'agreement_bucket') => {
     const groups = new Map<string, { count: number; wins: number; sumPct: number; sumPnl: number }>()
     for (const r of actedRows) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -210,6 +237,7 @@ export async function GET(req: Request) {
       byRsiAlignment: byDim('rsi_alignment'),
       byRegime: byDim('regime'),
       byVolSpike: byDim('vol_bucket'),
+      byAgreement: byDim('agreement_bucket'),
     },
     totals,
   })

@@ -11,6 +11,11 @@ import {
 } from '@/lib/trading-signals'
 import { getCurrentPhase, type PhaseInfo } from '@/lib/trading-phase'
 import {
+  evaluateApexVeto,
+  loadValidApexDecisions,
+  logEngineApexVeto,
+} from '@/lib/apex-veto'
+import {
   ROUND_TRIP_FEE_PCT,
   computeEntryBudget,
   DAILY_LOSS_LIMIT_PCT,
@@ -799,6 +804,16 @@ export async function runTradingTick(
     ? []
     : longSignals.slice(0, Math.max(0, limits.maxLongs - currentLongs))
 
+  const shortsToOpen = circuitBreakerOn
+    ? []
+    : shortSignals.slice(0, Math.max(0, limits.maxShorts - currentShorts))
+
+  const entrySymbols = [
+    ...longsToOpen.map((s) => s.asset.symbol),
+    ...shortsToOpen.map((s) => s.asset.symbol),
+  ]
+  const apexBySymbol = await loadValidApexDecisions(supabase, userId, entrySymbols, priceMap)
+
   for (const sig of longsToOpen) {
     if (!sig.indicators && sig.asset.assetType === 'crypto') continue
 
@@ -819,8 +834,36 @@ export async function runTradingTick(
     if (setupMult !== 1.0) {
       budget = parseFloat((budget * setupMult).toFixed(2))
     }
-    if (budget < MIN_TRADE_USD) break
+
     const price = sig.asset.price
+    const apexVeto = evaluateApexVeto(apexBySymbol.get(sig.asset.symbol) ?? null, 'LONG')
+
+    if (!apexVeto.proceed) {
+      await logEngineApexVeto(supabase, {
+        userId,
+        symbol: sig.asset.symbol,
+        assetType: sig.asset.assetType,
+        direction: 'LONG',
+        engineScore: sig.score,
+        engineSetup: sig.setupTag,
+        entryPrice: price,
+        veto: apexVeto,
+        wouldHaveBudgetUsd: budget,
+        executed: false,
+      })
+      events.push({
+        type: 'HOLD', symbol: sig.asset.symbol, name: sig.asset.name,
+        price, direction: 'LONG',
+        reason: `🛡️ Apex veto: ${apexVeto.reason}`,
+        ts: now,
+      })
+      continue
+    }
+
+    if (apexVeto.positionMultiplier !== 1) {
+      budget = parseFloat((budget * apexVeto.positionMultiplier).toFixed(2))
+    }
+    if (budget < MIN_TRADE_USD) break
     const shares = parseFloat((budget / price).toFixed(8))
     const total = parseFloat((price * shares).toFixed(2))
     if (total > cash) continue
@@ -828,7 +871,10 @@ export async function runTradingTick(
     const indStr = sig.indicators
       ? ` RSI:${sig.indicators.rsi.toFixed(0)} VWAP:${sig.indicators.vwapDevPct.toFixed(2)}% vol:${sig.indicators.volSpike.toFixed(1)}×`
       : ''
-    const reason = `LONG [${sig.setupTag}] — ${sig.reason}${indStr} (score ${sig.score.toFixed(1)})`
+    const apexNote = apexVeto.vetoType !== 'no_apex_cache'
+      ? ` · ${apexVeto.reason}`
+      : ''
+    const reason = `LONG [${sig.setupTag}] — ${sig.reason}${indStr} (score ${sig.score.toFixed(1)})${apexNote}`
 
     const buyPayload = {
       user_id: userId,
@@ -845,6 +891,21 @@ export async function runTradingTick(
       tradeError = e2
     }
     if (tradeError) continue
+
+    if (apexVeto.vetoType !== 'no_apex_cache') {
+      await logEngineApexVeto(supabase, {
+        userId,
+        symbol: sig.asset.symbol,
+        assetType: sig.asset.assetType,
+        direction: 'LONG',
+        engineScore: sig.score,
+        engineSetup: sig.setupTag,
+        entryPrice: price,
+        veto: apexVeto,
+        wouldHaveBudgetUsd: total,
+        executed: true,
+      })
+    }
 
     const { sl: longSlPct, tp: longTpPct } = getTpSl(sig.setupTag, 'LONG', sig.asset.assetType as 'crypto' | 'stock' | 'forex')
     const posPayload = {
@@ -877,10 +938,6 @@ export async function runTradingTick(
     })
   }
 
-  const shortsToOpen = circuitBreakerOn
-    ? []
-    : shortSignals.slice(0, Math.max(0, limits.maxShorts - currentShorts))
-
   for (const sig of shortsToOpen) {
     if (!sig.indicators && sig.asset.assetType === 'crypto') continue
     if (sig.score > MIN_SHORT_SCORE) continue
@@ -889,9 +946,38 @@ export async function runTradingTick(
 
     const slotsRemaining = maxSlots - openSlots
     const equity = computePortfolioEquity(cash, positions, priceMap)
-    const budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag)
-    if (budget < MIN_TRADE_USD) break
+    let budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag)
     const price = sig.asset.price
+
+    const apexVeto = evaluateApexVeto(apexBySymbol.get(sig.asset.symbol) ?? null, 'SHORT')
+
+    if (!apexVeto.proceed) {
+      await logEngineApexVeto(supabase, {
+        userId,
+        symbol: sig.asset.symbol,
+        assetType: sig.asset.assetType,
+        direction: 'SHORT',
+        engineScore: sig.score,
+        engineSetup: sig.setupTag,
+        entryPrice: price,
+        veto: apexVeto,
+        wouldHaveBudgetUsd: budget,
+        executed: false,
+      })
+      events.push({
+        type: 'HOLD', symbol: sig.asset.symbol, name: sig.asset.name,
+        price, direction: 'SHORT',
+        reason: `🛡️ Apex veto: ${apexVeto.reason}`,
+        ts: now,
+      })
+      continue
+    }
+
+    if (apexVeto.positionMultiplier !== 1) {
+      budget = parseFloat((budget * apexVeto.positionMultiplier).toFixed(2))
+    }
+    if (budget < MIN_TRADE_USD) break
+
     const shares = parseFloat((budget / price).toFixed(8))
     const total = parseFloat((price * shares).toFixed(2))
     if (total > cash) continue
@@ -899,7 +985,10 @@ export async function runTradingTick(
     const indStr = sig.indicators
       ? ` RSI:${sig.indicators.rsi.toFixed(0)} VWAP:${sig.indicators.vwapDevPct.toFixed(2)}%`
       : ''
-    const reason = `SHORT [${sig.setupTag}] — ${sig.reason}${indStr} (score ${sig.score.toFixed(1)})`
+    const apexNote = apexVeto.vetoType !== 'no_apex_cache'
+      ? ` · ${apexVeto.reason}`
+      : ''
+    const reason = `SHORT [${sig.setupTag}] — ${sig.reason}${indStr} (score ${sig.score.toFixed(1)})${apexNote}`
 
     const tradePayload = {
       user_id: userId,
@@ -916,6 +1005,21 @@ export async function runTradingTick(
       tradeError = e2
     }
     if (tradeError) continue
+
+    if (apexVeto.vetoType !== 'no_apex_cache') {
+      await logEngineApexVeto(supabase, {
+        userId,
+        symbol: sig.asset.symbol,
+        assetType: sig.asset.assetType,
+        direction: 'SHORT',
+        engineScore: sig.score,
+        engineSetup: sig.setupTag,
+        entryPrice: price,
+        veto: apexVeto,
+        wouldHaveBudgetUsd: total,
+        executed: true,
+      })
+    }
 
     const posPayload = {
       user_id: userId,

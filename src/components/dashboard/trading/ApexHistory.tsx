@@ -29,11 +29,14 @@ interface Decision {
   stop_loss_target: number | null
   take_profit_target: number | null
   rr_ratio: number | null
+  engine_score_at_decision: number | null
+  engine_setup_at_decision: string | null
   created_at: string
   outcome: { pnl: number; pct: number; reason: string; closedAt: string } | null
   conviction_bucket: string
   rsi_alignment: string
   vol_bucket: string
+  agreement_bucket: string
 }
 
 interface EvBucket { bucket: string; trades: number; winRate: number; avgPnlPct: number; sumPnl: number }
@@ -44,6 +47,7 @@ interface HistoryResponse {
     byRsiAlignment: EvBucket[]
     byRegime: EvBucket[]
     byVolSpike: EvBucket[]
+    byAgreement: EvBucket[]
   }
   totals: {
     decisionsLogged: number
@@ -284,7 +288,15 @@ export default function ApexHistory() {
                         marginTop: 8, fontSize: 10, color: 'var(--text-3)',
                         display: 'flex', gap: 10, flexWrap: 'wrap',
                       }}>
+                        {d.engine_score_at_decision != null && (
+                          <>
+                            <span>Engine: <strong>{Number(d.engine_score_at_decision).toFixed(1)}</strong> [{d.engine_setup_at_decision ?? '—'}]</span>
+                            <span>·</span>
+                          </>
+                        )}
                         <span>Tag: {d.conviction_bucket}</span>
+                        <span>·</span>
+                        <span>{d.agreement_bucket}</span>
                         <span>·</span>
                         <span>{d.rsi_alignment}</span>
                       </div>
@@ -347,6 +359,7 @@ export default function ApexHistory() {
               <EvBlock title="By RSI alignment (multi-timeframe)" buckets={data.ev.byRsiAlignment} />
               <EvBlock title="By volatility regime" buckets={data.ev.byRegime} />
               <EvBlock title="By volume spike" buckets={data.ev.byVolSpike} />
+              <EvBlock title="Engine vs Apex agreement" buckets={data.ev.byAgreement ?? []} />
             </>
           )}
         </>
