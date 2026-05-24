@@ -7,6 +7,7 @@ import CandleScanner from '@/components/dashboard/trading/CandleScanner'
 import EquityChart from '@/components/dashboard/trading/EquityChart'
 import TradeStories from '@/components/dashboard/trading/TradeStories'
 import TradingHero, { LearningPanel, RealMoneyCTA } from '@/components/dashboard/trading/TradingHero'
+import ApexTake from '@/components/dashboard/trading/ApexTake'
 import { useStore } from '@/store/useStore'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -706,6 +707,11 @@ export default function TradingView() {
             currentLongs={currentLongs}
             currentShorts={currentShorts}
           />
+        </div>
+
+        {/* ── APEX — institutional-grade on-demand intelligence ── */}
+        <div style={{ marginBottom: 20 }}>
+          <ApexTake />
         </div>
 
         {/* ── EQUITY CURVE — the journey visualized ── */}
