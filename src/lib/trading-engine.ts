@@ -593,22 +593,61 @@ export async function runTradingTick(
     }
   }
 
-  // ── Capital drawdown circuit breaker ────────────────────────────────────────
-  // Independent from daily-loss limit (which resets each UTC day). This tracks
-  // total drawdown from seed across all time. At >5% drawdown ($25 on $500),
-  // pause ALL new entries until equity recovers above the threshold.
+  // ── Tiered drawdown response ────────────────────────────────────────────────
+  // Old design: hard stop at -5% from seed. Problem: once equity dropped below
+  // that, NO new trades could fire, and small/sleepy positions wouldn't move
+  // equity back above the line — perfect deadlock for days at a time.
+  //
+  // New design: graduate the response by drawdown depth so we can carefully
+  // trade out of a hole instead of being frozen:
+  //
+  //   NORMAL   (0% to -3%)    → trade as usual
+  //   CAUTIOUS (-3% to -5%)   → smaller positions (50%), higher score bar (>= 5.0),
+  //                              no new shorts, MOMENTUM/OVERSOLD only
+  //   RECOVERY (-5% to -8%)   → tiny positions (33%), best-of-best signals only
+  //                              (score >= 5.5), no shorts, MOMENTUM/OVERSOLD only
+  //   HARD STOP (worse than -8%) → block everything (real emergency)
   const currentEquityForDrawdown = computePortfolioEquity(cash, positions, priceMap)
   const drawdownPct = (currentEquityForDrawdown - SEED_CAPITAL) / SEED_CAPITAL
-  const DRAWDOWN_PAUSE_PCT = -0.05  // -5% from seed
-  const drawdownPaused = drawdownPct <= DRAWDOWN_PAUSE_PCT
-  if (drawdownPaused) {
+  type DDMode = 'normal' | 'cautious' | 'recovery' | 'hard_stop'
+  const ddMode: DDMode =
+    drawdownPct <= -0.08 ? 'hard_stop' :
+    drawdownPct <= -0.05 ? 'recovery' :
+    drawdownPct <= -0.03 ? 'cautious' : 'normal'
+
+  let drawdownPositionMultiplier = 1.0
+  if (ddMode === 'hard_stop') {
     events.push({
       type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-      reason: `⛔ Drawdown circuit breaker: equity $${currentEquityForDrawdown.toFixed(2)} (${(drawdownPct * 100).toFixed(2)}% from seed). No new entries until equity recovers above $${(SEED_CAPITAL * (1 + DRAWDOWN_PAUSE_PCT)).toFixed(2)}.`,
+      reason: `⛔ Hard stop: equity $${currentEquityForDrawdown.toFixed(2)} (${(drawdownPct * 100).toFixed(2)}% from seed). Block all entries until manual review.`,
       ts: now,
     })
     longSignals = []
     shortSignals = []
+  } else if (ddMode === 'recovery') {
+    drawdownPositionMultiplier = 0.33
+    const before = longSignals.length + shortSignals.length
+    longSignals = longSignals
+      .filter((s) => s.score >= 5.5)
+      .filter((s) => ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE'].includes(s.setupTag))
+    shortSignals = []  // no shorts in recovery — they bled us into this hole
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `🔁 Recovery mode: equity ${(drawdownPct * 100).toFixed(2)}% from seed. Only top-quality signals (score ≥ 5.5, MOMENTUM/OVERSOLD only), 33% position size, no shorts. Filtered ${before} → ${longSignals.length} signals.`,
+      ts: now,
+    })
+  } else if (ddMode === 'cautious') {
+    drawdownPositionMultiplier = 0.5
+    const before = longSignals.length + shortSignals.length
+    longSignals = longSignals
+      .filter((s) => s.score >= 5.0)
+      .filter((s) => ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE', 'VWAP_LONG'].includes(s.setupTag))
+    shortSignals = []
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `⚠️ Cautious mode: equity ${(drawdownPct * 100).toFixed(2)}% from seed. Higher bar (score ≥ 5.0), 50% position size, no shorts. Filtered ${before} → ${longSignals.length} signals.`,
+      ts: now,
+    })
   }
 
   // ── Helper: check if this setup tag is disabled by user ──────────────────
@@ -698,7 +737,11 @@ export async function runTradingTick(
     // (longs+shorts) under-sizes longs. Long-side capital is what matters here.
     const longSlotsRemaining = Math.max(1, limits.maxLongs - currentLongs)
     const equity = computePortfolioEquity(cash, positions, priceMap)
-    const budget = computeEntryBudget(cash, equity, longSlotsRemaining, sig.setupTag)
+    let budget = computeEntryBudget(cash, equity, longSlotsRemaining, sig.setupTag)
+    // Apply drawdown-mode position scaling (0.33× in recovery, 0.5× in cautious)
+    if (drawdownPositionMultiplier < 1.0) {
+      budget = parseFloat((budget * drawdownPositionMultiplier).toFixed(2))
+    }
     if (budget < MIN_TRADE_USD) break
     const price = sig.asset.price
     const shares = parseFloat((budget / price).toFixed(8))

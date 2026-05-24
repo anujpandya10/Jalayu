@@ -92,6 +92,23 @@ function fmtPrice(n: number): string {
   if (n < 1) return '$' + n.toFixed(4)
   return fmtMoney(n)
 }
+
+/** Smart trade timestamp — includes date when not today, so days-old trades are obvious */
+function fmtTradeTime(iso: string): string {
+  const d = new Date(iso)
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (sameDay) return time
+  const yesterday = new Date(now.getTime() - 86400_000)
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`
+  const diffDays = Math.floor((now.getTime() - d.getTime()) / 86400_000)
+  if (diffDays < 7) {
+    return `${d.toLocaleDateString([], { weekday: 'short' })} ${time}`
+  }
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return `${d.toLocaleDateString([], { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })} ${time}`
+}
 function fmtPct(n: number): string {
   return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
@@ -792,8 +809,8 @@ export default function TradingView() {
                       )}
                       <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>{t.reason}</div>
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--text-3)', textAlign: 'right' }}>
-                      {new Date(t.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <div style={{ fontSize: 10, color: 'var(--text-3)', textAlign: 'right', minWidth: 80 }}>
+                      {fmtTradeTime(t.created_at)}
                     </div>
                   </div>
                 )
