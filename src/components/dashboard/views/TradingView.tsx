@@ -183,7 +183,7 @@ function PositionCard({ pos }: { pos: Position }) {
         <div>
           <div style={{ fontWeight: 700, fontSize: 15 }}>{pos.symbol}</div>
           <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-            {isShort ? 'Short' : 'Long'} · entry {fmtPrice(pos.avgBuyPrice)}
+            {isShort ? 'Short' : 'Long'} · {fmtPrice(pos.avgBuyPrice)} → {fmtPrice(pos.currentPrice)}
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -191,7 +191,7 @@ function PositionCard({ pos }: { pos: Position }) {
             fontSize: 14, fontWeight: 700,
             color: up ? '#15803d' : '#b91c1c',
           }}>
-            {up ? '+' : ''}{fmtPct(pos.pnlPct)}
+            {fmtPct(pos.pnlPct)}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{fmtMoney(pos.value)}</div>
         </div>

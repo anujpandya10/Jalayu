@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { getAllAssets } from '@/lib/market-data'
+import { getAllAssets, enrichPriceMapForPositions } from '@/lib/market-data'
 import { SEED_CAPITAL } from '@/lib/trading-config'
 
 interface PositionRow {
@@ -49,7 +49,8 @@ export async function GET() {
 
   // Same price source as /api/trading/tick (CoinGecko + Frankfurter + Yahoo)
   const assets = await getAllAssets()
-  const priceMap = new Map(assets.map((a) => [a.symbol, a.price]))
+  let priceMap = new Map(assets.map((a) => [a.symbol, a.price]))
+  priceMap = await enrichPriceMapForPositions(priceMap, positions)
   const nameMap = new Map(assets.map((a) => [a.symbol, a.name]))
 
   let positionsEquity = 0

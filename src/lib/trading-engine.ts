@@ -2,7 +2,15 @@
  * Shared paper-trading engine — used by /api/trading/tick (dashboard) and /api/cron/trading (24/7).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getAllAssets, fetchStockPrice, isUsMarketOpen, isPremarket, type AssetData } from '@/lib/market-data'
+import {
+  getAllAssets,
+  fetchStockPrice,
+  fetchLivePrice,
+  enrichPriceMapForPositions,
+  isUsMarketOpen,
+  isPremarket,
+  type AssetData,
+} from '@/lib/market-data'
 import {
   rankSignalsEnriched,
   filterLongEntries,
@@ -245,7 +253,7 @@ export async function runTradingTick(
     }
   }
 
-  const priceMap    = new Map(assets.map((a) => [a.symbol, a.price]))
+  let priceMap    = new Map(assets.map((a) => [a.symbol, a.price]))
   const assetTypeMap = new Map(assets.map((a) => [a.symbol, a.assetType]))
   const pumpCandidates = assets.filter((a) => a.isPumpCandidate).length
   const stockCount  = assets.filter((a) => a.assetType === 'stock').length
@@ -281,13 +289,42 @@ export async function runTradingTick(
 
   const positions = posRaw ?? []
 
-  for (const pos of positions) {
-    const current = priceMap.get(pos.symbol)
-    if (!current) continue
+  // Open positions may be stocks/gainers no longer in the scan list — fetch live marks
+  priceMap = await enrichPriceMapForPositions(priceMap, positions)
 
+  const FORCE_EXIT_NO_PRICE_SECS = 48 * 3600
+
+  for (const pos of positions) {
     const avgCost   = Number(pos.avg_buy_price)
     const shares    = Number(pos.shares)
     const heldSecs  = (now - new Date(pos.created_at).getTime()) / 1000
+    let current = priceMap.get(pos.symbol)
+    if (!current) {
+      const live = await fetchLivePrice(
+        pos.symbol,
+        pos.asset_type ?? assetTypeMap.get(pos.symbol) ?? 'stock',
+      )
+      if (live) {
+        current = live
+        priceMap.set(pos.symbol, live)
+      }
+    }
+    let forceExitNoPrice = false
+    if (!current) {
+      if (heldSecs >= FORCE_EXIT_NO_PRICE_SECS) {
+        current = avgCost
+        forceExitNoPrice = true
+      } else {
+        events.push({
+          type: 'HOLD', symbol: pos.symbol, name: pos.name ?? pos.symbol,
+          price: avgCost, direction: pos.direction === 'SHORT' ? 'SHORT' : 'LONG',
+          reason: `⚠️ No live price for ${pos.symbol} — exits paused until quote returns`,
+          ts: now,
+        })
+        continue
+      }
+    }
+
     const direction = pos.direction === 'SHORT' ? 'SHORT' : 'LONG'
     const posAssetType = (pos.asset_type ?? assetTypeMap.get(pos.symbol) ?? 'crypto') as 'crypto' | 'stock' | 'forex'
     const openSig  = signalMap.get(pos.symbol)
@@ -347,6 +384,11 @@ export async function runTradingTick(
     let exitReason = ''
     const eventType: TickEvent['type'] = isLong ? 'LONG_SELL' : 'SHORT_COVER'
 
+    if (forceExitNoPrice) {
+      shouldExit = true
+      exitReason = `Force exit — no live price for ${Math.round(heldSecs / 3600)}h (delisted or bad symbol)`
+    }
+
     // Quick wins ONLY for value-zone scalps (VWAP_LONG dips).
     // MOMENTUM_LONG and OVERSOLD_BOUNCE are high-conviction trend trades —
     // let them run to TP or trailing stop. Cutting them at +0.35% wastes the
@@ -354,12 +396,12 @@ export async function runTradingTick(
     const allowQuickWin = ['VWAP_LONG', 'FOREX_DIP', 'FOREX_FADE'].includes(setupTag)
 
     // 1. Hard take-profit ceiling
-    if (pnlPct >= tpPct) {
+    if (!shouldExit && pnlPct >= tpPct) {
       shouldExit = true
       exitReason = `TP hit +${(pnlPct * 100).toFixed(2)}% (+$${pnl.toFixed(2)})`
     }
     // 2. Dynamic stop (hard SL, break-even, or trailing — whichever is highest/lowest)
-    else if ((isLong && current <= dynamicSl) || (!isLong && current >= dynamicSl)) {
+    else if (!shouldExit && ((isLong && current <= dynamicSl) || (!isLong && current >= dynamicSl))) {
       const slLabel = pnlPct > 0.001
         ? `Trailing stop +${(pnlPct * 100).toFixed(2)}% (locked profit)`
         : pnlPct > -0.002
@@ -370,17 +412,17 @@ export async function runTradingTick(
     }
     // 3. Quick win: bank decent profit after 2 min.
     //    Only for value-zone setups. MOMENTUM/OVERSOLD ride to their targets.
-    else if (allowQuickWin && heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * 0.65) {
+    else if (!shouldExit && allowQuickWin && heldSecs >= QUICK_WIN_HOLD_SECS && pnlPct >= QUICK_WIN_MIN_PCT && pnlPct < tpPct * 0.65) {
       shouldExit = true
       exitReason = `Quick win +${(pnlPct * 100).toFixed(2)}% secured after ${Math.round(heldSecs)}s`
     }
     // 4. Time exit: held 12 min and at least 40% of the way to TP — take it
-    else if (heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
+    else if (!shouldExit && heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
       shouldExit = true
       exitReason = `Time exit — ${Math.round(heldSecs)}s, +${(pnlPct * 100).toFixed(2)}%`
     }
     // 5. Stale cut: held 12 min and STILL losing — it's not working, exit now
-    else if (heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
+    else if (!shouldExit && heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
       shouldExit = true
       exitReason = `Stale cut — ${Math.round(heldSecs)}s with no recovery, ${(pnlPct * 100).toFixed(2)}%`
     }
@@ -551,8 +593,11 @@ export async function runTradingTick(
   // NEUTRAL: BTC mixed → only score ≥ 5.5 setups (MOMENTUM_LONG quality)
   // BEAR: BTC EMA9 < EMA21 or weak RSI + negative 24h → block all crypto longs
   const btcSignal = allSignals.find((s) => s.asset.symbol === 'BTC')
+  const btcAsset = assets.find((a) => a.symbol === 'BTC')
   let marketRegime: 'BULL' | 'BEAR' | 'NEUTRAL' = 'NEUTRAL'
-  let regimeNote = 'BTC data unavailable — treating as neutral'
+  let regimeNote = btcAsset
+    ? `BTC tape only (no 1m candles): 24h ${btcAsset.change24h >= 0 ? '+' : ''}${btcAsset.change24h.toFixed(1)}%`
+    : 'BTC data unavailable — treating as neutral'
   if (btcSignal?.indicators) {
     const { ema9, ema21, rsi, vwapDevPct } = btcSignal.indicators
     const btcChange24h = btcSignal.asset.change24h

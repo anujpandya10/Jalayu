@@ -328,6 +328,64 @@ async function fetchCryptoPrices(): Promise<AssetData[]> {
   return fetchCryptoPricesCoingecko()
 }
 
+/** Live price for one symbol — used for open positions not in the scan universe */
+export async function fetchLivePrice(
+  symbol: string,
+  assetType?: 'crypto' | 'stock' | 'forex' | string | null,
+): Promise<number | null> {
+  const sym = symbol.toUpperCase()
+
+  if (assetType === 'crypto' || BINANCE_SYMBOL_MAP[sym]) {
+    const pair = BINANCE_SYMBOL_MAP[sym]
+    if (pair) {
+      const url = `/api/v3/ticker/price?symbol=${pair}`
+      const res = await fetchWithTimeout(`https://api.binance.us${url}`, 4000)
+        ?? await fetchWithTimeout(`https://api.binance.com${url}`, 4000)
+      if (res) {
+        const j = await res.json() as { price?: string }
+        const p = parseFloat(j.price ?? '0')
+        if (p > 0) return p
+      }
+    }
+    const cg = await fetchCryptoPrices()
+    const hit = cg.find((a) => a.symbol === sym)
+    if (hit) return hit.price
+  }
+
+  if (assetType === 'forex') {
+    const fx = await fetchForexRates()
+    const hit = fx.find((a) => a.symbol === sym)
+    if (hit) return hit.price
+  }
+
+  const stock = await fetchStockPrice(sym, sym)
+  if (stock?.price) return stock.price
+
+  return null
+}
+
+/** Fill missing symbols so open positions get real marks and exits can run */
+export async function enrichPriceMapForPositions(
+  priceMap: Map<string, number>,
+  positions: { symbol: string; asset_type?: string | null }[],
+): Promise<Map<string, number>> {
+  const out = new Map(priceMap)
+  const tasks = positions
+    .filter((p) => {
+      const cur = out.get(p.symbol)
+      return cur == null || cur <= 0
+    })
+    .map(async (p) => {
+      const live = await fetchLivePrice(
+        p.symbol,
+        (p.asset_type as 'crypto' | 'stock' | 'forex') ?? null,
+      )
+      if (live != null && live > 0) out.set(p.symbol, live)
+    })
+  await Promise.all(tasks)
+  return out
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 export async function getAllAssets(): Promise<AssetData[]> {
   const results: AssetData[] = []
