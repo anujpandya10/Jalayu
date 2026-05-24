@@ -14,6 +14,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { FlaskConical, TrendingUp, TrendingDown, ToggleLeft, ToggleRight, RefreshCw, Info } from 'lucide-react'
+import AssetMap from '@/components/dashboard/trading/AssetMap'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -206,6 +207,11 @@ export default function StrategyLabView() {
       <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 16px' }}>
         Win rates update automatically as trades close. Disable a setup to stop the engine from taking those signals.
       </p>
+
+      {/* Live asset map — visual real-time view of every scanned asset */}
+      <div style={{ marginBottom: 16 }}>
+        <AssetMap />
+      </div>
 
       {/* Summary strip */}
       {totals.trades > 0 && (

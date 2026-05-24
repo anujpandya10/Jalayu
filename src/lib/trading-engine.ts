@@ -655,11 +655,68 @@ export async function runTradingTick(
     .from('strategy_config')
     .select('setup_tag, enabled')
     .eq('user_id', userId)
-  const disabledTags = new Set(
+  const userDisabledTags = new Set(
     (strategyConfigs ?? [])
       .filter((c: { enabled: boolean }) => !c.enabled)
       .map((c: { setup_tag: string }) => c.setup_tag)
   )
+
+  // ── AUTO-LEARNING: compute per-setup performance from YOUR trade history ──
+  // For every setup tag, look at the last 30 closed trades and compute win
+  // rate + average P&L. Use this to:
+  //   1. AUTO-DISABLE setups that win <30% over 10+ trades (clearly broken FOR YOU)
+  //   2. Scale position sizes: winning setups get up to 1.5×, losing ones cut to 0.6×
+  // Setup gets full 1.0× until it has at least 5 closed trades (need a sample size).
+  const { data: setupHistory } = await supabase
+    .from('trade_setups')
+    .select('setup_tag, won, outcome_pnl, closed_at')
+    .eq('user_id', userId)
+    .not('closed_at', 'is', null)
+    .order('closed_at', { ascending: false })
+    .limit(300)  // cap to last 300 closed trades total — plenty for stats
+
+  const perSetup = new Map<string, { wins: number; losses: number; pnl: number; count: number }>()
+  for (const t of setupHistory ?? []) {
+    const tag = t.setup_tag as string
+    const cur = perSetup.get(tag) ?? { wins: 0, losses: 0, pnl: 0, count: 0 }
+    // Limit each setup's sample to last 30 trades — newer data weighs more
+    if (cur.count >= 30) continue
+    cur.count++
+    cur.pnl += Number(t.outcome_pnl ?? 0)
+    if (t.won) cur.wins++; else cur.losses++
+    perSetup.set(tag, cur)
+  }
+
+  // Build auto-disabled set + per-setup position multiplier map
+  const autoDisabledTags = new Set<string>()
+  const setupMultiplier = new Map<string, number>()
+  for (const [tag, s] of perSetup.entries()) {
+    if (s.count < 5) {
+      setupMultiplier.set(tag, 1.0)  // need a sample size — don't penalize yet
+      continue
+    }
+    const winRate = s.wins / s.count
+    if (s.count >= 10 && winRate < 0.30) {
+      autoDisabledTags.add(tag)
+      setupMultiplier.set(tag, 0)
+      continue
+    }
+    // Linear scale: 30% win rate → 0.6×, 50% → 1.0×, 70%+ → 1.5×
+    // Capped to [0.6, 1.5] so no setup goes wild on a hot streak
+    const raw = 0.6 + (winRate - 0.30) / 0.40 * 0.9  // 30%→0.6, 70%→1.5
+    setupMultiplier.set(tag, Math.max(0.6, Math.min(1.5, raw)))
+  }
+
+  if (autoDisabledTags.size > 0) {
+    events.push({
+      type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+      reason: `🧠 Auto-learning: disabled ${[...autoDisabledTags].join(', ')} (win rate <30% over 10+ trades)`,
+      ts: now,
+    })
+  }
+
+  // Merged disabled set: user toggle OR auto-learning verdict
+  const disabledTags = new Set([...userDisabledTags, ...autoDisabledTags])
 
   // ── Helper: log a trade_setup snapshot ───────────────────────────────────
   async function logSetup(sig: Signal, direction: 'LONG' | 'SHORT'): Promise<string | null> {
@@ -741,6 +798,11 @@ export async function runTradingTick(
     // Apply drawdown-mode position scaling (0.33× in recovery, 0.5× in cautious)
     if (drawdownPositionMultiplier < 1.0) {
       budget = parseFloat((budget * drawdownPositionMultiplier).toFixed(2))
+    }
+    // Apply per-setup auto-learning multiplier (winners 1.5×, losers 0.6×)
+    const setupMult = setupMultiplier.get(sig.setupTag) ?? 1.0
+    if (setupMult !== 1.0) {
+      budget = parseFloat((budget * setupMult).toFixed(2))
     }
     if (budget < MIN_TRADE_USD) break
     const price = sig.asset.price
