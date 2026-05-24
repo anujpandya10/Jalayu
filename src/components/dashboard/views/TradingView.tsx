@@ -4,6 +4,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import AssetMap from '@/components/dashboard/trading/AssetMap'
 import BotConstellation from '@/components/dashboard/trading/BotConstellation'
 import CandleScanner from '@/components/dashboard/trading/CandleScanner'
+import EquityChart from '@/components/dashboard/trading/EquityChart'
+import TradeStories from '@/components/dashboard/trading/TradeStories'
+import TradingHero, { LearningPanel, RealMoneyCTA } from '@/components/dashboard/trading/TradingHero'
+import { useStore } from '@/store/useStore'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -693,44 +697,25 @@ export default function TradingView() {
         {/* ── LIVE ACTIVITY FEED ── */}
         <ActivityFeed items={activity} scanning={scanning} />
 
-        {/* ── PORTFOLIO HEADER ── */}
-        <div style={{
-          background: 'var(--surface)', border: '1px solid var(--border)',
-          borderRadius: 14, padding: '20px 24px', marginBottom: 20,
-          display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'flex-start',
-        }}>
-          <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Net Worth</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text)', letterSpacing: '-0.02em' }}>
-              {fmtMoney(portfolio?.totalValue ?? 500)}
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: totalPnL >= 0 ? '#2D6A2D' : '#8B1A1A', marginTop: 2 }}>
-              {totalPnL >= 0 ? '+' : '-'}{fmtMoney(Math.abs(totalPnL))} ({fmtPct(totalPnLPct)})
-            </div>
-          </div>
-          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Cash Available</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{fmtMoney(portfolio?.cash ?? 500)}</div>
-          </div>
-          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Positions</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{portfolio?.positions.length ?? 0}</div>
-            <div style={{ fontSize: 11, marginTop: 2 }}>
-              <span style={{ color: '#2D6A2D', fontWeight: 700 }}>{currentLongs}L</span>
-              <span style={{ color: 'var(--text-3)', margin: '0 4px' }}>·</span>
-              <span style={{ color: '#C4834A', fontWeight: 700 }}>{currentShorts}S</span>
-            </div>
-          </div>
-          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Total Trades</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>{trades.length}</div>
-          </div>
-          <div style={{ borderLeft: '1px solid var(--border)', paddingLeft: 24 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4 }}>Running P&amp;L</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: totalPnL >= 0 ? '#2D6A2D' : '#8B1A1A' }}>
-              {totalPnL >= 0 ? '+' : ''}{fmtPct(totalPnLPct)}
-            </div>
-          </div>
+        {/* ── HERO — emotional intro framing why this matters ── */}
+        <div style={{ marginBottom: 20 }}>
+          <HeroWrapper
+            netWorth={portfolio?.totalValue ?? 500}
+            cash={portfolio?.cash ?? 500}
+            totalTrades={trades.length}
+            currentLongs={currentLongs}
+            currentShorts={currentShorts}
+          />
+        </div>
+
+        {/* ── EQUITY CURVE — the journey visualized ── */}
+        <div style={{ marginBottom: 20 }}>
+          <EquityChart />
+        </div>
+
+        {/* ── TRADE STORIES — why each trade happened, what was learned ── */}
+        <div style={{ marginBottom: 20 }}>
+          <TradeStories />
         </div>
 
         {/* ── BOT CONSTELLATION + ASSET MAP + CANDLE SCANNER ── */}
@@ -738,6 +723,11 @@ export default function TradingView() {
           <BotConstellation />
           <AssetMap />
           <CandleScanner />
+        </div>
+
+        {/* ── LEARNING PANEL — concepts the bot uses ── */}
+        <div style={{ marginBottom: 20 }}>
+          <LearningPanel />
         </div>
 
         {/* ── POSITIONS + TRADE HISTORY ── */}
@@ -931,7 +921,40 @@ export default function TradingView() {
           )}
         </div>
 
+        {/* ── REAL MONEY CTA — honest "when you're ready" framing ── */}
+        <div style={{ marginTop: 20, marginBottom: 20 }}>
+          <RealMoneyCTA totalTrades={trades.length} pnl={totalPnL} />
+        </div>
+
       </div>
     </>
+  )
+}
+
+// ─── Hero wrapper — pulls name from store + computes daysActive ──────────────
+
+function HeroWrapper({
+  netWorth, cash, totalTrades, currentLongs, currentShorts,
+}: {
+  netWorth: number
+  cash: number
+  totalTrades: number
+  currentLongs: number
+  currentShorts: number
+}) {
+  const profile = useStore((s) => s.profile)
+  const name = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
+  const daysActive = profile?.created_at
+    ? Math.max(1, Math.floor((Date.now() - new Date(profile.created_at).getTime()) / 86400_000))
+    : 1
+  void cash; void currentLongs; void currentShorts  // available for future hero details
+  return (
+    <TradingHero
+      netWorth={netWorth}
+      seed={500}
+      totalTrades={totalTrades}
+      daysActive={daysActive}
+      name={name}
+    />
   )
 }
