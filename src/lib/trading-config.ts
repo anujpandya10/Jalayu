@@ -135,8 +135,8 @@ export const DAILY_LOSS_LIMIT_PCT = 0.03   // 3% of SEED_CAPITAL = $15 max daily
  *   [13.5, 16] = 9:30am–12pm ET (open momentum)
  *   [19, 20.5] = 3pm–4:30pm ET  (close momentum)
  */
-/** Crypto tradable nearly 24/7 — only skip thin 07:00–09:00 UTC window */
-export const CRYPTO_HOT_WINDOWS_UTC: [number, number][] = [[0, 7], [9, 24]]
+/** Crypto entries allowed 24/7 (paper engine — exits still run anytime) */
+export const CRYPTO_HOT_WINDOWS_UTC: [number, number][] = [[0, 24]]
 export const STOCK_HOT_WINDOWS_UTC:  [number, number][] = [[13.5, 16], [19, 20.5]]
 
 /**
@@ -227,3 +227,13 @@ export function getTpSl(
 export const ENRICH_TOP_N = 14
 
 export const SEED_CAPITAL = 500
+
+/** Setups the engine should never auto-disable from learning (core crypto edge) */
+export const CORE_LONG_SETUPS = ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE', 'VWAP_LONG'] as const
+
+/** Below this equity % from seed, only high-conviction recovery entries (not a full freeze) */
+export const DRAWDOWN_HARD_STOP_PCT = -0.10
+
+/** Regime gates — loosened so crypto can trade in chop, not only perfect BTC bull */
+export const NEUTRAL_CRYPTO_MIN_SCORE = 4.5
+export const BEAR_CRYPTO_MIN_SCORE = 5.0

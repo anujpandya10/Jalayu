@@ -324,6 +324,9 @@ export default function TradingView() {
   const [openLongs, setOpenLongs] = useState(0)
   const [openShorts, setOpenShorts] = useState(0)
   const [tab, setTab] = useState<TabId>('overview')
+  const [settingsBusy, setSettingsBusy] = useState(false)
+  const [tickError, setTickError] = useState<string | null>(null)
+  const [disabledSetups, setDisabledSetups] = useState<string[]>([])
 
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -357,16 +360,30 @@ export default function TradingView() {
   }, [])
 
   const loadStatus = useCallback(async () => {
-    const res = await fetch('/api/trading/status')
-    if (!res.ok) return
-    const data = await res.json() as {
-      lastRunAt?: string | null
-      autoTradingEnabled?: boolean
-      phase?: PhaseInfo
+    const [statusRes, settingsRes] = await Promise.all([
+      fetch('/api/trading/status'),
+      fetch('/api/trading/settings'),
+    ])
+    if (statusRes.ok) {
+      const data = await statusRes.json() as {
+        lastRunAt?: string | null
+        autoTradingEnabled?: boolean
+        phase?: PhaseInfo
+      }
+      if (data.lastRunAt) setServerLastRun(data.lastRunAt)
+      if (data.autoTradingEnabled != null) setAutoTradingEnabled(data.autoTradingEnabled)
+      if (data.phase) setCurrentPhase(data.phase)
     }
-    if (data.lastRunAt) setServerLastRun(data.lastRunAt)
-    if (data.autoTradingEnabled != null) setAutoTradingEnabled(data.autoTradingEnabled)
-    if (data.phase) setCurrentPhase(data.phase)
+    if (settingsRes.ok) {
+      const s = await settingsRes.json() as {
+        autoTradingEnabled?: boolean
+        lastRunAt?: string | null
+        disabledSetups?: string[]
+      }
+      if (s.autoTradingEnabled != null) setAutoTradingEnabled(s.autoTradingEnabled)
+      if (s.lastRunAt) setServerLastRun(s.lastRunAt)
+      setDisabledSetups(s.disabledSetups ?? [])
+    }
   }, [])
 
   const refreshAll = useCallback(async () => {
@@ -391,26 +408,58 @@ export default function TradingView() {
   const runTick = useCallback(async (force = false) => {
     if (scanning) return
     setScanning(true)
+    setTickError(null)
     try {
       const url = force ? '/api/trading/tick?force=1' : '/api/trading/tick'
       const res = await fetch(url, { method: 'POST' })
-      if (!res.ok) return
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string }
+        setTickError(err.error ?? `Scan failed (${res.status})`)
+        return
+      }
       const data = await res.json() as {
         events?: TickEvent[]
         currentLongs?: number
         currentShorts?: number
         phase?: PhaseInfo
         tradesExecuted?: number
+        skipped?: boolean
       }
       if (data.events?.length) addActivity(data.events)
       setOpenLongs(data.currentLongs ?? 0)
       setOpenShorts(data.currentShorts ?? 0)
       if (data.phase) setCurrentPhase(data.phase)
       await refreshAll()
-    } catch { /* quiet */ } finally {
+    } catch (e) {
+      setTickError(e instanceof Error ? e.message : 'Scan failed')
+    } finally {
       setScanning(false)
     }
   }, [scanning, addActivity, refreshAll])
+
+  const patchSettings = useCallback(async (body: { autoTradingEnabled?: boolean; resumeEngine?: boolean }) => {
+    setSettingsBusy(true)
+    try {
+      const res = await fetch('/api/trading/settings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string }
+        throw new Error(err.error ?? `HTTP ${res.status}`)
+      }
+      const data = await res.json() as { autoTradingEnabled: boolean; resumed?: boolean }
+      setAutoTradingEnabled(data.autoTradingEnabled)
+      if (data.resumed) setDisabledSetups([])
+      await loadStatus()
+      await runTick(true)
+    } catch (e) {
+      setTickError(e instanceof Error ? e.message : 'Could not update settings')
+    } finally {
+      setSettingsBusy(false)
+    }
+  }, [loadStatus, runTick])
 
   useEffect(() => {
     let cancelled = false
@@ -476,20 +525,43 @@ export default function TradingView() {
               {name ? `${name}, ` : ''}simulated $500 · server scans ~every minute
             </p>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <span style={{
-              display: 'inline-flex', alignItems: 'center', gap: 6,
-              fontSize: 12, color: 'var(--text-2)',
-              padding: '6px 10px', borderRadius: 99,
-              background: 'var(--morning)', border: '1px solid var(--border)',
-            }}>
-              {autoTradingEnabled ? <Play size={12} color="#15803d" /> : <Pause size={12} />}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              disabled={settingsBusy}
+              onClick={() => patchSettings({ autoTradingEnabled: !autoTradingEnabled })}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 12, fontWeight: 600,
+                padding: '6px 12px', borderRadius: 99,
+                background: autoTradingEnabled ? 'rgba(21,128,61,0.12)' : 'var(--morning)',
+                border: `1px solid ${autoTradingEnabled ? 'rgba(21,128,61,0.35)' : 'var(--border)'}`,
+                color: autoTradingEnabled ? '#15803d' : 'var(--text-2)',
+                cursor: settingsBusy ? 'wait' : 'pointer',
+              }}
+            >
+              {autoTradingEnabled ? <Play size={12} /> : <Pause size={12} />}
               {autoTradingEnabled ? 'Auto on' : 'Auto off'}
-            </span>
+            </button>
+            {(!autoTradingEnabled || disabledSetups.length > 0 || insight.tone === 'blocked') && (
+              <button
+                type="button"
+                disabled={settingsBusy || scanning}
+                onClick={() => patchSettings({ resumeEngine: true })}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '6px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+                  border: 'none', background: '#15803d', color: '#fff',
+                  cursor: settingsBusy ? 'wait' : 'pointer',
+                }}
+              >
+                Start engine
+              </button>
+            )}
             <button
               type="button"
               onClick={() => runTick(true)}
-              disabled={scanning}
+              disabled={scanning || settingsBusy}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 padding: '6px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600,
@@ -499,7 +571,7 @@ export default function TradingView() {
               }}
             >
               <RefreshCw size={13} style={scanning ? { animation: 'spin 1s linear infinite' } : undefined} />
-              Refresh
+              Scan now
             </button>
           </div>
         </div>
@@ -534,6 +606,26 @@ export default function TradingView() {
           </div>
         </div>
       </header>
+
+      {tickError && (
+        <div style={{
+          marginBottom: 12, padding: '10px 14px', borderRadius: 10,
+          background: 'rgba(254,226,226,0.5)', border: '1px solid #fecaca',
+          fontSize: 12, color: '#b91c1c',
+        }}>
+          {tickError}
+        </div>
+      )}
+
+      {!autoTradingEnabled && (
+        <div style={{
+          marginBottom: 12, padding: '12px 16px', borderRadius: 12,
+          background: 'rgba(254,243,199,0.6)', border: '1px solid #fde68a',
+          fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5,
+        }}>
+          Auto-trading is <strong>off</strong> — the server cron will skip your account until you turn it on or tap <strong>Start engine</strong>.
+        </div>
+      )}
 
       <InsightCard
         headline={insight.headline}

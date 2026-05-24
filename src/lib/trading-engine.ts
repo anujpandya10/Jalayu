@@ -32,6 +32,10 @@ import {
   SEED_CAPITAL,
   MIN_SHORT_SCORE,
   ENRICH_TOP_N,
+  CORE_LONG_SETUPS,
+  DRAWDOWN_HARD_STOP_PCT,
+  NEUTRAL_CRYPTO_MIN_SCORE,
+  BEAR_CRYPTO_MIN_SCORE,
   getTpSl,
   BREAKEVEN_TRIGGER_PCT,
   BREAKEVEN_LOCK_PCT,
@@ -555,24 +559,28 @@ export async function runTradingTick(
     .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
 
-  // Apply regime gate to CRYPTO longs only (forex/stocks not BTC-correlated)
+  // Apply regime gate to CRYPTO longs only — bear allows high-quality dips, not a full freeze
   const beforeRegimeCount = longSignals.filter((s) => s.asset.assetType === 'crypto').length
   if (marketRegime === 'BEAR') {
-    longSignals = longSignals.filter((s) => s.asset.assetType !== 'crypto')
-    if (beforeRegimeCount > 0) {
-      events.push({
-        type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-        reason: `🔴 Bear regime — blocked ${beforeRegimeCount} crypto long signals to protect capital`,
-        ts: now,
-      })
-    }
-  } else if (marketRegime === 'NEUTRAL') {
-    longSignals = longSignals.filter((s) => s.asset.assetType !== 'crypto' || s.score >= 5.5)
+    longSignals = longSignals.filter((s) =>
+      s.asset.assetType !== 'crypto'
+      || (s.score >= BEAR_CRYPTO_MIN_SCORE && (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag)),
+    )
     const filtered = beforeRegimeCount - longSignals.filter((s) => s.asset.assetType === 'crypto').length
     if (filtered > 0) {
       events.push({
         type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-        reason: `🟡 Neutral regime — blocked ${filtered} sub-conviction crypto signals (need score ≥ 5.5)`,
+        reason: `🔴 Bear regime — only core dips (score ≥ ${BEAR_CRYPTO_MIN_SCORE}, ${CORE_LONG_SETUPS.join('/')}); filtered ${filtered}`,
+        ts: now,
+      })
+    }
+  } else if (marketRegime === 'NEUTRAL') {
+    longSignals = longSignals.filter((s) => s.asset.assetType !== 'crypto' || s.score >= NEUTRAL_CRYPTO_MIN_SCORE)
+    const filtered = beforeRegimeCount - longSignals.filter((s) => s.asset.assetType === 'crypto').length
+    if (filtered > 0) {
+      events.push({
+        type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
+        reason: `🟡 Neutral regime — blocked ${filtered} sub-conviction crypto (need score ≥ ${NEUTRAL_CRYPTO_MIN_SCORE})`,
         ts: now,
       })
     }
@@ -616,19 +624,24 @@ export async function runTradingTick(
   const drawdownPct = (currentEquityForDrawdown - SEED_CAPITAL) / SEED_CAPITAL
   type DDMode = 'normal' | 'cautious' | 'recovery' | 'hard_stop'
   const ddMode: DDMode =
-    drawdownPct <= -0.08 ? 'hard_stop' :
+    drawdownPct <= DRAWDOWN_HARD_STOP_PCT ? 'hard_stop' :
     drawdownPct <= -0.05 ? 'recovery' :
     drawdownPct <= -0.03 ? 'cautious' : 'normal'
 
   let drawdownPositionMultiplier = 1.0
   if (ddMode === 'hard_stop') {
+    // Deep drawdown: still trade small size on best setups (avoid multi-day deadlock)
+    drawdownPositionMultiplier = 0.25
+    const before = longSignals.length + shortSignals.length
+    longSignals = longSignals
+      .filter((s) => s.score >= 5.5)
+      .filter((s) => (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag))
+    shortSignals = []
     events.push({
       type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-      reason: `⛔ Hard stop: equity $${currentEquityForDrawdown.toFixed(2)} (${(drawdownPct * 100).toFixed(2)}% from seed). Block all entries until manual review.`,
+      reason: `⛔ Deep drawdown (${(drawdownPct * 100).toFixed(1)}%) — micro size only, core setups (score ≥ 5.5). ${before} → ${longSignals.length} signals.`,
       ts: now,
     })
-    longSignals = []
-    shortSignals = []
   } else if (ddMode === 'recovery') {
     drawdownPositionMultiplier = 0.33
     const before = longSignals.length + shortSignals.length
@@ -701,7 +714,7 @@ export async function runTradingTick(
       continue
     }
     const winRate = s.wins / s.count
-    if (s.count >= 10 && winRate < 0.30) {
+    if (s.count >= 15 && winRate < 0.25) {
       autoDisabledTags.add(tag)
       setupMultiplier.set(tag, 0)
       continue
@@ -718,13 +731,9 @@ export async function runTradingTick(
   // and we deadlock. Recovery overrides auto-learning for the setups it
   // needs — the alternative is doing nothing for days. Risk is bounded by
   // the 33% position size in recovery and the higher score bar.
-  if (ddMode === 'recovery') {
-    autoDisabledTags.delete('MOMENTUM_LONG')
-    autoDisabledTags.delete('OVERSOLD_BOUNCE')
-  } else if (ddMode === 'cautious') {
-    autoDisabledTags.delete('MOMENTUM_LONG')
-    autoDisabledTags.delete('OVERSOLD_BOUNCE')
-    autoDisabledTags.delete('VWAP_LONG')
+  // Never auto-disable core long setups — learning can't zero out all crypto entries
+  for (const tag of CORE_LONG_SETUPS) {
+    autoDisabledTags.delete(tag)
   }
 
   if (autoDisabledTags.size > 0) {

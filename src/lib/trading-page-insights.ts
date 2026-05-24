@@ -19,7 +19,7 @@ export interface EngineInsight {
 
 const BLOCKER_PATTERNS: { pattern: RegExp; label: string }[] = [
   { pattern: /Daily loss limit/i, label: 'Daily loss limit reached' },
-  { pattern: /Hard stop/i, label: 'Drawdown hard stop (equity below −8%)' },
+  { pattern: /Deep drawdown|Hard stop/i, label: 'Deep drawdown — micro-size entries only' },
   { pattern: /Recovery mode/i, label: 'Recovery mode — only top signals' },
   { pattern: /Cautious mode/i, label: 'Cautious mode — smaller size, higher bar' },
   { pattern: /Bear regime/i, label: 'Bear regime — crypto longs blocked' },
