@@ -38,6 +38,8 @@ import {
   MIN_TRADE_USD_RECOVERY,
   NEUTRAL_CRYPTO_MIN_SCORE,
   BEAR_CRYPTO_MIN_SCORE,
+  BEAR_BTC_OVERSOLD_MIN_SCORE,
+  BEAR_BTC_OVERSOLD_RSI,
   getTpSl,
   BREAKEVEN_TRIGGER_PCT,
   BREAKEVEN_LOCK_PCT,
@@ -578,15 +580,18 @@ export async function runTradingTick(
   // Apply regime gate to CRYPTO longs only — bear allows high-quality dips, not a full freeze
   const beforeRegimeCount = longSignals.filter((s) => s.asset.assetType === 'crypto').length
   if (marketRegime === 'BEAR') {
+    const btcRsi = btcSignal?.indicators?.rsi ?? 50
+    const btcWashout = btcRsi < BEAR_BTC_OVERSOLD_RSI
+    const bearMinLong = btcWashout ? BEAR_BTC_OVERSOLD_MIN_SCORE : BEAR_CRYPTO_MIN_SCORE
     longSignals = longSignals.filter((s) =>
       s.asset.assetType !== 'crypto'
-      || (s.score >= BEAR_CRYPTO_MIN_SCORE && (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag)),
+      || (s.score >= bearMinLong && (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag)),
     )
     const filtered = beforeRegimeCount - longSignals.filter((s) => s.asset.assetType === 'crypto').length
     if (filtered > 0) {
       events.push({
         type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-        reason: `🔴 Bear regime — only core dips (score ≥ ${BEAR_CRYPTO_MIN_SCORE}, ${CORE_LONG_SETUPS.join('/')}); filtered ${filtered}`,
+        reason: `🔴 Bear — core dips score ≥ ${bearMinLong}${btcWashout ? ` (BTC RSI ${btcRsi.toFixed(0)} oversold)` : ''}; filtered ${filtered}`,
         ts: now,
       })
     }
@@ -674,14 +679,23 @@ export async function runTradingTick(
     })
   } else if (ddMode === 'cautious') {
     drawdownPositionMultiplier = 0.5
-    const before = longSignals.length + shortSignals.length
+    const beforeLong = longSignals.length
+    const beforeShort = shortSignals.length
+    const cautiousMinLong = marketRegime === 'BEAR' ? 4.0 : 4.5
     longSignals = longSignals
-      .filter((s) => s.score >= 5.0)
-      .filter((s) => ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE', 'VWAP_LONG'].includes(s.setupTag))
-    shortSignals = []
+      .filter((s) => s.score >= cautiousMinLong)
+      .filter((s) => (CORE_LONG_SETUPS as readonly string[]).includes(s.setupTag))
+    // In BEAR, crypto shorts are the natural edge — don't zero them in cautious mode
+    if (marketRegime !== 'BEAR') {
+      shortSignals = []
+    } else {
+      shortSignals = shortSignals.filter((s) => s.score <= MIN_SHORT_SCORE)
+    }
     events.push({
       type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
-      reason: `⚠️ Cautious mode: equity ${(drawdownPct * 100).toFixed(2)}% from seed. Higher bar (score ≥ 5.0), 50% position size, no shorts. Filtered ${before} → ${longSignals.length} signals.`,
+      reason: `⚠️ Cautious (${(drawdownPct * 100).toFixed(1)}%): longs ≥ ${cautiousMinLong}, 50% size${
+        marketRegime === 'BEAR' ? ', shorts allowed in bear' : ', no shorts'
+      }. ${beforeLong}L→${longSignals.length}, ${beforeShort}S→${shortSignals.length}.`,
       ts: now,
     })
   }

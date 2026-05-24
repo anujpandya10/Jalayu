@@ -243,3 +243,7 @@ export const MIN_TRADE_USD_RECOVERY = 28
 /** Regime gates — loosened so crypto can trade in chop, not only perfect BTC bull */
 export const NEUTRAL_CRYPTO_MIN_SCORE = 4.5
 export const BEAR_CRYPTO_MIN_SCORE = 5.0
+
+/** When BTC itself is washed out (RSI < 35), allow alt dip entries at this bar */
+export const BEAR_BTC_OVERSOLD_MIN_SCORE = 4.0
+export const BEAR_BTC_OVERSOLD_RSI = 35
