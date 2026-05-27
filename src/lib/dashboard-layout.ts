@@ -154,41 +154,58 @@ export function parseDashboardLayout(raw: unknown): DashboardLayout {
   const hidden = sanitizeList(o.hidden)
   const hiddenSet = new Set(hidden)
 
-  // Global seen-set: a widget may only appear in one place.
-  // Process order = left → center → right → mobile, so earlier columns win on conflict.
-  // This cleans up any duplicates already stored in the DB, not just future ones.
-  const seen = new Set<HomeWidgetId>(hidden)
+  // Desktop columns share a seen-set: a widget appears in one column.
+  // Mobile is a SEPARATE layout (the same screen at a different viewport),
+  // so it has its own independent seen-set — widgets are allowed to appear
+  // both in a desktop column AND on mobile.
+  const desktopSeen = new Set<HomeWidgetId>(hidden)
+  const mobileSeen = new Set<HomeWidgetId>(hidden)
 
-  function dedup(list: HomeWidgetId[]): HomeWidgetId[] {
+  function dedupDesktop(list: HomeWidgetId[]): HomeWidgetId[] {
     const result: HomeWidgetId[] = []
     for (const id of list) {
-      if (!seen.has(id)) { result.push(id); seen.add(id) }
+      if (!desktopSeen.has(id)) { result.push(id); desktopSeen.add(id) }
     }
     return result.filter((id) => !hiddenSet.has(id))
   }
 
-  const savedLeft   = dedup(sanitizeList(columns?.left))
-  const savedCenter = dedup(sanitizeList(columns?.center))
-  const savedRight  = dedup(sanitizeList(columns?.right))
-  const savedMobile = dedup(sanitizeList(o.mobile))
+  function dedupMobile(list: HomeWidgetId[]): HomeWidgetId[] {
+    const result: HomeWidgetId[] = []
+    for (const id of list) {
+      if (!mobileSeen.has(id)) { result.push(id); mobileSeen.add(id) }
+    }
+    return result.filter((id) => !hiddenSet.has(id))
+  }
+
+  const savedLeft   = dedupDesktop(sanitizeList(columns?.left))
+  const savedCenter = dedupDesktop(sanitizeList(columns?.center))
+  const savedRight  = dedupDesktop(sanitizeList(columns?.right))
+  const savedMobile = dedupMobile(sanitizeList(o.mobile))
 
   // Add genuinely new default widgets (not placed anywhere in the saved layout).
-  function addNewDefaults(saved: HomeWidgetId[], defaults: HomeWidgetId[]): HomeWidgetId[] {
+  function addNewDesktopDefaults(saved: HomeWidgetId[], defaults: HomeWidgetId[]): HomeWidgetId[] {
     const result = [...saved]
     for (const id of defaults) {
-      if (!seen.has(id)) { result.push(id); seen.add(id) }
+      if (!desktopSeen.has(id)) { result.push(id); desktopSeen.add(id) }
+    }
+    return result
+  }
+  function addNewMobileDefaults(saved: HomeWidgetId[], defaults: HomeWidgetId[]): HomeWidgetId[] {
+    const result = [...saved]
+    for (const id of defaults) {
+      if (!mobileSeen.has(id)) { result.push(id); mobileSeen.add(id) }
     }
     return result
   }
 
   return {
-    version: 2,
+    version: 3,
     columns: {
-      left:   addNewDefaults(savedLeft,   base.columns.left),
-      center: addNewDefaults(savedCenter, base.columns.center),
-      right:  addNewDefaults(savedRight,  base.columns.right),
+      left:   addNewDesktopDefaults(savedLeft,   base.columns.left),
+      center: addNewDesktopDefaults(savedCenter, base.columns.center),
+      right:  addNewDesktopDefaults(savedRight,  base.columns.right),
     },
-    mobile: addNewDefaults(savedMobile, base.mobile),
+    mobile: addNewMobileDefaults(savedMobile, base.mobile),
     hidden,
     sizes: sanitizeSizes(o.sizes),
   }

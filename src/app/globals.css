@@ -183,17 +183,9 @@ input, textarea {
   overscroll-behavior-y: contain;
 }
 
-.bottom-nav-shell {
-  display: none;
-}
-
 @media (max-width: 767px) {
-  .bottom-nav-shell {
-    display: block;
-  }
-
   .dashboard-main {
-    padding-bottom: calc(68px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
   }
 
   .dashboard-view-root {

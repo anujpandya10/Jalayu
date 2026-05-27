@@ -6,7 +6,6 @@ import { Loader2 } from 'lucide-react'
 import { useStore } from '@/store/useStore'
 import { todayString, getDayNumber, getJourneyView } from '@/lib/utils'
 import TopBar from '@/components/dashboard/TopBar'
-import BottomNav from '@/components/dashboard/BottomNav'
 import ChatPanel from '@/components/chat/ChatPanel'
 import PwaRegister from '@/components/PwaRegister'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
@@ -174,10 +173,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <PwaRegister />
           {children}
         </main>
-      </div>
-
-      <div className="bottom-nav-shell">
-        <BottomNav />
       </div>
 
       <ChatPanel />
