@@ -23,7 +23,17 @@ import {
   evaluateApexVeto,
   loadValidApexDecisions,
   logEngineApexVeto,
+  type ApexDecisionRow,
 } from '@/lib/apex-veto'
+import { runApexEvaluation, ApexEvaluationError } from '@/lib/apex-evaluate'
+
+// ── JIT Apex parameters ────────────────────────────────────────────────────
+// When the deterministic engine produces a candidate at or above this score
+// and there's no fresh apex_decisions row in cache, the engine pays ~4s of
+// latency to fetch a synchronous Apex read instead of acting alone.
+const JIT_APEX_LONG_THRESHOLD = 5.5
+const JIT_APEX_SHORT_THRESHOLD = MIN_SHORT_SCORE - 0.5  // shorts: equally strong negative score
+const JIT_APEX_MAX_PER_TICK = 2  // cap cost / wallclock per tick
 import {
   ROUND_TRIP_FEE_PCT,
   computeEntryBudget,
@@ -948,6 +958,48 @@ export async function runTradingTick(
   ]
   const apexBySymbol = await loadValidApexDecisions(supabase, userId, entrySymbols, priceMap)
 
+  // JIT cost cap: bounds wallclock + spend per tick when many candidates fire at once
+  let jitRemaining = JIT_APEX_MAX_PER_TICK
+
+  async function ensureApexForCandidate(
+    sig: Signal,
+    direction: 'LONG' | 'SHORT',
+  ): Promise<ApexDecisionRow | null> {
+    const sym = sig.asset.symbol
+    const cached = apexBySymbol.get(sym) ?? null
+    if (cached) return cached
+    const threshold = direction === 'LONG' ? JIT_APEX_LONG_THRESHOLD : JIT_APEX_SHORT_THRESHOLD
+    const triggers = direction === 'LONG'
+      ? sig.score >= threshold
+      : sig.score <= threshold
+    if (!triggers) return null
+    if (jitRemaining <= 0) {
+      console.warn(`[apex-jit] budget exhausted, ${sym} ${direction} engine acts alone`)
+      return null
+    }
+    jitRemaining--
+    try {
+      const result = await runApexEvaluation(supabase, userId, sym, sig.asset)
+      const row: ApexDecisionRow = {
+        id: result.id ?? '',
+        symbol: result.symbol,
+        decision: result.decision.decision,
+        conviction_score: result.decision.conviction_score,
+        current_price: result.currentPrice,
+        created_at: result.generatedAt,
+      }
+      apexBySymbol.set(sym, row)
+      console.info(
+        `[apex-jit] ${sym} ${direction} engine=${sig.score.toFixed(1)} → apex=${row.decision}/${row.conviction_score}`,
+      )
+      return row
+    } catch (err) {
+      const msg = err instanceof ApexEvaluationError ? err.message : String(err)
+      console.warn(`[apex-jit] ${sym} ${direction} failed: ${msg} — engine acts alone`)
+      return null
+    }
+  }
+
   for (const sig of longsToOpen) {
     if (!sig.indicators && sig.asset.assetType === 'crypto') continue
 
@@ -970,6 +1022,8 @@ export async function runTradingTick(
     }
 
     const price = sig.asset.price
+    // JIT: if no fresh cache and engine score is high, sync-fetch Apex now
+    await ensureApexForCandidate(sig, 'LONG')
     const apexVeto = evaluateApexVeto(apexBySymbol.get(sig.asset.symbol) ?? null, 'LONG')
 
     if (!apexVeto.proceed) {
@@ -1083,6 +1137,8 @@ export async function runTradingTick(
     let budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag)
     const price = sig.asset.price
 
+    // JIT: if no fresh cache and engine score is strongly negative, sync-fetch Apex
+    await ensureApexForCandidate(sig, 'SHORT')
     const apexVeto = evaluateApexVeto(apexBySymbol.get(sig.asset.symbol) ?? null, 'SHORT')
 
     if (!apexVeto.proceed) {
