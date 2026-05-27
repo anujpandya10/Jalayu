@@ -391,19 +391,18 @@ export default function CustomizableHomeGrid({
         onDragEnd={handleDragEnd}
       >
         <div className="home-3col">
-          <Column
-            columnId="left"
-            title="Left"
-            items={leftItems}
-            editMode={editMode}
-            onHide={handleHide}
-            onResize={handleResize}
-            getSize={getSize}
-            renderWidget={renderWidget}
-          />
-
           {isDesktop ? (
             <>
+              <Column
+                columnId="left"
+                title="Left"
+                items={leftItems}
+                editMode={editMode}
+                onHide={handleHide}
+                onResize={handleResize}
+                getSize={getSize}
+                renderWidget={renderWidget}
+              />
               <Column columnId="center" title="Center" items={centerItems} editMode={editMode} onHide={handleHide} onResize={handleResize} getSize={getSize} renderWidget={renderWidget} useGrid />
               <Column
                 columnId="right"

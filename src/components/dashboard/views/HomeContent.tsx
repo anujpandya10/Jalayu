@@ -429,9 +429,6 @@ export default function HomeContent({
         }
         @media (max-width: 767px) {
           .home-outer { padding-top: 16px; padding-bottom: 16px; padding-left: 12px; padding-right: 12px; }
-          /* Show actionable widgets (tasks/schedule) BEFORE the identity/note column on phones */
-          .home-3col > div:nth-child(1) { order: 2; }
-          .home-3col > div:nth-child(2) { order: 1; }
         }
         .home-3col {
           display: grid;
