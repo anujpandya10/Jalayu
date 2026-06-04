@@ -31,8 +31,9 @@ export interface DraftResult {
 export async function runDraftIntent(
   intentText: string,
   memoryContext: string = '',
+  userContext: string = '',
 ): Promise<DraftResult> {
-  const system = memoryContext ? `${SYSTEM_PROMPT}${memoryContext}` : SYSTEM_PROMPT
+  const system = `${SYSTEM_PROMPT}${userContext}${memoryContext}`
   const resp = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 1500,

@@ -21,6 +21,7 @@ import {
   storeIntentEmbedding,
   formatMemoriesForPrompt,
 } from '@/lib/intent-memory'
+import { getUserContext, formatUserContextForPrompt } from '@/lib/user-context'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -135,9 +136,15 @@ async function runIntent(intentId: string, text: string, kind: IntentKind) {
     .eq('id', intentId)
 
   try {
-    // Memory lookup — best-effort, never blocks the runner
-    const memories = await findRelatedMemories(supabase, text).catch(() => [])
+    // Context gathering — both lookups in parallel, both best-effort.
+    const [memories, userCtx] = await Promise.all([
+      findRelatedMemories(supabase, text).catch(() => []),
+      userId
+        ? getUserContext(supabase, userId).catch(() => null)
+        : Promise.resolve(null),
+    ])
     const memoryContext = formatMemoriesForPrompt(memories)
+    const userContext = userCtx ? formatUserContextForPrompt(userCtx) : ''
     const usedMemoryIds = memories.map((m) => m.id)
 
     // Dispatch to the right runner
@@ -147,12 +154,12 @@ async function runIntent(intentId: string, text: string, kind: IntentKind) {
     let model: string
 
     if (kind === 'draft') {
-      const r = await runDraftIntent(text, memoryContext)
+      const r = await runDraftIntent(text, memoryContext, userContext)
       resultMd = r.resultMd
       resultSummary = r.resultSummary
       model = r.model
     } else {
-      const r = await runResearchIntent(text, memoryContext)
+      const r = await runResearchIntent(text, memoryContext, userContext)
       resultMd = r.resultMd
       resultSummary = r.resultSummary
       citations = r.citations

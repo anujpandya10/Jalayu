@@ -46,8 +46,10 @@ interface CitationItem {
 export async function runResearchIntent(
   intentText: string,
   memoryContext: string = '',
+  userContext: string = '',
 ): Promise<ResearchResult> {
-  const system = memoryContext ? `${SYSTEM_PROMPT}${memoryContext}` : SYSTEM_PROMPT
+  // Order matters: who → what they asked before → how to answer.
+  const system = `${SYSTEM_PROMPT}${userContext}${memoryContext}`
   const resp = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 2000,
