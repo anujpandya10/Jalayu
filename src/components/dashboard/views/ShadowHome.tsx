@@ -10,7 +10,7 @@
  * live your life.
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Loader2, CheckCircle2, AlertCircle, ChevronRight, Archive, X } from 'lucide-react'
+import { Send, Loader2, CheckCircle2, AlertCircle, ChevronRight, Archive, X, Compass, Pen, RotateCcw, Copy, Check } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import toast from 'react-hot-toast'
@@ -25,11 +25,17 @@ interface Intent {
   result_md: string | null
   result_summary: string | null
   citations: { title: string; url: string }[] | null
+  used_memory_ids: string[] | null
   model: string | null
   created_at: string
   started_at: string | null
   completed_at: string | null
   reviewed_at: string | null
+}
+
+function KindIcon({ kind, size = 14, color = 'var(--text-3)' }: { kind: string; size?: number; color?: string }) {
+  if (kind === 'draft') return <Pen size={size} color={color} />
+  return <Compass size={size} color={color} />
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -52,6 +58,7 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [openIntent, setOpenIntent] = useState<Intent | null>(null)
+  const [copied, setCopied] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const firstName = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
@@ -228,12 +235,35 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
 
         .sh-icon { flex-shrink: 0; margin-top: 1px; }
         .sh-row-body { flex: 1; min-width: 0; }
+        .sh-row-headline {
+          display: flex; align-items: flex-start; gap: 6px;
+          margin: 0 0 4px;
+        }
+        .sh-row-headline > svg { flex-shrink: 0; margin-top: 3px; }
         .sh-row-text {
-          font-size: 14px; color: var(--text); margin: 0 0 4px;
-          font-weight: 500; line-height: 1.4;
+          font-size: 14px; color: var(--text); margin: 0;
+          font-weight: 500; line-height: 1.4; flex: 1; min-width: 0;
           overflow: hidden; text-overflow: ellipsis;
           display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
         }
+        .sh-memory-chip {
+          display: inline-flex; align-items: center; gap: 3px;
+          color: var(--accent); font-size: 11px; font-weight: 500;
+        }
+        .sh-modal-kind {
+          display: inline-flex; align-items: center; gap: 4px;
+          color: var(--text-3); font-size: 10px; font-weight: 700;
+          text-transform: uppercase; letter-spacing: 0.12em;
+          margin-bottom: 4px;
+        }
+        .sh-modal-copy {
+          display: inline-flex; align-items: center; gap: 4px;
+          background: var(--accent); color: var(--accent-fg);
+          padding: 6px 10px; border-radius: 8px; border: none;
+          font-size: 12px; font-weight: 600; cursor: pointer;
+          font-family: inherit;
+        }
+        .sh-modal-copy:hover { opacity: 0.92; }
         .sh-row-meta {
           font-size: 11px; color: var(--text-3);
           display: flex; gap: 8px; align-items: center;
@@ -357,9 +387,16 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
             >
               <Loader2 size={16} className="sh-icon sh-spinning" color="var(--accent)" />
               <div className="sh-row-body">
-                <p className="sh-row-text">{i.text}</p>
+                <div className="sh-row-headline">
+                  <KindIcon kind={i.kind} size={12} />
+                  <p className="sh-row-text">{i.text}</p>
+                </div>
                 <div className="sh-row-meta">
-                  <span>{i.status === 'queued' ? 'queued' : 'researching…'}</span>
+                  <span>
+                    {i.status === 'queued'
+                      ? 'queued'
+                      : i.kind === 'draft' ? 'drafting…' : 'researching…'}
+                  </span>
                   <span>·</span>
                   <span>{relTime(i.created_at)}</span>
                 </div>
@@ -382,7 +419,10 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
             >
               <CheckCircle2 size={16} className="sh-icon" color="var(--accent)" />
               <div className="sh-row-body">
-                <p className="sh-row-text">{i.text}</p>
+                <div className="sh-row-headline">
+                  <KindIcon kind={i.kind} size={12} />
+                  <p className="sh-row-text">{i.text}</p>
+                </div>
                 {i.result_summary && <p className="sh-row-summary">{i.result_summary}</p>}
                 <div className="sh-row-meta">
                   <span>{i.completed_at ? relTime(i.completed_at) : relTime(i.created_at)}</span>
@@ -390,6 +430,15 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
                     <>
                       <span>·</span>
                       <span>{i.citations.length} source{i.citations.length === 1 ? '' : 's'}</span>
+                    </>
+                  )}
+                  {i.used_memory_ids && i.used_memory_ids.length > 0 && (
+                    <>
+                      <span>·</span>
+                      <span className="sh-memory-chip">
+                        <RotateCcw size={10} />
+                        built on past work
+                      </span>
                     </>
                   )}
                 </div>
@@ -422,7 +471,10 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
             >
               <AlertCircle size={16} className="sh-icon" color="var(--error-text)" />
               <div className="sh-row-body">
-                <p className="sh-row-text">{i.text}</p>
+                <div className="sh-row-headline">
+                  <KindIcon kind={i.kind} size={12} />
+                  <p className="sh-row-text">{i.text}</p>
+                </div>
                 {i.error && <p className="sh-row-summary">{i.error}</p>}
                 <div className="sh-row-meta">
                   <span>{i.completed_at ? relTime(i.completed_at) : relTime(i.created_at)}</span>
@@ -450,18 +502,44 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
       )}
 
       {openIntent && (
-        <div className="sh-modal-backdrop" onClick={() => setOpenIntent(null)}>
+        <div className="sh-modal-backdrop" onClick={() => { setOpenIntent(null); setCopied(false) }}>
           <div className="sh-modal" onClick={(e) => e.stopPropagation()}>
             <div className="sh-modal-head">
-              <h3 className="sh-modal-title">{openIntent.text}</h3>
-              <button
-                type="button"
-                className="sh-modal-close"
-                onClick={() => setOpenIntent(null)}
-                aria-label="Close"
-              >
-                <X size={18} />
-              </button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="sh-modal-kind">
+                  <KindIcon kind={openIntent.kind} size={11} />
+                  <span>{openIntent.kind === 'draft' ? 'Draft' : 'Research'}</span>
+                </div>
+                <h3 className="sh-modal-title">{openIntent.text}</h3>
+              </div>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
+                {openIntent.kind === 'draft' && openIntent.status === 'done' && openIntent.result_md && (
+                  <button
+                    type="button"
+                    className="sh-modal-copy"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(openIntent.result_md ?? '')
+                        setCopied(true)
+                        window.setTimeout(() => setCopied(false), 1500)
+                      } catch {
+                        toast.error('Copy failed')
+                      }
+                    }}
+                  >
+                    {copied ? <Check size={13} /> : <Copy size={13} />}
+                    {copied ? 'Copied' : 'Copy'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="sh-modal-close"
+                  onClick={() => { setOpenIntent(null); setCopied(false) }}
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
             <div className="sh-modal-body">
               {openIntent.status === 'running' || openIntent.status === 'queued' ? (

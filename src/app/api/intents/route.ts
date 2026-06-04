@@ -1,21 +1,33 @@
 /**
  * Intents — the shadow agent's inbox.
  *
- *   POST /api/intents  body: { text: string, kind?: string }
- *     Creates a queued intent and fires the runner in the background via after().
- *     Returns the row immediately so the UI can show "queued" / "running".
+ *   POST /api/intents  body: { text: string, kind?: 'research' | 'draft' | 'auto' }
+ *     Creates a queued intent. If kind = 'auto' (or omitted), classifies via
+ *     Claude Haiku at submission time so the user never has to think about
+ *     which runner to invoke. Fires the worker in the background via after().
  *
  *   GET /api/intents?limit=50
  *     Returns the user's recent intents, newest first, excluding archived.
  */
 import { NextResponse } from 'next/server'
 import { after } from 'next/server'
+import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
 import { runResearchIntent } from '@/lib/intent-runners/research'
+import { runDraftIntent } from '@/lib/intent-runners/draft'
 import { sendPushToUser } from '@/lib/push'
+import {
+  findRelatedMemories,
+  storeIntentEmbedding,
+  formatMemoriesForPrompt,
+} from '@/lib/intent-memory'
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 // Allow the runner to finish well within Vercel's 300s default
 export const maxDuration = 300
+
+type IntentKind = 'research' | 'draft'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -24,10 +36,17 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}))
   const text = typeof body.text === 'string' ? body.text.trim() : ''
-  const kind = typeof body.kind === 'string' ? body.kind : 'research'
+  const requestedKind = typeof body.kind === 'string' ? body.kind : 'auto'
 
   if (!text) return NextResponse.json({ error: 'text required' }, { status: 400 })
   if (text.length > 2000) return NextResponse.json({ error: 'text too long' }, { status: 400 })
+
+  // Resolve kind. Heuristic first (cheap, instant); fall back to Haiku only
+  // for ambiguous cases. For now, if the user explicitly specified, trust them.
+  const kind: IntentKind =
+    requestedKind === 'research' || requestedKind === 'draft'
+      ? requestedKind
+      : detectKindHeuristic(text)
 
   const { data: created, error } = await supabase
     .from('intents')
@@ -39,9 +58,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error?.message ?? 'insert failed' }, { status: 500 })
   }
 
-  // Fire-and-forget: run the intent after the response is sent.
   after(async () => {
-    await runIntent(created.id, created.text, created.kind)
+    await runIntent(created.id, created.text, created.kind as IntentKind)
   })
 
   return NextResponse.json({ intent: created })
@@ -67,12 +85,43 @@ export async function GET(request: Request) {
   return NextResponse.json({ intents: data ?? [] })
 }
 
+// ── Kind detection ────────────────────────────────────────────────────────────
+const DRAFT_VERBS = [
+  'draft', 'write', 'compose', 'reply', 'respond', 'craft', 'rewrite',
+  'shorten', 'tighten', 'edit',
+]
+
+function detectKindHeuristic(text: string): IntentKind {
+  const first = text.trim().toLowerCase().split(/\s+/, 4).join(' ')
+  for (const verb of DRAFT_VERBS) {
+    if (first.startsWith(verb + ' ') || first.startsWith(verb + ':')) return 'draft'
+  }
+  return 'research'
+}
+
+// Reserved for the ambiguous-case classifier (not yet wired — keeping the
+// surface ready so we can swap heuristic → LLM without re-plumbing).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function detectKindLLM(text: string): Promise<IntentKind> {
+  try {
+    const resp = await anthropic.messages.create({
+      model: 'claude-haiku-4-5',
+      max_tokens: 8,
+      system: 'Classify the user intent as either "research" (they want information found / synthesised) or "draft" (they want text written). Output ONLY one word: research or draft.',
+      messages: [{ role: 'user', content: text }],
+    })
+    const out = resp.content.find((b) => b.type === 'text')
+    const word = out && 'text' in out ? out.text.trim().toLowerCase() : ''
+    return word === 'draft' ? 'draft' : 'research'
+  } catch {
+    return 'research'
+  }
+}
+
 // ── Worker ────────────────────────────────────────────────────────────────────
-async function runIntent(intentId: string, text: string, kind: string) {
-  // New Supabase client — the request-scoped one in POST() may have been disposed
+async function runIntent(intentId: string, text: string, kind: IntentKind) {
   const supabase = await createClient()
 
-  // Need the user id for push fan-out (and as a defensive RLS check below)
   const { data: intentRow } = await supabase
     .from('intents')
     .select('user_id')
@@ -86,28 +135,52 @@ async function runIntent(intentId: string, text: string, kind: string) {
     .eq('id', intentId)
 
   try {
-    if (kind !== 'research') {
-      throw new Error(`Intent kind "${kind}" not yet supported`)
-    }
+    // Memory lookup — best-effort, never blocks the runner
+    const memories = await findRelatedMemories(supabase, text).catch(() => [])
+    const memoryContext = formatMemoriesForPrompt(memories)
+    const usedMemoryIds = memories.map((m) => m.id)
 
-    const result = await runResearchIntent(text)
+    // Dispatch to the right runner
+    let resultMd: string
+    let resultSummary: string
+    let citations: { title: string; url: string }[] | null = null
+    let model: string
+
+    if (kind === 'draft') {
+      const r = await runDraftIntent(text, memoryContext)
+      resultMd = r.resultMd
+      resultSummary = r.resultSummary
+      model = r.model
+    } else {
+      const r = await runResearchIntent(text, memoryContext)
+      resultMd = r.resultMd
+      resultSummary = r.resultSummary
+      citations = r.citations
+      model = r.model
+    }
 
     await supabase
       .from('intents')
       .update({
         status: 'done',
-        result_md: result.resultMd,
-        result_summary: result.resultSummary,
-        citations: result.citations,
-        model: result.model,
+        result_md: resultMd,
+        result_summary: resultSummary,
+        citations,
+        model,
+        used_memory_ids: usedMemoryIds,
         completed_at: new Date().toISOString(),
       })
       .eq('id', intentId)
 
+    // Backfill embedding so this intent shows up in future memory lookups
+    await storeIntentEmbedding(supabase, intentId, text, resultSummary).catch((e) => {
+      console.warn('[intents] embedding backfill failed:', e instanceof Error ? e.message : e)
+    })
+
     if (userId) {
       const previewBody =
-        result.resultSummary && result.resultSummary.length > 0
-          ? result.resultSummary
+        resultSummary && resultSummary.length > 0
+          ? resultSummary
           : text.length > 120 ? text.slice(0, 117) + '…' : text
       await sendPushToUser(supabase, userId, {
         title: 'Jalayu — ready for you',

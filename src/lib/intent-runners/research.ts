@@ -43,11 +43,15 @@ interface CitationItem {
   url?: string
 }
 
-export async function runResearchIntent(intentText: string): Promise<ResearchResult> {
+export async function runResearchIntent(
+  intentText: string,
+  memoryContext: string = '',
+): Promise<ResearchResult> {
+  const system = memoryContext ? `${SYSTEM_PROMPT}${memoryContext}` : SYSTEM_PROMPT
   const resp = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 2000,
-    system: SYSTEM_PROMPT,
+    system,
     tools: [
       {
         type: 'web_search_20250305',
