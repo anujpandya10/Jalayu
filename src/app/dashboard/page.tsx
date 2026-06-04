@@ -5,8 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import toast, { Toaster } from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import { getDayNumber, todayString, getDisplayName } from '@/lib/utils'
-import AIBar from '@/components/dashboard/AIBar'
-import HomeContent from '@/components/dashboard/views/HomeContent'
+import ShadowHome from '@/components/dashboard/views/ShadowHome'
 import MyDayView from '@/components/dashboard/views/MyDayView'
 import RemindersView from '@/components/dashboard/views/RemindersView'
 import MindView from '@/components/dashboard/views/MindView'
@@ -331,26 +330,7 @@ export default function DashboardPage() {
   const viewContent = (() => {
     switch (sidebarView) {
       case 'dashboard':
-        return (
-          <>
-            <AIBar />
-            <HomeContent
-              journeyView={journeyView}
-              profile={profile}
-              tasks={[...tasks, ...tasksRecent].filter((t, i, arr) => arr.findIndex((x) => x.id === t.id) === i)}
-              reminders={reminders}
-              tasksRecent={tasksRecent}
-              todayMood={todayMood}
-              notes={notes}
-              moodsRecent={moodsRecent}
-              daysSinceSignup={daysSinceSignup}
-              onMoodLog={handleMoodLog}
-              onAddTask={handleAddTask}
-              onToggleTask={handleToggleTask}
-              onAction={handleAction}
-            />
-          </>
-        )
+        return <ShadowHome profile={profile} />
       case 'calendar':
         return (
           <UnifiedCalendarView
