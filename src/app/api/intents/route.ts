@@ -12,6 +12,7 @@ import { NextResponse } from 'next/server'
 import { after } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { runResearchIntent } from '@/lib/intent-runners/research'
+import { sendPushToUser } from '@/lib/push'
 
 // Allow the runner to finish well within Vercel's 300s default
 export const maxDuration = 300
@@ -71,6 +72,14 @@ async function runIntent(intentId: string, text: string, kind: string) {
   // New Supabase client — the request-scoped one in POST() may have been disposed
   const supabase = await createClient()
 
+  // Need the user id for push fan-out (and as a defensive RLS check below)
+  const { data: intentRow } = await supabase
+    .from('intents')
+    .select('user_id')
+    .eq('id', intentId)
+    .single()
+  const userId = intentRow?.user_id as string | undefined
+
   await supabase
     .from('intents')
     .update({ status: 'running', started_at: new Date().toISOString() })
@@ -94,6 +103,18 @@ async function runIntent(intentId: string, text: string, kind: string) {
         completed_at: new Date().toISOString(),
       })
       .eq('id', intentId)
+
+    if (userId) {
+      const previewBody =
+        result.resultSummary && result.resultSummary.length > 0
+          ? result.resultSummary
+          : text.length > 120 ? text.slice(0, 117) + '…' : text
+      await sendPushToUser(supabase, userId, {
+        title: 'Jalayu — ready for you',
+        body: previewBody,
+        url: `/dashboard?intent=${intentId}`,
+      })
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[intents] runner failed', intentId, message)
@@ -105,5 +126,13 @@ async function runIntent(intentId: string, text: string, kind: string) {
         completed_at: new Date().toISOString(),
       })
       .eq('id', intentId)
+
+    if (userId) {
+      await sendPushToUser(supabase, userId, {
+        title: 'Jalayu — couldn’t finish',
+        body: text.length > 100 ? text.slice(0, 97) + '…' : text,
+        url: `/dashboard?intent=${intentId}`,
+      })
+    }
   }
 }

@@ -72,6 +72,26 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
   // Initial load
   useEffect(() => { void refresh() }, [refresh])
 
+  // Deep-link from push notification: /dashboard?intent=<id> auto-opens its detail.
+  // Runs once after the first refresh resolves so the intent row is available.
+  const deepLinkHandledRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkHandledRef.current || intents.length === 0) return
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const wanted = params.get('intent')
+    if (!wanted) { deepLinkHandledRef.current = true; return }
+    const match = intents.find((i) => i.id === wanted)
+    if (match) {
+      setOpenIntent(match)
+      deepLinkHandledRef.current = true
+      // Strip the query param so a refresh doesn't reopen the modal forever
+      const url = new URL(window.location.href)
+      url.searchParams.delete('intent')
+      window.history.replaceState({}, '', url.toString())
+    }
+  }, [intents])
+
   // Poll while any intent is running or queued
   const hasActive = intents.some((i) => i.status === 'queued' || i.status === 'running')
   useEffect(() => {
