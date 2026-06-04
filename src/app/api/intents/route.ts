@@ -15,6 +15,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
 import { runResearchIntent } from '@/lib/intent-runners/research'
 import { runDraftIntent } from '@/lib/intent-runners/draft'
+import { runCodeIntent } from '@/lib/intent-runners/code'
 import { sendPushToUser } from '@/lib/push'
 import {
   findRelatedMemories,
@@ -28,7 +29,7 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 // Allow the runner to finish well within Vercel's 300s default
 export const maxDuration = 300
 
-type IntentKind = 'research' | 'draft'
+type IntentKind = 'research' | 'draft' | 'code'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -45,7 +46,7 @@ export async function POST(request: Request) {
   // Resolve kind. Heuristic first (cheap, instant); fall back to Haiku only
   // for ambiguous cases. For now, if the user explicitly specified, trust them.
   const kind: IntentKind =
-    requestedKind === 'research' || requestedKind === 'draft'
+    requestedKind === 'research' || requestedKind === 'draft' || requestedKind === 'code'
       ? requestedKind
       : detectKindHeuristic(text)
 
@@ -93,6 +94,11 @@ const DRAFT_VERBS = [
 ]
 
 function detectKindHeuristic(text: string): IntentKind {
+  // Code intents are the most specific signal — a github URL is almost
+  // always a code-change request. Check first.
+  if (/https?:\/\/(?:www\.)?github\.com\/[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+/.test(text)) {
+    return 'code'
+  }
   const first = text.trim().toLowerCase().split(/\s+/, 4).join(' ')
   for (const verb of DRAFT_VERBS) {
     if (first.startsWith(verb + ' ') || first.startsWith(verb + ':')) return 'draft'
@@ -155,6 +161,11 @@ async function runIntent(intentId: string, text: string, kind: IntentKind) {
 
     if (kind === 'draft') {
       const r = await runDraftIntent(text, memoryContext, userContext)
+      resultMd = r.resultMd
+      resultSummary = r.resultSummary
+      model = r.model
+    } else if (kind === 'code') {
+      const r = await runCodeIntent(text, memoryContext, userContext)
       resultMd = r.resultMd
       resultSummary = r.resultSummary
       model = r.model

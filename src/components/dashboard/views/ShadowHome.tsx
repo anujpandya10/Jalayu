@@ -10,7 +10,7 @@
  * live your life.
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Send, Loader2, CheckCircle2, AlertCircle, ChevronRight, Archive, X, Compass, Pen, RotateCcw, Copy, Check } from 'lucide-react'
+import { Send, Loader2, CheckCircle2, AlertCircle, ChevronRight, Archive, X, Compass, Pen, RotateCcw, Copy, Check, Terminal } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import toast from 'react-hot-toast'
@@ -33,9 +33,30 @@ interface Intent {
   reviewed_at: string | null
 }
 
+interface DailyLetter {
+  id: string
+  letter_date: string
+  text_md: string
+  generated_at: string
+  dismissed_at: string | null
+}
+
 function KindIcon({ kind, size = 14, color = 'var(--text-3)' }: { kind: string; size?: number; color?: string }) {
   if (kind === 'draft') return <Pen size={size} color={color} />
+  if (kind === 'code') return <Terminal size={size} color={color} />
   return <Compass size={size} color={color} />
+}
+
+function kindLabel(kind: string): string {
+  if (kind === 'draft') return 'Draft'
+  if (kind === 'code') return 'Code'
+  return 'Research'
+}
+
+function runningLabel(kind: string): string {
+  if (kind === 'draft') return 'drafting…'
+  if (kind === 'code') return 'planning changes…'
+  return 'researching…'
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -59,6 +80,8 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
   const [sending, setSending] = useState(false)
   const [openIntent, setOpenIntent] = useState<Intent | null>(null)
   const [copied, setCopied] = useState(false)
+  const [letter, setLetter] = useState<DailyLetter | null>(null)
+  const [letterDismissedLocal, setLetterDismissedLocal] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const firstName = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
@@ -78,6 +101,45 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
 
   // Initial load
   useEffect(() => { void refresh() }, [refresh])
+
+  // Daily letter: fetch on mount; if missing AND it's after 7pm local, ask the
+  // server to generate it. We don't loop or retry — letter shows up when it shows up.
+  const letterFetchedRef = useRef(false)
+  useEffect(() => {
+    if (letterFetchedRef.current) return
+    letterFetchedRef.current = true
+    void (async () => {
+      try {
+        const res = await fetch('/api/letter/today')
+        if (!res.ok) return
+        const data = await res.json()
+        if (data.letter) {
+          setLetter(data.letter as DailyLetter)
+          return
+        }
+        // No letter yet today. Generate if it's past 7pm local time.
+        const localHour = new Date().getHours()
+        if (localHour < 19) return
+        const gen = await fetch('/api/letter/today', { method: 'POST' })
+        if (!gen.ok) return
+        const genData = await gen.json()
+        if (genData.letter) setLetter(genData.letter as DailyLetter)
+      } catch {
+        /* ignore — letter is optional */
+      }
+    })()
+  }, [])
+
+  const dismissLetter = useCallback(async () => {
+    setLetterDismissedLocal(true)
+    try {
+      await fetch('/api/letter/today', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dismissed: true }),
+      })
+    } catch { /* local dismiss already happened */ }
+  }, [])
 
   // Deep-link from push notification: /dashboard?intent=<id> auto-opens its detail.
   // Runs once after the first refresh resolves so the intent row is available.
@@ -180,6 +242,35 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
           text-transform: uppercase; letter-spacing: 0.14em;
           margin: 0 0 12px;
         }
+
+        /* Daily letter — Lora serif, warm tinted card at the top of the page */
+        .sh-letter {
+          background: var(--morning);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 16px 18px 18px;
+          margin: 0 0 28px;
+          box-shadow: 0 1px 0 var(--border);
+        }
+        .sh-letter-head {
+          display: flex; justify-content: space-between; align-items: center;
+          margin-bottom: 10px;
+        }
+        .sh-letter-label {
+          font-size: 10px; font-weight: 700; color: var(--accent);
+          text-transform: uppercase; letter-spacing: 0.14em;
+        }
+        .sh-letter-close {
+          background: transparent; border: none; padding: 4px;
+          color: var(--text-3); cursor: pointer; border-radius: 6px;
+        }
+        .sh-letter-close:hover { background: var(--surface); color: var(--text-2); }
+        .sh-letter-body {
+          font-family: var(--font-lora), Georgia, serif;
+          font-size: 15.5px; line-height: 1.7; color: var(--text);
+        }
+        .sh-letter-body p { margin: 0 0 0.85em; }
+        .sh-letter-body p:last-child { margin-bottom: 0; }
         .sh-greeting {
           font-family: var(--font-lora), Georgia, serif;
           font-size: 26px; line-height: 1.3; color: var(--text);
@@ -344,6 +435,25 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
         .sh-citation:hover { background: var(--morning); color: var(--text); }
       `}</style>
 
+      {letter && !letter.dismissed_at && !letterDismissedLocal && (
+        <div className="sh-letter">
+          <div className="sh-letter-head">
+            <span className="sh-letter-label">✦ Tonight</span>
+            <button
+              type="button"
+              className="sh-letter-close"
+              onClick={() => void dismissLetter()}
+              aria-label="Dismiss letter"
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="sh-letter-body md-body">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{letter.text_md}</ReactMarkdown>
+          </div>
+        </div>
+      )}
+
       <p className="sh-date">{dateLabel}</p>
       <h1 className="sh-greeting">
         {firstName ? `Hey ${firstName}. ` : ''}What should I work on?
@@ -356,7 +466,7 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Research a question, dig into something, summarize what's going on with X…"
+          placeholder="Research a question · Draft a message · Paste a github URL to plan a code change…"
           rows={1}
           disabled={sending}
         />
@@ -392,11 +502,7 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
                   <p className="sh-row-text">{i.text}</p>
                 </div>
                 <div className="sh-row-meta">
-                  <span>
-                    {i.status === 'queued'
-                      ? 'queued'
-                      : i.kind === 'draft' ? 'drafting…' : 'researching…'}
-                  </span>
+                  <span>{i.status === 'queued' ? 'queued' : runningLabel(i.kind)}</span>
                   <span>·</span>
                   <span>{relTime(i.created_at)}</span>
                 </div>
@@ -508,12 +614,12 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="sh-modal-kind">
                   <KindIcon kind={openIntent.kind} size={11} />
-                  <span>{openIntent.kind === 'draft' ? 'Draft' : 'Research'}</span>
+                  <span>{kindLabel(openIntent.kind)}</span>
                 </div>
                 <h3 className="sh-modal-title">{openIntent.text}</h3>
               </div>
               <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexShrink: 0 }}>
-                {openIntent.kind === 'draft' && openIntent.status === 'done' && openIntent.result_md && (
+                {(openIntent.kind === 'draft' || openIntent.kind === 'code') && openIntent.status === 'done' && openIntent.result_md && (
                   <button
                     type="button"
                     className="sh-modal-copy"
