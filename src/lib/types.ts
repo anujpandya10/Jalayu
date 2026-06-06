@@ -25,6 +25,21 @@ export interface Profile {
   postal_code: string | null
   country: string | null
   dashboard_layout: Record<string, unknown> | null
+  // Onboarding v2 (027) — richer signal for the shadow agent
+  pronouns: string | null
+  life_stage: string | null
+  help_domains: string[] | null
+  voice_prefs: string[] | null
+  boundaries: string | null
+  profile_notes: ProfileNote[] | null
+  last_deepening_at: string | null
+}
+
+export interface ProfileNote {
+  asked_at: string
+  prompt: string
+  answer: string
+  source: 'letter' | 'onboarding' | 'manual'
 }
 
 export interface Mood {

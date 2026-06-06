@@ -3,33 +3,49 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'framer-motion'
-import { createClient } from '@/lib/supabase'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import toast, { Toaster } from 'react-hot-toast'
-import { Loader2, ShieldCheck, ChevronLeft } from 'lucide-react'
+import { Loader2, ChevronLeft, Plus, X } from 'lucide-react'
 
-const TOTAL_STEPS = 6
+// 9 visible steps: 0 welcome, 1..7 questions, 8 welcome letter
+const TOTAL_STEPS = 9
+const PROGRESS_STEPS = 8 // welcome → boundaries; letter has no progress bar
 
-const WORK_TYPES = [
-  { key: 'brain', emoji: '💻', label: 'I work with a computer', sub: 'Software, data, writing, research' },
-  { key: 'hands', emoji: '🔧', label: 'I work with my hands', sub: 'Trades, construction, crafts' },
-  { key: 'people', emoji: '🩺', label: 'I work with people', sub: 'Healthcare, teaching, service' },
-  { key: 'create', emoji: '🎨', label: 'I create things', sub: 'Design, art, music, content' },
-  { key: 'build', emoji: '🏢', label: 'I run something', sub: 'Business, team, organization' },
-  { key: 'learn', emoji: '📚', label: 'I am learning', sub: 'Student, self-educator, explorer' },
+const LIFE_STAGE_CHIPS = [
+  'student',
+  'starting out in a career',
+  'deep in the work',
+  'raising kids',
+  'between things',
+  'shifting industries',
+  'winding down work',
+  'starting over',
+  'still figuring it out',
 ]
 
-const STRUGGLES = [
-  { key: 'forget', emoji: '🧠', label: 'I forget things constantly' },
-  { key: 'energy', emoji: '🔋', label: 'I run out of energy before my day ends' },
-  { key: 'mood', emoji: '🌊', label: 'My mood affects everything I do' },
-  { key: 'time', emoji: '⏰', label: 'There\'s never enough time' },
-  { key: 'mistakes', emoji: '🔁', label: 'I keep making the same mistakes' },
-  { key: 'misunderstood', emoji: '💬', label: 'Nobody really gets me' },
+const HELP_DOMAIN_CHIPS = [
+  'research a question',
+  'draft messages and replies',
+  'plan code changes',
+  'scheduling and admin',
+  'journaling and reflecting',
+  'decision-making',
+  'learning something new',
+  'organizing my life',
+  'just being there',
 ]
 
-const WAKE_TIMES = ['Before 6am', '6–7am', '7–9am', 'After 9am', 'Night owl']
-const PEAK_TIMES = ['Early morning', 'Late morning', 'Afternoon', 'Evening', 'Late night']
-const STRUCTURES = ['Very structured', 'Somewhat structured', 'Pretty chaotic', 'Completely unpredictable']
+const VOICE_CHIPS = [
+  'warm and personal',
+  'direct and brief',
+  'with some humor',
+  'never coachy',
+  'plain and serious',
+  'like a close friend',
+  'gently honest',
+  "don't sugarcoat",
+]
 
 const variants = {
   enter: { opacity: 0, x: 40 },
@@ -39,74 +55,77 @@ const variants = {
 
 export default function OnboardingPage() {
   const [step, setStep] = useState(0)
-  const [workType, setWorkType] = useState('')
-  const [struggles, setStruggles] = useState<string[]>([])
-  const [wakeTime, setWakeTime] = useState('')
-  const [peakHours, setPeakHours] = useState('')
-  const [dayStructure, setDayStructure] = useState('')
-  const [biggestGoal, setBiggestGoal] = useState('')
   const [nickname, setNickname] = useState('')
+  const [pronouns, setPronouns] = useState('')
+  const [lifeStage, setLifeStage] = useState('')
+  const [biggestGoal, setBiggestGoal] = useState('')
+  const [strugglesText, setStrugglesText] = useState('')
+  const [helpDomains, setHelpDomains] = useState<string[]>([])
+  const [helpAddInput, setHelpAddInput] = useState('')
+  const [voicePrefs, setVoicePrefs] = useState<string[]>([])
+  const [boundaries, setBoundaries] = useState('')
+  const [welcomeLetter, setWelcomeLetter] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const router = useRouter()
 
-  const canAdvance = () => {
-    if (step === 1) return !!workType
-    if (step === 2) return struggles.length > 0
-    if (step === 3) return !!(wakeTime && peakHours && dayStructure)
-    if (step === 4) return biggestGoal.trim().length >= 3
+  const canAdvance = (): boolean => {
+    if (step === 1) return nickname.trim().length > 0
+    if (step === 2) return lifeStage.trim().length > 0
+    if (step === 3) return biggestGoal.trim().length >= 3
+    if (step === 4) return strugglesText.trim().length >= 3
+    if (step === 5) return helpDomains.length > 0
+    if (step === 6) return voicePrefs.length > 0
+    if (step === 7) return true // boundaries are optional
     return true
   }
 
-  const toggleStruggle = (key: string) => {
-    setStruggles((prev) =>
-      prev.includes(key) ? prev.filter((s) => s !== key) : [...prev, key]
-    )
+  const toggleChip = (list: string[], setList: (v: string[]) => void, value: string) => {
+    setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
+  }
+
+  const addHelpDomain = () => {
+    const t = helpAddInput.trim()
+    if (!t || helpDomains.includes(t)) return
+    setHelpDomains((d) => [...d, t])
+    setHelpAddInput('')
   }
 
   const nextStep = () => {
     if (step < TOTAL_STEPS - 1) setStep((s) => s + 1)
   }
-
   const prevStep = () => {
     if (step > 0) setStep((s) => s - 1)
   }
 
   const handleFinish = async () => {
-    if (!nickname.trim()) {
-      toast.error('Please enter your name first')
+    if (!nickname.trim() || !lifeStage.trim() || biggestGoal.trim().length < 3) {
+      toast.error('A few earlier answers look thin — go back and fill those in first.')
       return
     }
-
-    const supabase = createClient()
     setSaving(true)
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-
-      if (!user) {
-        router.push('/login')
+      const res = await fetch('/api/onboarding/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nickname: nickname.trim(),
+          pronouns: pronouns.trim() || null,
+          life_stage: lifeStage.trim(),
+          biggest_goal: biggestGoal.trim(),
+          struggles_text: strugglesText.trim(),
+          help_domains: helpDomains,
+          voice_prefs: voicePrefs,
+          boundaries: boundaries.trim() || null,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Could not save your profile')
+        setSaving(false)
         return
       }
-
-      const { error } = await supabase.from('profiles').upsert({
-        id: user.id,
-        nickname: nickname.trim(),
-        full_name: nickname.trim(),
-        work_type: workType,
-        struggles,
-        wake_time: wakeTime,
-        peak_hours: peakHours,
-        day_structure: dayStructure,
-        biggest_goal: biggestGoal.trim(),
-        onboarding_complete: true,
-        updated_at: new Date().toISOString(),
-      })
-
-      if (error) throw error
-
-      router.push('/dashboard')
-      router.refresh()
+      setWelcomeLetter(data.letter?.text_md || 'I heard you. I’m here.')
+      setStep(8)
     } catch (err) {
       console.error(err)
       toast.error('Something went wrong saving your profile. Please try again.')
@@ -115,34 +134,32 @@ export default function OnboardingPage() {
     }
   }
 
-  return (
-    <div
-      className="min-h-screen flex flex-col"
-      style={{ background: 'var(--bg)' }}
-    >
-      <Toaster
-        position="top-center"
-        toastOptions={{ style: { borderRadius: '12px', fontSize: '14px' } }}
-      />
+  const enterDashboard = () => {
+    router.push('/dashboard')
+    router.refresh()
+  }
 
-      {/* Progress bar */}
-      {step > 0 && (
+  return (
+    <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
+      <Toaster position="top-center" toastOptions={{ style: { borderRadius: '12px', fontSize: '14px' } }} />
+
+      {/* Progress bar — only during the question steps */}
+      {step > 0 && step < 8 && (
         <div className="fixed top-0 left-0 right-0 z-10 h-1" style={{ background: 'var(--border)' }}>
           <motion.div
             className="h-full"
             style={{ background: 'var(--accent)' }}
             initial={{ width: 0 }}
-            animate={{ width: `${(step / (TOTAL_STEPS - 1)) * 100}%` }}
+            animate={{ width: `${(step / (PROGRESS_STEPS - 1)) * 100}%` }}
             transition={{ type: 'spring', stiffness: 120, damping: 20 }}
           />
         </div>
       )}
 
-      {/* Back button */}
-      {step > 0 && step < TOTAL_STEPS - 1 && (
+      {step > 0 && step < 8 && (
         <button
           onClick={prevStep}
-          className="fixed top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-all"
+          className="fixed top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium"
           style={{ color: 'var(--accent)', background: 'var(--morning)' }}
         >
           <ChevronLeft size={14} />
@@ -170,18 +187,16 @@ export default function OnboardingPage() {
                   >
                     ✦
                   </div>
-                  <h1
-                    className="text-3xl font-bold mb-3 leading-tight"
-                    style={{ color: 'var(--text)' }}
-                  >
-                    Hello. You made it here.
+                  <h1 className="text-3xl font-bold mb-3 leading-tight" style={{ color: 'var(--text)' }}>
+                    Hi. I&apos;m Jalayu.
                   </h1>
                   <p
                     className="text-base leading-relaxed mb-8 max-w-sm mx-auto"
-                    style={{ color: 'var(--text-2)' }}
+                    style={{ color: 'var(--text-2)', fontFamily: 'var(--font-lora), Georgia, serif' }}
                   >
-                    This is not a signup form. This is the beginning of something
-                    that will actually change your life.
+                    I&apos;ll move through life with you — carry your intents while you live yours, write you a letter at the end of the day, learn who you are over time.
+                    <br /><br />
+                    First I need to actually meet you. A few questions, in your own words. Not a form — a conversation.
                   </p>
                   <button
                     onClick={nextStep}
@@ -193,298 +208,277 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* STEP 1 — Work type */}
+              {/* STEP 1 — Name + pronouns */}
               {step === 1 && (
                 <div>
-                  <AiBubble text="First, help me understand the shape of your days. What kind of work do you mostly do?" />
-                  <h2
-                    className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: 'var(--text)' }}
-                  >
-                    How do you spend your days?
+                  <AiBubble text="What should I call you? And — if it matters to you — your pronouns." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    A name to use
                   </h2>
                   <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
-                    Choose the one that fits best
+                    What I&apos;ll call you in letters and when we talk
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {WORK_TYPES.map((w) => (
-                      <button
-                        key={w.key}
-                        onClick={() => setWorkType(w.key)}
-                        className="p-4 rounded-2xl text-left transition-all"
-                        style={{
-                          background: workType === w.key ? 'var(--morning)' : 'var(--surface)',
-                          border: `1.5px solid ${workType === w.key ? 'var(--accent)' : 'var(--border)'}`,
-                        }}
-                      >
-                        <div className="text-xl mb-1">{w.emoji}</div>
-                        <div
-                          className="text-sm font-semibold leading-tight"
-                          style={{ color: 'var(--text)' }}
-                        >
-                          {w.label}
-                        </div>
-                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-                          {w.sub}
-                        </div>
-                      </button>
-                    ))}
+                  <FieldInput
+                    value={nickname}
+                    onChange={setNickname}
+                    placeholder="Your name or nickname"
+                  />
+                  <div className="mt-4">
+                    <p className="text-xs mb-2" style={{ color: 'var(--text-3)' }}>
+                      Pronouns (optional)
+                    </p>
+                    <FieldInput
+                      value={pronouns}
+                      onChange={setPronouns}
+                      placeholder="e.g. she/her, he/him, they/them — or skip"
+                    />
                   </div>
                   <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
                 </div>
               )}
 
-              {/* STEP 2 — Struggles */}
+              {/* STEP 2 — Life stage */}
               {step === 2 && (
                 <div>
-                  <AiBubble text="Now be honest with me. What actually gets in your way? Select everything that resonates." />
-                  <h2
-                    className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: 'var(--text)' }}
-                  >
-                    What holds you back?
+                  <AiBubble text="Where are you in life right now? Not your job title — the season." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    What season is this?
                   </h2>
-                  <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
-                    Select all that apply — no judgment here
+                  <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
+                    Pick a chip or write your own — your words always win
                   </p>
-                  <div className="space-y-2.5">
-                    {STRUGGLES.map((s) => (
-                      <button
-                        key={s.key}
-                        onClick={() => toggleStruggle(s.key)}
-                        className="w-full p-4 rounded-2xl text-left flex items-center gap-3 transition-all"
-                        style={{
-                          background: struggles.includes(s.key) ? 'var(--morning)' : 'var(--surface)',
-                          border: `1.5px solid ${struggles.includes(s.key) ? 'var(--accent)' : 'var(--border)'}`,
-                        }}
-                      >
-                        <span className="text-lg">{s.emoji}</span>
-                        <span
-                          className="text-sm font-medium"
-                          style={{ color: 'var(--text)' }}
-                        >
-                          {s.label}
-                        </span>
-                        {struggles.includes(s.key) && (
-                          <span
-                            className="ml-auto text-xs font-semibold px-2 py-0.5 rounded-full"
-                            style={{ background: 'var(--accent)', color: 'var(--surface)' }}
-                          >
-                            ✓
-                          </span>
-                        )}
-                      </button>
+                  <FieldTextarea
+                    value={lifeStage}
+                    onChange={setLifeStage}
+                    placeholder="In your own words…"
+                    rows={2}
+                  />
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {LIFE_STAGE_CHIPS.map((c) => (
+                      <Chip
+                        key={c}
+                        label={c}
+                        selected={lifeStage.toLowerCase().includes(c.toLowerCase())}
+                        onClick={() => setLifeStage(c)}
+                      />
                     ))}
                   </div>
                   <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
                 </div>
               )}
 
-              {/* STEP 3 — Day shape */}
+              {/* STEP 3 — What's on your mind */}
               {step === 3 && (
                 <div>
-                  <AiBubble text="Understanding when you're at your best helps me support you at exactly the right moments." />
-                  <h2
-                    className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: 'var(--text)' }}
-                  >
-                    Shape of your day
-                  </h2>
-                  <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
-                    All three are needed to understand your rhythm
-                  </p>
-
-                  <div className="space-y-5">
-                    <div>
-                      <p className="text-sm font-semibold mb-2.5" style={{ color: 'var(--text)' }}>
-                        When do you usually wake up?
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {WAKE_TIMES.map((t) => (
-                          <PillButton
-                            key={t}
-                            label={t}
-                            selected={wakeTime === t}
-                            onClick={() => setWakeTime(t)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold mb-2.5" style={{ color: 'var(--text)' }}>
-                        When are you most productive?
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {PEAK_TIMES.map((t) => (
-                          <PillButton
-                            key={t}
-                            label={t}
-                            selected={peakHours === t}
-                            onClick={() => setPeakHours(t)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold mb-2.5" style={{ color: 'var(--text)' }}>
-                        How structured is your typical day?
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        {STRUCTURES.map((s) => (
-                          <PillButton
-                            key={s}
-                            label={s}
-                            selected={dayStructure === s}
-                            onClick={() => setDayStructure(s)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                  <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
-                </div>
-              )}
-
-              {/* STEP 4 — Biggest goal */}
-              {step === 4 && (
-                <div>
-                  <AiBubble text="Now — what's the one thing you actually want to change? Be specific. This is between you and me." />
-                  <h2
-                    className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: 'var(--text)' }}
-                  >
-                    Your biggest goal right now
+                  <AiBubble text="What's actually on your mind these days? It can be a goal, a worry, a question you can't shake. Whatever's loud." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    What&apos;s loud right now
                   </h2>
                   <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
-                    What do you most want to achieve or change?
+                    Stays between you and me
                   </p>
-                  <textarea
+                  <FieldTextarea
                     value={biggestGoal}
-                    onChange={(e) => setBiggestGoal(e.target.value)}
-                    placeholder="e.g. Stop forgetting important things. Feel less overwhelmed. Actually finish what I start…"
-                    rows={4}
-                    className="w-full px-4 py-3 rounded-2xl text-sm resize-none transition-all"
-                    style={{
-                      border: '1.5px solid var(--border)',
-                      background: 'var(--surface)',
-                      color: 'var(--text)',
-                      outline: 'none',
-                      lineHeight: '1.6',
-                    }}
-                    onFocus={(e) => {
-                      e.target.style.borderColor = 'var(--accent)'
-                    }}
-                    onBlur={(e) => {
-                      e.target.style.borderColor = 'var(--border)'
-                    }}
+                    onChange={setBiggestGoal}
+                    placeholder="e.g. I want to leave my job and don't know how. / I'm trying to be more present with my kid. / I want to ship the thing I've been avoiding…"
+                    rows={5}
                   />
-                  <div
-                    className="flex items-center gap-2 mt-3 p-3 rounded-xl"
-                    style={{ background: 'var(--success-bg)', border: '1px solid var(--success-border)' }}
-                  >
-                    <ShieldCheck size={14} style={{ color: 'var(--success-text)' }} className="shrink-0" />
-                    <p className="text-xs" style={{ color: 'var(--success-text)' }}>
-                      This stays completely private. Only you and your personal AI ever see it.
-                    </p>
+                  <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
+                </div>
+              )}
+
+              {/* STEP 4 — What gets in the way */}
+              {step === 4 && (
+                <div>
+                  <AiBubble text="What gets in the way of that? Tell me in your own words — not check-boxes." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    What gets in the way
+                  </h2>
+                  <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
+                    Be honest. Pretty doesn&apos;t help here.
+                  </p>
+                  <FieldTextarea
+                    value={strugglesText}
+                    onChange={setStrugglesText}
+                    placeholder="e.g. I crash by 3pm and then doomscroll. / Every time I try to start, I open Twitter…"
+                    rows={5}
+                  />
+                  <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
+                </div>
+              )}
+
+              {/* STEP 5 — Help domains */}
+              {step === 5 && (
+                <div>
+                  <AiBubble text="How can I help you most? Pick anything that fits — and add your own if I'm missing something." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    Where you&apos;d use me
+                  </h2>
+                  <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
+                    No wrong answers. You can change this anytime.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {HELP_DOMAIN_CHIPS.map((c) => (
+                      <Chip
+                        key={c}
+                        label={c}
+                        selected={helpDomains.includes(c)}
+                        onClick={() => toggleChip(helpDomains, setHelpDomains, c)}
+                      />
+                    ))}
+                    {helpDomains
+                      .filter((d) => !HELP_DOMAIN_CHIPS.includes(d))
+                      .map((d) => (
+                        <Chip
+                          key={d}
+                          label={d}
+                          selected
+                          onClick={() => toggleChip(helpDomains, setHelpDomains, d)}
+                          removable
+                        />
+                      ))}
+                  </div>
+                  <div className="flex gap-2 mt-4">
+                    <input
+                      type="text"
+                      value={helpAddInput}
+                      onChange={(e) => setHelpAddInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); addHelpDomain() }
+                      }}
+                      placeholder="add your own…"
+                      className="flex-1 px-3 py-2 rounded-xl text-sm"
+                      style={{
+                        border: '1.5px solid var(--border)',
+                        background: 'var(--surface)',
+                        color: 'var(--text)',
+                        outline: 'none',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={addHelpDomain}
+                      className="px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-1"
+                      style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}
+                    >
+                      <Plus size={14} /> add
+                    </button>
                   </div>
                   <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
                 </div>
               )}
 
-              {/* STEP 5 — Name + summary */}
-              {step === 5 && (
+              {/* STEP 6 — Voice */}
+              {step === 6 && (
                 <div>
-                  <AiBubble text="Last thing. What should I call you? And then we're done — I promise this is worth it." />
-                  <h2
-                    className="text-xl font-bold mb-1 mt-4"
-                    style={{ color: 'var(--text)' }}
-                  >
-                    Almost there
+                  <AiBubble text="How do you want me to talk to you? This is the thing most apps get wrong — I'd rather get it right with you." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    Your voice for me
                   </h2>
-                  <p className="text-sm mb-5" style={{ color: 'var(--text-2)' }}>
-                    What name would you like Jalayu to use for you?
+                  <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
+                    Pick anything that resonates. Even contradictions are fine.
                   </p>
-                  <input
-                    type="text"
-                    value={nickname}
-                    onChange={(e) => setNickname(e.target.value)}
-                    placeholder="Your name or nickname"
-                    className="w-full px-4 py-3 rounded-xl text-sm mb-5 transition-all"
-                    style={{
-                      border: '1.5px solid var(--border)',
-                      background: 'var(--surface)',
-                      color: 'var(--text)',
-                      outline: 'none',
-                    }}
-                    onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
-                    onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-                  />
-
-                  {/* Summary */}
-                  <div
-                    className="rounded-2xl p-4 mb-6 space-y-2"
-                    style={{ background: 'var(--morning)', border: '1px solid var(--border-2)' }}
-                  >
-                    <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--accent)' }}>
-                      What Jalayu learned about you
-                    </p>
-                    <SummaryLine
-                      label="Work type"
-                      value={WORK_TYPES.find((w) => w.key === workType)?.label || '—'}
-                    />
-                    <SummaryLine
-                      label="Main struggles"
-                      value={
-                        struggles.length
-                          ? struggles
-                              .map((k) => STRUGGLES.find((s) => s.key === k)?.emoji)
-                              .join(' ')
-                          : '—'
-                      }
-                    />
-                    <SummaryLine label="Wakes up" value={wakeTime || '—'} />
-                    <SummaryLine label="Peak time" value={peakHours || '—'} />
-                    <SummaryLine label="Day structure" value={dayStructure || '—'} />
-                    <SummaryLine
-                      label="Goal"
-                      value={
-                        biggestGoal.length > 50
-                          ? biggestGoal.slice(0, 50) + '…'
-                          : biggestGoal || '—'
-                      }
-                    />
+                  <div className="flex flex-wrap gap-2">
+                    {VOICE_CHIPS.map((c) => (
+                      <Chip
+                        key={c}
+                        label={c}
+                        selected={voicePrefs.includes(c)}
+                        onClick={() => toggleChip(voicePrefs, setVoicePrefs, c)}
+                      />
+                    ))}
                   </div>
+                  <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
+                </div>
+              )}
 
-                  <button
-                    onClick={handleFinish}
-                    disabled={saving || !nickname.trim()}
-                    className="w-full py-4 rounded-2xl font-semibold text-base flex items-center justify-center gap-2 transition-all"
+              {/* STEP 7 — Boundaries */}
+              {step === 7 && (
+                <div>
+                  <AiBubble text="Anything you'd rather I never bring up? Topics to steer around? You can skip — but if there's something, name it now." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    Off-limits
+                  </h2>
+                  <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
+                    Optional. I&apos;ll remember.
+                  </p>
+                  <FieldTextarea
+                    value={boundaries}
+                    onChange={setBoundaries}
+                    placeholder="e.g. Don't bring up [topic]. Don't reference [situation]. Skip platitudes about [thing]…"
+                    rows={4}
+                  />
+                  <div className="mt-6">
+                    <button
+                      onClick={handleFinish}
+                      disabled={saving}
+                      className="w-full py-3.5 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 transition-all"
+                      style={{
+                        background: saving ? 'var(--border-2)' : 'var(--accent)',
+                        color: 'var(--surface)',
+                        cursor: saving ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 size={16} className="animate-spin" />
+                          Listening…
+                        </>
+                      ) : (
+                        'Done — write me a letter ✦'
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* STEP 8 — Welcome letter */}
+              {step === 8 && welcomeLetter && (
+                <div>
+                  <div className="text-center mb-6">
+                    <span
+                      className="text-xs font-bold uppercase tracking-widest"
+                      style={{ color: 'var(--accent)' }}
+                    >
+                      ✦ From Jalayu
+                    </span>
+                  </div>
+                  <div
+                    className="rounded-2xl p-6"
                     style={{
-                      background: saving || !nickname.trim() ? 'var(--border-2)' : 'var(--accent)',
-                      color: 'var(--surface)',
-                      cursor: saving || !nickname.trim() ? 'not-allowed' : 'pointer',
+                      background: 'var(--morning)',
+                      border: '1px solid var(--border)',
                     }}
                   >
-                    {saving ? (
-                      <>
-                        <Loader2 size={16} className="animate-spin" />
-                        Setting things up…
-                      </>
-                    ) : (
-                      'Take me in ✦'
-                    )}
+                    <div
+                      className="md-body"
+                      style={{
+                        fontFamily: 'var(--font-lora), Georgia, serif',
+                        fontSize: 16,
+                        lineHeight: 1.75,
+                        color: 'var(--text)',
+                      }}
+                    >
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {welcomeLetter}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                  <button
+                    onClick={enterDashboard}
+                    className="w-full mt-6 py-4 rounded-2xl font-semibold text-base"
+                    style={{ background: 'var(--accent)', color: 'var(--surface)' }}
+                  >
+                    I&apos;m here when you need me →
                   </button>
                 </div>
               )}
             </motion.div>
           </AnimatePresence>
 
-          {/* Dot indicators */}
-          {step > 0 && (
+          {step > 0 && step < 8 && (
             <div className="flex justify-center gap-2 mt-8">
-              {Array.from({ length: TOTAL_STEPS - 1 }).map((_, i) => (
+              {Array.from({ length: PROGRESS_STEPS - 1 }).map((_, i) => (
                 <div
                   key={i}
                   className="rounded-full transition-all"
@@ -502,6 +496,8 @@ export default function OnboardingPage() {
     </div>
   )
 }
+
+// ── Helper components ────────────────────────────────────────────────────────
 
 function AiBubble({ text }: { text: string }) {
   return (
@@ -528,26 +524,88 @@ function AiBubble({ text }: { text: string }) {
   )
 }
 
-function PillButton({
+function FieldInput({
+  value,
+  onChange,
+  placeholder,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+}) {
+  return (
+    <input
+      type="text"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      className="w-full px-4 py-3 rounded-xl text-sm transition-all"
+      style={{
+        border: '1.5px solid var(--border)',
+        background: 'var(--surface)',
+        color: 'var(--text)',
+        outline: 'none',
+      }}
+      onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
+      onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+    />
+  )
+}
+
+function FieldTextarea({
+  value,
+  onChange,
+  placeholder,
+  rows = 4,
+}: {
+  value: string
+  onChange: (v: string) => void
+  placeholder: string
+  rows?: number
+}) {
+  return (
+    <textarea
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      rows={rows}
+      className="w-full px-4 py-3 rounded-2xl text-sm resize-none transition-all"
+      style={{
+        border: '1.5px solid var(--border)',
+        background: 'var(--surface)',
+        color: 'var(--text)',
+        outline: 'none',
+        lineHeight: '1.6',
+      }}
+      onFocus={(e) => (e.target.style.borderColor = 'var(--accent)')}
+      onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
+    />
+  )
+}
+
+function Chip({
   label,
   selected,
   onClick,
+  removable = false,
 }: {
   label: string
   selected: boolean
   onClick: () => void
+  removable?: boolean
 }) {
   return (
     <button
       onClick={onClick}
-      className="px-3.5 py-2 rounded-full text-sm font-medium transition-all"
+      className="px-3.5 py-2 rounded-full text-sm font-medium transition-all flex items-center gap-1"
       style={{
         background: selected ? 'var(--accent)' : 'var(--surface)',
-        color: selected ? 'var(--surface)' : 'var(--text)',
+        color: selected ? 'var(--accent-fg)' : 'var(--text)',
         border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
       }}
     >
       {label}
+      {removable && <X size={12} />}
     </button>
   )
 }
@@ -573,19 +631,6 @@ function StepFooter({
       >
         Continue →
       </button>
-    </div>
-  )
-}
-
-function SummaryLine({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-baseline gap-2">
-      <span className="text-xs font-medium w-24 shrink-0" style={{ color: 'var(--accent)' }}>
-        {label}
-      </span>
-      <span className="text-xs" style={{ color: 'var(--text)' }}>
-        {value}
-      </span>
     </div>
   )
 }

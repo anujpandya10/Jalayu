@@ -82,6 +82,10 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
   const [copied, setCopied] = useState(false)
   const [letter, setLetter] = useState<DailyLetter | null>(null)
   const [letterDismissedLocal, setLetterDismissedLocal] = useState(false)
+  const [letterReply, setLetterReply] = useState('')
+  const [letterReplying, setLetterReplying] = useState(false)
+  const [letterReplied, setLetterReplied] = useState(false)
+  const [chipsDismissed, setChipsDismissed] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const firstName = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
@@ -222,9 +226,83 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
     }
   }
 
+  const sendLetterReply = useCallback(async () => {
+    const answer = letterReply.trim()
+    if (!answer || letterReplying) return
+    setLetterReplying(true)
+    try {
+      const res = await fetch('/api/letter/reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answer }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast.error(data.error || 'Could not send reply')
+        return
+      }
+      setLetterReply('')
+      setLetterReplied(true)
+    } catch {
+      toast.error('Network error')
+    } finally {
+      setLetterReplying(false)
+    }
+  }, [letterReply, letterReplying])
+
   const active = intents.filter((i) => i.status === 'queued' || i.status === 'running')
   const done = intents.filter((i) => i.status === 'done')
   const failed = intents.filter((i) => i.status === 'failed')
+
+  // Heuristic: if the letter ends with a paragraph containing a "?", we
+  // treat it as a deepening question and surface the reply UI.
+  const letterHasQuestion = (() => {
+    if (!letter) return false
+    const paragraphs = letter.text_md.trim().split(/\n\s*\n/)
+    for (let i = paragraphs.length - 1; i >= 0; i--) {
+      if (paragraphs[i].includes('?')) return true
+    }
+    return false
+  })()
+
+  const onboardingComplete = profile?.onboarding_complete !== false
+
+  // Onboarding gate — short-circuit render if profile isn't onboarded yet
+  if (profile && !onboardingComplete) {
+    return (
+      <div className="shadow-home">
+        <style>{`
+          .sh-gate {
+            max-width: 460px; margin: 80px auto 0;
+            text-align: center; padding: 0 20px;
+          }
+          .sh-gate h1 {
+            font-family: var(--font-lora), Georgia, serif;
+            font-size: 28px; line-height: 1.3;
+            color: var(--text); margin: 0 0 12px;
+            font-weight: 500;
+          }
+          .sh-gate p {
+            font-size: 15px; line-height: 1.6;
+            color: var(--text-2); margin: 0 0 28px;
+            font-family: var(--font-lora), Georgia, serif;
+          }
+          .sh-gate-cta {
+            display: inline-block;
+            background: var(--accent); color: var(--accent-fg);
+            padding: 14px 28px; border-radius: 14px;
+            font-size: 14px; font-weight: 600;
+            text-decoration: none;
+          }
+        `}</style>
+        <div className="sh-gate">
+          <h1>Let&apos;s meet first.</h1>
+          <p>I&apos;ll work better once I actually know you. Takes a few minutes — a real conversation, not a form.</p>
+          <a href="/onboarding" className="sh-gate-cta">Begin →</a>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="shadow-home">
@@ -271,6 +349,69 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
         }
         .sh-letter-body p { margin: 0 0 0.85em; }
         .sh-letter-body p:last-child { margin-bottom: 0; }
+
+        /* Letter reply (deepening question response) */
+        .sh-letter-reply {
+          margin-top: 14px; padding-top: 14px;
+          border-top: 1px dashed var(--border-2);
+          display: flex; flex-direction: column; gap: 8px;
+        }
+        .sh-letter-reply-input {
+          width: 100%; resize: none; border: 1px solid var(--border);
+          background: var(--surface); border-radius: 10px;
+          padding: 8px 10px; font-size: 14px; line-height: 1.55;
+          color: var(--text); outline: none; font-family: inherit;
+        }
+        .sh-letter-reply-input:focus { border-color: var(--accent); }
+        .sh-letter-reply-send {
+          align-self: flex-end;
+          display: inline-flex; align-items: center; gap: 5px;
+          background: var(--accent); color: var(--accent-fg);
+          padding: 6px 12px; border-radius: 8px; border: none;
+          font-size: 12px; font-weight: 600; cursor: pointer;
+        }
+        .sh-letter-reply-send:disabled { opacity: 0.4; cursor: not-allowed; }
+        .sh-letter-noted {
+          margin: 14px 0 0; padding-top: 14px;
+          border-top: 1px dashed var(--border-2);
+          font-size: 12px; color: var(--accent);
+          font-style: italic; text-align: center;
+        }
+
+        /* Example chips — shown only when intents.length === 0 */
+        .sh-chips-wrap {
+          margin-top: 16px;
+        }
+        .sh-chips-head {
+          display: flex; justify-content: space-between; align-items: center;
+          margin-bottom: 8px;
+        }
+        .sh-chips-label {
+          font-size: 10px; font-weight: 700; color: var(--text-3);
+          text-transform: uppercase; letter-spacing: 0.14em;
+        }
+        .sh-chips-dismiss {
+          background: transparent; border: none; padding: 4px;
+          color: var(--text-3); cursor: pointer; border-radius: 6px;
+        }
+        .sh-chips-dismiss:hover { color: var(--text-2); }
+        .sh-chips {
+          display: flex; flex-direction: column; gap: 8px;
+        }
+        .sh-chip {
+          display: flex; align-items: center; gap: 8px;
+          padding: 10px 12px; border-radius: 10px;
+          background: var(--surface); border: 1px dashed var(--border-2);
+          color: var(--text-2); font-size: 13px; cursor: pointer;
+          text-align: left; font-family: inherit;
+          transition: background 0.12s, border-color 0.12s, color 0.12s;
+        }
+        .sh-chip:hover {
+          background: var(--surface-2); border-color: var(--accent);
+          color: var(--text);
+        }
+        .sh-chip > svg { flex-shrink: 0; color: var(--text-3); }
+        .sh-chip:hover > svg { color: var(--accent); }
         .sh-greeting {
           font-family: var(--font-lora), Georgia, serif;
           font-size: 26px; line-height: 1.3; color: var(--text);
@@ -451,6 +592,31 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
           <div className="sh-letter-body md-body">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{letter.text_md}</ReactMarkdown>
           </div>
+
+          {letterHasQuestion && !letterReplied && (
+            <div className="sh-letter-reply">
+              <textarea
+                value={letterReply}
+                onChange={(e) => setLetterReply(e.target.value)}
+                placeholder="reply when you want — no rush"
+                rows={2}
+                className="sh-letter-reply-input"
+                disabled={letterReplying}
+              />
+              <button
+                type="button"
+                onClick={() => void sendLetterReply()}
+                disabled={!letterReply.trim() || letterReplying}
+                className="sh-letter-reply-send"
+              >
+                {letterReplying ? <Loader2 size={13} className="sh-spinning" /> : <Send size={13} />}
+                Send
+              </button>
+            </div>
+          )}
+          {letterReplied && (
+            <p className="sh-letter-noted">noted, thank you ✦</p>
+          )}
         </div>
       )}
 
@@ -483,6 +649,42 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
           </button>
         </div>
       </div>
+
+      {intents.length === 0 && !chipsDismissed && (
+        <div className="sh-chips-wrap">
+          <div className="sh-chips-head">
+            <span className="sh-chips-label">try one of these</span>
+            <button
+              type="button"
+              className="sh-chips-dismiss"
+              onClick={() => setChipsDismissed(true)}
+              aria-label="hide examples"
+            >
+              <X size={12} />
+            </button>
+          </div>
+          <div className="sh-chips">
+            {[
+              { icon: <Compass size={12} />, label: 'Research what\'s actually new with X' },
+              { icon: <Pen size={12} />, label: 'Draft a polite no to that meeting' },
+              { icon: <Terminal size={12} />, label: 'Plan a fix for this github bug (paste a URL)' },
+            ].map((chip, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="sh-chip"
+                onClick={() => {
+                  setText(chip.label)
+                  textareaRef.current?.focus()
+                }}
+              >
+                {chip.icon}
+                {chip.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {active.length > 0 && (
         <>

@@ -1,23 +1,42 @@
 /**
  * User context — what Jalayu knows about you, gathered fresh per intent.
  *
- * Every runner gets this as a system-prompt block so research and draft
- * answers are grounded in the actual person, not a generic stranger.
+ * Every runner gets this as a system-prompt block so research, draft, and
+ * code answers are grounded in the actual person, not a generic stranger.
  *
- * The data is already in Supabase from the dashboard era — this just
- * walks it into the shadow's awareness.
+ * Inputs:
+ *   - profile (identity, life stage, goal, struggles, voice prefs, domains, boundaries)
+ *   - last 7 days of moods (avg + today)
+ *   - latest reflection within 3 days
+ *   - top 5 pending tasks
+ *   - last 5 completed intents
+ *   - last 3 profile_notes (from letter replies / ongoing learning)
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
+
+interface ProfileNoteRow {
+  asked_at?: string
+  prompt?: string
+  answer?: string
+  source?: string
+}
 
 export interface UserContextSnapshot {
   // Identity
   name: string
   nickname: string | null
+  pronouns: string | null
   goal: string | null
   struggles: string[]
   peakHours: string | null
   journeyDay: number | null
   streak: number
+
+  // Onboarding v2 fields (027) — shape the shadow's voice and reach
+  lifeStage: string | null
+  helpDomains: string[]
+  voicePrefs: string[]
+  boundaries: string | null
 
   // Recent state (last 7 days)
   moodAvg: number | null
@@ -32,6 +51,9 @@ export interface UserContextSnapshot {
 
   // What they've asked the shadow recently (last 5)
   recentIntents: { text: string; kind: string; whenIso: string }[]
+
+  // Last 3 profile notes (from letter replies / ongoing learning)
+  profileNotes: { askedAt: string; prompt: string; answer: string }[]
 }
 
 function todayISO(): string {
@@ -58,7 +80,10 @@ export async function getUserContext(
   const [profileRes, moodsRes, reflectionRes, tasksRes, intentsRes] = await Promise.all([
     supabase
       .from('profiles')
-      .select('full_name, nickname, biggest_goal, struggles, peak_hours, streak_count, created_at')
+      .select(
+        // Identity + legacy + onboarding v2 fields
+        'full_name, nickname, pronouns, biggest_goal, struggles, peak_hours, streak_count, created_at, life_stage, help_domains, voice_prefs, boundaries, profile_notes',
+      )
       .eq('id', userId)
       .single(),
     supabase
@@ -70,7 +95,9 @@ export async function getUserContext(
       .limit(20),
     supabase
       .from('reflections')
-      .select('date, energy_note, accomplishment, focus_tomorrow, struggle')
+      // Use the real schema columns — earlier code referenced
+      // non-existent fields and silently returned nothing.
+      .select('date, one_word, tomorrow_note, win_of_day, grateful_for, mood_score, energy_score')
       .eq('user_id', userId)
       .gte('date', threeDaysAgo)
       .order('date', { ascending: false })
@@ -101,6 +128,7 @@ export async function getUserContext(
   // Identity
   const name = profile?.full_name?.split(' ')[0] || profile?.nickname || 'this person'
   const nickname = profile?.nickname ?? null
+  const pronouns = profile?.pronouns ?? null
   const goal = profile?.biggest_goal ?? null
   const struggles = Array.isArray(profile?.struggles) ? profile.struggles : []
   const peakHours = profile?.peak_hours ?? null
@@ -108,6 +136,12 @@ export async function getUserContext(
   const journeyDay = profile?.created_at
     ? Math.max(1, Math.floor((Date.now() - new Date(profile.created_at).getTime()) / 86400000) + 1)
     : null
+
+  // Onboarding v2
+  const lifeStage = profile?.life_stage ?? null
+  const helpDomains = Array.isArray(profile?.help_domains) ? profile.help_domains : []
+  const voicePrefs = Array.isArray(profile?.voice_prefs) ? profile.voice_prefs : []
+  const boundaries = profile?.boundaries ?? null
 
   // Mood roll-up
   let moodAvg: number | null = null
@@ -118,12 +152,28 @@ export async function getUserContext(
     todayMood = todays ? Number(todays.score) : null
   }
 
-  // Reflection — concatenate the non-empty fields into one short paragraph
+  // Reflection — concatenate the non-empty real-schema fields into one short paragraph
   let recentReflection: UserContextSnapshot['recentReflection'] = null
   if (reflection) {
-    const bits = [reflection.energy_note, reflection.accomplishment, reflection.struggle, reflection.focus_tomorrow]
-      .filter((b): b is string => typeof b === 'string' && b.trim().length > 0)
-      .map((b) => b.trim())
+    const bits: string[] = []
+    if (typeof reflection.one_word === 'string' && reflection.one_word.trim().length > 0) {
+      bits.push(`Mood word: "${reflection.one_word.trim()}"`)
+    }
+    if (typeof reflection.win_of_day === 'string' && reflection.win_of_day.trim().length > 0) {
+      bits.push(`Win: ${reflection.win_of_day.trim()}`)
+    }
+    if (typeof reflection.grateful_for === 'string' && reflection.grateful_for.trim().length > 0) {
+      bits.push(`Grateful for: ${reflection.grateful_for.trim()}`)
+    }
+    if (typeof reflection.tomorrow_note === 'string' && reflection.tomorrow_note.trim().length > 0) {
+      bits.push(`Note for tomorrow: ${reflection.tomorrow_note.trim()}`)
+    }
+    if (typeof reflection.mood_score === 'number' || typeof reflection.energy_score === 'number') {
+      const scoreBits: string[] = []
+      if (typeof reflection.mood_score === 'number') scoreBits.push(`mood ${reflection.mood_score}/5`)
+      if (typeof reflection.energy_score === 'number') scoreBits.push(`energy ${reflection.energy_score}/5`)
+      bits.push(scoreBits.join(', '))
+    }
     if (bits.length > 0) {
       recentReflection = { date: reflection.date, text: bits.join(' · ').slice(0, 400) }
     }
@@ -143,47 +193,82 @@ export async function getUserContext(
     whenIso: i.completed_at ?? i.created_at,
   }))
 
+  // Profile notes — newest first; cap to 3 for prompt budget
+  const profileNotesRaw = Array.isArray(profile?.profile_notes)
+    ? (profile.profile_notes as ProfileNoteRow[])
+    : []
+  const profileNotes = profileNotesRaw
+    .slice(0, 3)
+    .map((n) => ({
+      askedAt: typeof n.asked_at === 'string' ? n.asked_at : '',
+      prompt: typeof n.prompt === 'string' ? n.prompt : '',
+      answer: typeof n.answer === 'string' ? n.answer : '',
+    }))
+    .filter((n) => n.prompt.length > 0 && n.answer.length > 0)
+
   return {
     name,
     nickname,
+    pronouns,
     goal,
     struggles,
     peakHours,
     journeyDay,
     streak,
+    lifeStage,
+    helpDomains,
+    voicePrefs,
+    boundaries,
     moodAvg,
     moodCount: moods.length,
     todayMood,
     recentReflection,
     pendingTasks,
     recentIntents,
+    profileNotes,
   }
 }
 
 /**
  * Render the snapshot as a system-prompt block. Capped to roughly
  * ~500 tokens of plain text. Returns empty string if there's no
- * meaningful identity yet (brand-new user).
+ * meaningful identity yet (brand-new user with nothing filled in).
  */
 export function formatUserContextForPrompt(ctx: UserContextSnapshot): string {
-  // Skip the whole block if we have basically nothing to say
-  if (!ctx.goal && !ctx.recentReflection && ctx.pendingTasks.length === 0 && ctx.recentIntents.length === 0) {
-    return ''
-  }
+  // Skip the whole block only if we genuinely know nothing meaningful
+  const hasAnything =
+    ctx.goal ||
+    ctx.lifeStage ||
+    ctx.voicePrefs.length > 0 ||
+    ctx.helpDomains.length > 0 ||
+    ctx.boundaries ||
+    ctx.recentReflection ||
+    ctx.pendingTasks.length > 0 ||
+    ctx.recentIntents.length > 0 ||
+    ctx.profileNotes.length > 0
+  if (!hasAnything) return ''
 
   const lines: string[] = []
   lines.push(`[ABOUT THIS PERSON]`)
 
   // Identity line
   const identityBits: string[] = []
-  identityBits.push(`Name: ${ctx.name}${ctx.nickname && ctx.nickname !== ctx.name ? ` ("${ctx.nickname}")` : ''}`)
+  let nameBit = `Name: ${ctx.name}`
+  if (ctx.nickname && ctx.nickname !== ctx.name) nameBit += ` ("${ctx.nickname}")`
+  if (ctx.pronouns) nameBit += ` · ${ctx.pronouns}`
+  identityBits.push(nameBit)
   if (ctx.journeyDay) identityBits.push(`Day ${ctx.journeyDay} with Jalayu`)
   if (ctx.streak > 0) identityBits.push(`${ctx.streak}-day streak`)
   lines.push(identityBits.join(' · '))
 
-  if (ctx.goal) lines.push(`What they're working toward: ${ctx.goal}`)
-  if (ctx.struggles.length > 0) lines.push(`Things they struggle with: ${ctx.struggles.join(', ')}`)
+  if (ctx.lifeStage) lines.push(`Season of life: ${ctx.lifeStage}`)
+  if (ctx.goal) lines.push(`What's on their mind: ${ctx.goal}`)
+  if (ctx.struggles.length > 0) lines.push(`What gets in the way: ${ctx.struggles.join(' / ')}`)
   if (ctx.peakHours) lines.push(`Peak hours: ${ctx.peakHours}`)
+
+  if (ctx.helpDomains.length > 0) {
+    lines.push(`They typically come to you for: ${ctx.helpDomains.join(', ')}.`)
+  }
 
   // Vibe of the week
   if (ctx.moodAvg !== null && ctx.moodCount > 0) {
@@ -215,9 +300,29 @@ export function formatUserContextForPrompt(ctx: UserContextSnapshot): string {
     }
   }
 
+  if (ctx.profileNotes.length > 0) {
+    lines.push(`Past notes from them (most recent first):`)
+    for (const n of ctx.profileNotes) {
+      const when = n.askedAt.slice(0, 10)
+      lines.push(`  - [${when}] You asked: "${n.prompt.slice(0, 140)}"`)
+      lines.push(`    They replied: "${n.answer.slice(0, 200)}"`)
+    }
+  }
+
+  // VOICE — high-impact instruction line. Render this LAST so it sits
+  // next to the closing guidance and shapes the tone of the reply.
+  if (ctx.voicePrefs.length > 0) {
+    lines.push('')
+    lines.push(`Voice — speak to them this way: ${ctx.voicePrefs.join('; ')}.`)
+  }
+
+  if (ctx.boundaries && ctx.boundaries.trim().length > 0) {
+    lines.push(`Never bring up or steer around: ${ctx.boundaries.trim()}.`)
+  }
+
   lines.push('')
   lines.push(
-    `Use this to be specific, not generic. Reference their real life when it helps. Don't lecture them about their goals — just be naturally aware of them. Don't recap this list back at them. If today's mood was rough, don't pretend; just match the room.`,
+    `Use all of the above to be specific, not generic. Reference their real life when it helps. Don't lecture them about their goals — just be naturally aware of them. Don't recap this list back at them. If today's mood was rough, don't pretend; just match the room.`,
   )
 
   return '\n\n' + lines.join('\n') + '\n'
