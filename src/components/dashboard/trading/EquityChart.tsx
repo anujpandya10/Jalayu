@@ -22,6 +22,13 @@ interface EquityData {
     winRate: number
     bestTrade: { symbol: string; pnl: number } | null
     worstTrade: { symbol: string; pnl: number } | null
+    recent: {
+      trades: number
+      wins: number
+      losses: number
+      winRate: number
+      pnl: number
+    }
   }
 }
 
@@ -153,7 +160,7 @@ export default function EquityChart() {
               Now ${summary.finalEquity.toFixed(2)} ({summary.totalPnl >= 0 ? '+' : ''}${summary.totalPnl.toFixed(2)})
             </span>
             <span>·</span>
-            <span>{summary.totalTrades} trades · {Math.round(summary.winRate * 100)}% win rate</span>
+            <span>{summary.totalTrades} trades · {Math.round(summary.winRate * 100)}% all-time</span>
           </div>
         )}
       </div>
@@ -161,14 +168,40 @@ export default function EquityChart() {
       <div ref={containerRef} style={{ width: '100%', height: 220 }} />
 
       {summary && summary.totalTrades > 0 && (
-        <div style={{ display: 'flex', gap: 12, marginTop: 12, fontSize: 11, color: 'var(--text-3)', flexWrap: 'wrap' }}>
-          {summary.bestTrade && (
-            <span>🏆 Best: <strong style={{ color: '#16A34A' }}>{summary.bestTrade.symbol}</strong> +${summary.bestTrade.pnl.toFixed(2)}</span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+          {/* Recent 50 trades — v2 strategy tracker */}
+          {summary.recent.trades >= 5 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              background: summary.recent.winRate >= 0.45 ? 'rgba(22,163,74,0.08)' : 'rgba(251,191,36,0.08)',
+              border: `1px solid ${summary.recent.winRate >= 0.45 ? 'rgba(22,163,74,0.25)' : 'rgba(251,191,36,0.25)'}`,
+              borderRadius: 8, padding: '6px 10px', fontSize: 11,
+            }}>
+              <span style={{ fontWeight: 600, color: 'var(--text-2)' }}>Last {summary.recent.trades} trades</span>
+              <span style={{
+                fontWeight: 700,
+                color: summary.recent.winRate >= 0.45 ? '#16A34A' : summary.recent.winRate >= 0.35 ? '#D97706' : '#DC2626',
+              }}>
+                {Math.round(summary.recent.winRate * 100)}% win rate
+              </span>
+              <span style={{ color: summary.recent.pnl >= 0 ? '#16A34A' : '#DC2626' }}>
+                {summary.recent.pnl >= 0 ? '+' : ''}${summary.recent.pnl.toFixed(2)}
+              </span>
+              <span style={{ color: 'var(--text-3)' }}>✅ {summary.recent.wins} · ❌ {summary.recent.losses}</span>
+              {summary.recent.winRate >= 0.45 && (
+                <span style={{ color: '#16A34A', fontWeight: 600 }}>Strategy improving ↑</span>
+              )}
+            </div>
           )}
-          {summary.worstTrade && (
-            <span>📉 Worst: <strong style={{ color: '#DC2626' }}>{summary.worstTrade.symbol}</strong> {summary.worstTrade.pnl >= 0 ? '+' : ''}${summary.worstTrade.pnl.toFixed(2)}</span>
-          )}
-          <span>✅ {summary.wins} wins · ❌ {summary.losses} losses</span>
+          <div style={{ display: 'flex', gap: 12, fontSize: 11, color: 'var(--text-3)', flexWrap: 'wrap' }}>
+            {summary.bestTrade && (
+              <span>🏆 Best: <strong style={{ color: '#16A34A' }}>{summary.bestTrade.symbol}</strong> +${summary.bestTrade.pnl.toFixed(2)}</span>
+            )}
+            {summary.worstTrade && (
+              <span>📉 Worst: <strong style={{ color: '#DC2626' }}>{summary.worstTrade.symbol}</strong> {summary.worstTrade.pnl >= 0 ? '+' : ''}${summary.worstTrade.pnl.toFixed(2)}</span>
+            )}
+            <span>✅ {summary.wins} wins · ❌ {summary.losses} losses all-time</span>
+          </div>
         </div>
       )}
     </div>

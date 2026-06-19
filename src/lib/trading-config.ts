@@ -63,9 +63,11 @@ export const MIN_TRADE_USD = 40        // skip tiny positions — fees eat all p
  * 1.0 = full slot; 0.5 = half slot for low-conviction setups.
  */
 export const POSITION_SIZES: Record<string, number> = {
+  BB_LOWER_BOUNCE  : 1.0,   // highest conviction — dynamic support bounce
   OVERSOLD_BOUNCE  : 1.0,
   SUPERNOVA_SHORT  : 1.0,
   MOMENTUM_LONG    : 1.0,
+  MACD_CROSS_LONG  : 0.90,  // institutional momentum confirmation
   PUMP_SHORT       : 0.85,
   VWAP_LONG        : 0.75,
   VWAP_SHORT       : 0.75,
@@ -146,16 +148,19 @@ export const STOCK_HOT_WINDOWS_UTC:  [number, number][] = [[13.5, 16], [19, 20.5
  */
 /**
  * Time discipline — the second pillar of "sleep in profit".
- * A trade that hasn't reached break-even in 12 min is NOT working.
- * Exit immediately. Don't hold and hope — free up capital for better entries.
+ * Give positions 20 min to develop — MOMENTUM and BB_BOUNCE setups need time.
+ * 12 min was too aggressive; it cut trades that were 8 min from TP.
  */
-export const TIME_EXIT_SECS     = 720   // 12 min: cut if position ≥ 50% toward TP
-export const STALE_EXIT_SECS    = 720   // 12 min: same — don't differentiate
-export const STALE_MIN_LOSS_PCT = 0.001 // cut ANY losing position after 12 min (not just -0.25%)
+export const TIME_EXIT_SECS     = 1200  // 20 min: cut if position ≥ 40% toward TP
+export const STALE_EXIT_SECS    = 1200  // 20 min: same — must wait for setup to resolve
+export const STALE_MIN_LOSS_PCT = 0.001 // cut ANY losing position after 20 min
 
-/** Take small winners aggressively — high-frequency strategy, cycle capital fast */
-export const QUICK_WIN_MIN_PCT   = 0.0035 // bank +0.35% quick wins (was 0.5%)
-export const QUICK_WIN_HOLD_SECS = 120    // after just 2 min (was 4 min)
+/** Quick win disabled effectively (threshold above TP ceiling for most setups).
+ *  At 33% win rate, cutting winners at +0.35% produced negative EV (-0.05%/trade).
+ *  Let the trailing stop (fires at +1.2%) and TP handle all exits instead.
+ */
+export const QUICK_WIN_MIN_PCT   = 0.012 // 1.2% — above most TPs, so it never fires
+export const QUICK_WIN_HOLD_SECS = 300   // 5 min hold required if it did fire
 
 /** Time-exit triggers when position is at least 40% of the way to TP */
 export const TIME_EXIT_TP_FRACTION = 0.40
@@ -176,11 +181,13 @@ export const MIN_SHORT_SCORE = -4.5
 
 /** Per-setup entry thresholds (momentum confirmed by candles can enter lower) */
 export const SETUP_MIN_LONG_SCORE: Record<string, number> = {
-  MOMENTUM_LONG   : 4.5,   // score floor is 5.5 in stage2, so always passes
-  VWAP_LONG       : 3.5,   // score floor is 4.0 in stage2 — fires on any below-VWAP asset
+  MOMENTUM_LONG   : 4.5,   // score floor is 5.5 in stage2
+  VWAP_LONG       : 4.0,   // raised from 3.5 — now needs EMA50 + vol confirmation
   OVERSOLD_BOUNCE : 4.5,   // score floor is 5.5 in stage2
+  MACD_CROSS_LONG : 4.5,   // score floor is 5.5 in stage2
+  BB_LOWER_BOUNCE : 5.0,   // score floor is 6.0 in stage2 — high conviction only
   FOREX_DIP       : 3.0,
-  MEAN_REVERT     : 2.8,   // score floor is 3.0 in stage2
+  MEAN_REVERT     : 2.8,
   UNTAGGED        : 5.0,
 }
 
@@ -191,15 +198,17 @@ export const SETUP_MIN_LONG_SCORE: Record<string, number> = {
  * R:R is 5:1+ so we're profitable even at 30% win rate.
  */
 export const SETUP_TP_SL: Record<string, { tp: number; sl: number }> = {
-  MOMENTUM_LONG   : { tp: 0.015, sl: 0.004 },  // 3.75:1 — tighter TP, faster cycling
+  MOMENTUM_LONG   : { tp: 0.015, sl: 0.004 },  // 3.75:1
   OVERSOLD_BOUNCE : { tp: 0.020, sl: 0.005 },  // 4:1
-  VWAP_LONG       : { tp: 0.010, sl: 0.004 },  // 2.5:1 — high-frequency scalp
+  VWAP_LONG       : { tp: 0.010, sl: 0.004 },  // 2.5:1
+  MACD_CROSS_LONG : { tp: 0.018, sl: 0.004 },  // 4.5:1 — rides the momentum wave
+  BB_LOWER_BOUNCE : { tp: 0.022, sl: 0.005 },  // 4.4:1 — mean reverts strongly
   PUMP_SHORT      : { tp: 0.015, sl: 0.004 },
   SUPERNOVA_SHORT : { tp: 0.020, sl: 0.005 },
   VWAP_SHORT      : { tp: 0.010, sl: 0.004 },
   FOREX_DIP       : { tp: 0.006, sl: 0.002 },
   FOREX_FADE      : { tp: 0.006, sl: 0.002 },
-  MEAN_REVERT     : { tp: 0.010, sl: 0.004 },  // 2.5:1 — scalp
+  MEAN_REVERT     : { tp: 0.010, sl: 0.004 },
 }
 
 export function getMinLongScore(setupTag: string): number {
@@ -229,7 +238,7 @@ export const ENRICH_TOP_N = 14
 export const SEED_CAPITAL = 500
 
 /** Setups the engine should never auto-disable from learning (core crypto edge) */
-export const CORE_LONG_SETUPS = ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE', 'VWAP_LONG'] as const
+export const CORE_LONG_SETUPS = ['MOMENTUM_LONG', 'OVERSOLD_BOUNCE', 'VWAP_LONG', 'BB_LOWER_BOUNCE', 'MACD_CROSS_LONG'] as const
 
 /** Below this equity % from seed, micro-size entries only */
 export const DRAWDOWN_HARD_STOP_PCT = -0.10

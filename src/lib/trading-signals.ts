@@ -85,7 +85,7 @@ function stage2Score(
   s1Score    : number,
 ): { score: number; reasons: string[]; setupTag: string } {
   const { change24h, assetType, isPumpCandidate } = asset
-  const { rsi, vwapDevPct, volSpike, atrPct, ema9, ema21, regime } = ind
+  const { rsi, vwapDevPct, volSpike, atrPct, ema9, ema21, ema50, regime, bb, macd, currentPrice } = ind
 
   let score   = s1Score
   const reasons: string[] = []
@@ -127,16 +127,48 @@ function stage2Score(
     setupTag = 'OVERSOLD_BOUNCE'
   }
   // VWAP LONG — two modes, both require asset NOT in a crash:
-  //   A) Dip-buy: vwapDevPct < -0.1%, change24h > -3% (not crashing)
-  //   B) Support-buy: price at VWAP in uptrend, RSI 42-60, clear EMA up
-  // Volume spike > 6× = panic dump, not value — block all entries.
+  //   A) Dip-buy: below VWAP, price above EMA50 (uptrend), minimum volume
+  //   B) Support-buy: at VWAP in uptrend, RSI 42-60, clear EMA alignment
+  // Volume spike > 6× = panic dump; < 0.7 = dead market with no buyers — block both.
+  // EMA50 check for Mode A: ensures we're buying a dip in an uptrend, not a falling knife.
   else if (
-    rsi >= 38 && rsi <= 65 && ema9 >= ema21 * 0.997 && volSpike < 6 && change24h > -3 &&
-    (vwapDevPct < -0.1 || (vwapDevPct < 0.15 && rsi >= 42 && rsi <= 60 && ema9 > ema21))
+    rsi >= 38 && rsi <= 65 && ema9 >= ema21 * 0.997 &&
+    volSpike >= 0.7 && volSpike < 6 && change24h > -3 &&
+    (
+      (vwapDevPct < -0.1 && currentPrice > ema50) ||                              // Mode A: dip in uptrend
+      (vwapDevPct < 0.15 && rsi >= 42 && rsi <= 60 && ema9 > ema21 * 1.001)     // Mode B: VWAP support
+    )
   ) {
     score = Math.max(score, 2.5) + 1.5   // floor → guaranteed 4.0 score
-    reasons.push(`VWAP ${vwapDevPct < 0 ? 'dip' : 'support'}: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP`)
+    reasons.push(`VWAP ${vwapDevPct < 0 ? 'dip' : 'support'}: RSI ${rsi.toFixed(0)}, ${vwapDevPct.toFixed(2)}% vs VWAP, vol ${volSpike.toFixed(1)}×`)
     setupTag = 'VWAP_LONG'
+  }
+  // MACD CROSS LONG — MACD histogram turns positive: fast money rotating in.
+  // Widely used by institutional desks as momentum inflection signal.
+  // Requires: MACD line above zero + histogram growing + EMA9 > EMA21 + RSI not overbought.
+  else if (
+    macd.bullish && macd.macd > 0 &&
+    rsi >= 40 && rsi <= 70 && ema9 > ema21 * 0.999 &&
+    change24h > -8 && volSpike > 0.5 && setupTag === 'UNTAGGED'
+  ) {
+    score = Math.max(score, 3.5) + 2.0   // floor → guaranteed 5.5+
+    reasons.push(`MACD cross bullish: MACD ${macd.macd.toFixed(5)}, hist +${macd.histogram.toFixed(5)}, RSI ${rsi.toFixed(0)}`)
+    setupTag = 'MACD_CROSS_LONG'
+  }
+  // BB LOWER BOUNCE — price at/near lower Bollinger Band with reversal signs.
+  // John Bollinger's own strategy: lower band is dynamic support; mean reversion with edge.
+  // Requires: within 0.8% of lower band + oversold RSI + not in free-fall.
+  else if (
+    bb.lower > 0 && currentPrice <= bb.lower * 1.008 &&
+    rsi < 38 && rsi > 15 &&                     // oversold but not crashed
+    change24h > -20 &&                           // not in free-fall
+    volSpike >= 0.5 &&                           // some buying volume
+    ema9 >= ema21 * 0.985 &&                    // not in strong confirmed downtrend
+    setupTag === 'UNTAGGED'
+  ) {
+    score = Math.max(score, 4.0) + 2.0   // floor → guaranteed 6.0+
+    reasons.push(`BB lower bounce: price ${((currentPrice / bb.lower - 1) * 100).toFixed(2)}% from band, width ${bb.width.toFixed(1)}%, RSI ${rsi.toFixed(0)}`)
+    setupTag = 'BB_LOWER_BOUNCE'
   }
   // MEAN_REVERT removed — every backtest showed it was a knife-catcher and
   // contributed most of the historical losses. A "mild dip in uptrend" is just

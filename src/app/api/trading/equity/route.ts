@@ -45,7 +45,7 @@ export async function GET() {
     })
   }
 
-  // Summary stats
+  // All-time summary stats
   const finalEquity = series[series.length - 1]?.equity ?? SEED_CAPITAL
   const totalPnl = finalEquity - SEED_CAPITAL
   const wins = (trades ?? []).filter((t) => Number(t.pnl) > 0).length
@@ -55,6 +55,13 @@ export async function GET() {
     Number(t.pnl) > Number(best?.pnl ?? -Infinity) ? t : best, null as typeof trades extends Array<infer U> ? U | null : null)
   const worstTrade = (trades ?? []).reduce((worst, t) =>
     Number(t.pnl) < Number(worst?.pnl ?? Infinity) ? t : worst, null as typeof trades extends Array<infer U> ? U | null : null)
+
+  // Recent 50-trade window — tracks strategy v2 performance separately from history
+  const recent = (trades ?? []).slice(-50)
+  const recentWins   = recent.filter((t) => Number(t.pnl) > 0).length
+  const recentLosses = recent.filter((t) => Number(t.pnl) < 0).length
+  const recentWinRate = recent.length > 0 ? recentWins / recent.length : 0
+  const recentPnl = recent.reduce((sum, t) => sum + Number(t.pnl ?? 0), 0)
 
   return NextResponse.json({
     seed: SEED_CAPITAL,
@@ -68,6 +75,13 @@ export async function GET() {
       winRate,
       bestTrade: bestTrade ? { symbol: bestTrade.symbol, pnl: Number(bestTrade.pnl) } : null,
       worstTrade: worstTrade ? { symbol: worstTrade.symbol, pnl: Number(worstTrade.pnl) } : null,
+      recent: {
+        trades   : recent.length,
+        wins     : recentWins,
+        losses   : recentLosses,
+        winRate  : recentWinRate,
+        pnl      : parseFloat(recentPnl.toFixed(2)),
+      },
     },
   })
 }

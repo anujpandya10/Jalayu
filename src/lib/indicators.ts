@@ -145,18 +145,87 @@ export function volumeSpike(volumes: number[]): number {
   return parseFloat((current / ma).toFixed(3))
 }
 
+// ── Bollinger Bands ───────────────────────────────────────────────────────────
+
+export interface BollingerBands {
+  upper : number
+  middle: number  // SMA20
+  lower : number
+  width : number  // (upper - lower) / middle × 100 — squeeze detector
+}
+
+export function calculateBollingerBands(closes: number[], period = 20, multiplier = 2): BollingerBands {
+  const n = Math.min(period, closes.length)
+  if (n < 2) {
+    const p = closes[closes.length - 1] ?? 0
+    return { upper: p, middle: p, lower: p, width: 0 }
+  }
+  const slice = closes.slice(-n)
+  const sma = slice.reduce((a, b) => a + b, 0) / n
+  const variance = slice.reduce((acc, v) => acc + Math.pow(v - sma, 2), 0) / n
+  const stddev = Math.sqrt(variance)
+  const upper = sma + multiplier * stddev
+  const lower = sma - multiplier * stddev
+  const width  = sma > 0 ? parseFloat(((upper - lower) / sma * 100).toFixed(4)) : 0
+  return {
+    upper : parseFloat(upper.toFixed(8)),
+    middle: parseFloat(sma.toFixed(8)),
+    lower : parseFloat(lower.toFixed(8)),
+    width,
+  }
+}
+
+// ── MACD — Moving Average Convergence Divergence ──────────────────────────────
+
+export interface MACDResult {
+  macd     : number   // EMA12 − EMA26
+  signal   : number   // EMA9 of macd series
+  histogram: number   // macd − signal
+  bullish  : boolean  // histogram positive and growing (momentum building)
+}
+
+export function calculateMACD(closes: number[]): MACDResult {
+  const empty: MACDResult = { macd: 0, signal: 0, histogram: 0, bullish: false }
+  if (closes.length < 27) return empty
+
+  // Build MACD line series from the first bar where EMA26 is stable
+  const macdLine: number[] = []
+  for (let i = 27; i <= closes.length; i++) {
+    const s = closes.slice(0, i)
+    macdLine.push(calculateEMA(s, 12) - calculateEMA(s, 26))
+  }
+
+  const currentMacd = macdLine[macdLine.length - 1]
+  const signal      = calculateEMA(macdLine, 9)
+  const histogram   = currentMacd - signal
+
+  const prevSignal     = macdLine.length >= 2 ? calculateEMA(macdLine.slice(0, -1), 9) : signal
+  const prevHistogram  = macdLine.length >= 2 ? macdLine[macdLine.length - 2] - prevSignal : 0
+
+  return {
+    macd     : parseFloat(currentMacd.toFixed(8)),
+    signal   : parseFloat(signal.toFixed(8)),
+    histogram: parseFloat(histogram.toFixed(8)),
+    bullish  : histogram > 0 && histogram > prevHistogram,
+  }
+}
+
 // ── Composite Indicator Bundle ────────────────────────────────────────────────
 
 export interface IndicatorBundle {
-  rsi       : number   // 0–100
-  atr       : number   // price units
-  atrPct    : number   // ATR as % of price (volatility proxy)
-  vwap      : number
-  vwapDevPct: number   // % above/below VWAP
-  ema9      : number
-  ema21     : number
-  volSpike  : number   // current_vol / MA20
-  regime    : 'HIGH_VOL' | 'LOW_VOL' | 'NORMAL'
+  rsi         : number   // 0–100
+  atr         : number   // price units
+  atrPct      : number   // ATR as % of price (volatility proxy)
+  vwap        : number
+  vwapDevPct  : number   // % above/below VWAP
+  ema9        : number
+  ema21       : number
+  ema50       : number   // longer trend baseline
+  volSpike    : number   // current_vol / MA20
+  bb          : BollingerBands
+  macd        : MACDResult
+  currentPrice: number
+  regime      : 'HIGH_VOL' | 'LOW_VOL' | 'NORMAL'
 }
 
 export interface CandleInput {
@@ -184,7 +253,10 @@ export function computeIndicators(candles: CandleInput[]): IndicatorBundle {
   const vwapDev = vwapDeviationPct(price, vwap)
   const ema9    = calculateEMA(closes, 9)
   const ema21   = calculateEMA(closes, 21)
+  const ema50   = calculateEMA(closes, 50)
   const spike   = volumeSpike(volumes)
+  const bb      = calculateBollingerBands(closes)
+  const macd    = calculateMACD(closes)
 
   const regime: IndicatorBundle['regime'] =
     atrPct >= 3.5 ? 'HIGH_VOL' :
@@ -198,7 +270,11 @@ export function computeIndicators(candles: CandleInput[]): IndicatorBundle {
     vwapDevPct: vwapDev,
     ema9,
     ema21,
+    ema50,
     volSpike: spike,
+    bb,
+    macd,
+    currentPrice: price,
     regime,
   }
 }
