@@ -72,6 +72,11 @@ export async function GET() {
       thesis: pos.thesis,
       entryTradeId: pos.entry_trade_id,
       createdAt: pos.created_at,
+      managed: pos.managed ?? false,
+      halfClosed: pos.half_closed ?? false,
+      stopPrice: pos.stop_price ?? null,
+      target1Price: pos.target1_price ?? null,
+      target2Price: pos.target2_price ?? null,
     }
   }))
 
