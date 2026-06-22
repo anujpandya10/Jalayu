@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import {
   ChevronDown, ChevronRight, Pause, Play, RefreshCw,
-  LayoutDashboard, Wallet, Sparkles, Layers,
+  LayoutDashboard, Wallet, Sparkles, Layers, GraduationCap,
 } from 'lucide-react'
 import AssetMap from '@/components/dashboard/trading/AssetMap'
 import BotConstellation from '@/components/dashboard/trading/BotConstellation'
@@ -14,6 +14,7 @@ import { LearningPanel, RealMoneyCTA } from '@/components/dashboard/trading/Trad
 import ApexTake from '@/components/dashboard/trading/ApexTake'
 import ApexHistory from '@/components/dashboard/trading/ApexHistory'
 import TradingQuietFeed from '@/components/dashboard/trading/TradingQuietFeed'
+import AcademyTab from '@/components/dashboard/trading/academy/AcademyTab'
 import { useStore } from '@/store/useStore'
 import {
   deriveEngineInsight,
@@ -85,7 +86,7 @@ interface PhaseInfo {
   forexActive: boolean
 }
 
-type TabId = 'overview' | 'positions' | 'apex' | 'more'
+type TabId = 'overview' | 'positions' | 'apex' | 'academy' | 'more'
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -508,6 +509,7 @@ export default function TradingView() {
     { id: 'overview', label: 'Overview', icon: <LayoutDashboard size={15} /> },
     { id: 'positions', label: 'Positions', icon: <Wallet size={15} /> },
     { id: 'apex', label: 'Apex', icon: <Sparkles size={15} /> },
+    { id: 'academy', label: 'Academy', icon: <GraduationCap size={15} /> },
     { id: 'more', label: 'More', icon: <Layers size={15} /> },
   ]
 
@@ -811,6 +813,9 @@ export default function TradingView() {
           </Section>
         </>
       )}
+
+      {/* ── Academy ── */}
+      {tab === 'academy' && <AcademyTab />}
 
       {/* ── More (advanced) ── */}
       {tab === 'more' && (

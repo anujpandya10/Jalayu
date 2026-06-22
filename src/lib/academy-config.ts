@@ -1,0 +1,2 @@
+export const ACADEMY_SEED_CAPITAL = 1000
+export const ACADEMY_MIN_TRADE_USD = 20
