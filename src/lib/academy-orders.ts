@@ -16,14 +16,32 @@ import { getQuote } from '@/lib/yahoo-finance'
 import { ACADEMY_SEED_CAPITAL, ACADEMY_MIN_TRADE_USD } from '@/lib/academy-config'
 
 export interface MonitorEvent {
-  kind: 'FILLED' | 'T1_HALF' | 'T2_CLOSE' | 'STOP' | 'CANCELLED'
+  kind: 'FILLED' | 'T1_HALF' | 'T2_CLOSE' | 'STOP' | 'CANCELLED' | 'EXPIRED'
   symbol: string
   detail: string
   pnl?: number
 }
 
+export type OrderType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT'
+export type Tif = 'DAY' | 'GTC'
+
 const round2 = (n: number) => Math.round(n * 100) / 100
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6
+
+/** ISO timestamp of the next 4pm ET (session close) — for DAY order expiry. */
+function nextSessionCloseISO(): string {
+  let etMin: number
+  try {
+    const s = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(new Date())
+    const [h, m] = s.split(':').map((n) => parseInt(n, 10))
+    etMin = h * 60 + m
+  } catch {
+    const d = new Date(); etMin = d.getUTCHours() * 60 + d.getUTCMinutes()
+  }
+  let minsUntil = 16 * 60 - etMin
+  if (minsUntil <= 0) minsUntil += 24 * 60
+  return new Date(Date.now() + minsUntil * 60_000).toISOString()
+}
 
 async function getCash(supabase: SupabaseClient, userId: string): Promise<number> {
   const { data } = await supabase.from('academy_portfolio').select('cash').eq('user_id', userId).single()
@@ -41,8 +59,12 @@ export interface PlaceOrderParams {
   symbol: string
   direction: 'LONG' | 'SHORT'
   shares: number
-  entryKind: 'MARKET' | 'LIMIT'
-  limitPrice?: number | null
+  /** Webull order type. MARKET fills now; the rest rest as working orders. */
+  orderType: OrderType
+  tif?: Tif
+  limitPrice?: number | null     // LIMIT / STOP_LIMIT
+  stopTrigger?: number | null    // STOP / STOP_LIMIT trigger price
+  // optional bracket plan applied on fill
   stopPrice?: number | null
   target1Price?: number | null
   target2Price?: number | null
@@ -78,17 +100,31 @@ export async function placeOrder(
     .from('academy_positions').select('id').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
   if (existing) return { ok: false, error: `Already have an open position in ${symbol} — close it first.`, status: 409 }
 
-  // ── LIMIT entry → pending order ──
-  if (p.entryKind === 'LIMIT') {
-    if (!(Number(p.limitPrice) > 0)) return { ok: false, error: 'Enter a limit price', status: 400 }
+  const tif: Tif = p.tif === 'GTC' ? 'GTC' : 'DAY'
+
+  // ── Working orders (LIMIT / STOP / STOP_LIMIT) → rest until triggered ──
+  if (p.orderType !== 'MARKET') {
+    if ((p.orderType === 'LIMIT' || p.orderType === 'STOP_LIMIT') && !(Number(p.limitPrice) > 0)) {
+      return { ok: false, error: 'Enter a limit price', status: 400 }
+    }
+    if ((p.orderType === 'STOP' || p.orderType === 'STOP_LIMIT') && !(Number(p.stopTrigger) > 0)) {
+      return { ok: false, error: 'Enter a stop trigger price', status: 400 }
+    }
     const { error } = await supabase.from('academy_orders').insert({
       user_id: userId, symbol, name: quote.name, direction: p.direction,
-      shares: round6(p.shares), limit_price: p.limitPrice,
+      order_type: p.orderType, tif,
+      shares: round6(p.shares),
+      limit_price: p.orderType === 'STOP' ? null : p.limitPrice,
+      stop_trigger: p.stopTrigger ?? null,
       stop_price: p.stopPrice ?? null, target1_price: p.target1Price ?? null, target2_price: p.target2Price ?? null,
       status: 'PENDING',
+      expires_at: tif === 'DAY' ? nextSessionCloseISO() : null,
     })
     if (error) return { ok: false, error: error.message, status: 500 }
-    return { ok: true, status: 200, filled: false, message: `Limit order set — fills when ${symbol} ${p.direction === 'LONG' ? 'drops to' : 'rises to'} $${Number(p.limitPrice).toFixed(2)}.` }
+    const trigWord = p.orderType === 'STOP' || p.orderType === 'STOP_LIMIT'
+      ? `triggers at $${Number(p.stopTrigger).toFixed(2)}`
+      : `fills when ${symbol} ${p.direction === 'LONG' ? 'drops to' : 'rises to'} $${Number(p.limitPrice).toFixed(2)}`
+    return { ok: true, status: 200, filled: false, message: `${p.orderType.replace('_', ' ')} order working (${tif}) — ${trigWord}.` }
   }
 
   // ── MARKET entry → fill now ──
@@ -144,25 +180,51 @@ export async function monitorAcademyOrders(
 
   let cash = await getCash(supabase, userId)
 
-  // ── 1. Fill due limit orders ──
+  const nowMs = Date.now()
+
+  // ── 1. Trigger/fill working orders (LIMIT / STOP / STOP_LIMIT) ──
   for (const o of pending) {
+    // DAY orders expire at the session close
+    if (o.tif === 'DAY' && o.expires_at && new Date(o.expires_at).getTime() < nowMs) {
+      await supabase.from('academy_orders').update({ status: 'CANCELLED', note: 'Expired (DAY)' }).eq('id', o.id)
+      events.push({ kind: 'EXPIRED', symbol: o.symbol, detail: `${o.symbol} day order expired unfilled.` })
+      continue
+    }
+
     const price = priceMap.get(o.symbol)
     if (price == null) continue
-    const fill = o.direction === 'LONG' ? price <= Number(o.limit_price) : price >= Number(o.limit_price)
-    if (!fill) continue
+    const isLong = o.direction === 'LONG'
+    const orderType = (o.order_type as OrderType) ?? 'LIMIT'
+    const limit = o.limit_price != null ? Number(o.limit_price) : null
+    const trigger = o.stop_trigger != null ? Number(o.stop_trigger) : null
 
-    const fillPrice = Number(o.limit_price)
+    let doFill = false
+    let fillPrice = price
+    if (orderType === 'LIMIT' && limit != null) {
+      doFill = isLong ? price <= limit : price >= limit
+      fillPrice = limit
+    } else if (orderType === 'STOP' && trigger != null) {
+      doFill = isLong ? price >= trigger : price <= trigger   // buy-stop / sell-stop → market on trigger
+      fillPrice = price
+    } else if (orderType === 'STOP_LIMIT' && trigger != null && limit != null) {
+      const triggered = isLong ? price >= trigger : price <= trigger
+      const withinLimit = isLong ? price <= limit : price >= limit
+      doFill = triggered && withinLimit
+      fillPrice = limit
+    }
+    if (!doFill) continue
+
     const shares = Number(o.shares)
     const cost = round2(fillPrice * shares)
     if (cost > cash) {
       await supabase.from('academy_orders').update({ status: 'CANCELLED', note: 'Not enough cash at fill time' }).eq('id', o.id)
-      events.push({ kind: 'CANCELLED', symbol: o.symbol, detail: 'Limit hit but not enough cash — order cancelled.' })
+      events.push({ kind: 'CANCELLED', symbol: o.symbol, detail: 'Order triggered but not enough cash — cancelled.' })
       continue
     }
     const hasBracket = o.stop_price != null || o.target1_price != null || o.target2_price != null
     const { data: trade } = await supabase.from('academy_trades').insert({
-      user_id: userId, symbol: o.symbol, name: o.name, action: 'BUY', direction: o.direction,
-      shares, price: fillPrice, total: cost, pnl: null, thesis: 'Limit order filled',
+      user_id: userId, symbol: o.symbol, name: o.name, action: isLong ? 'BUY' : 'SELL', direction: o.direction,
+      shares, price: fillPrice, total: cost, pnl: null, thesis: `${orderType} order filled`,
     }).select('id').single()
     await supabase.from('academy_positions').insert({
       user_id: userId, symbol: o.symbol, name: o.name, direction: o.direction,
@@ -173,7 +235,7 @@ export async function monitorAcademyOrders(
     })
     await supabase.from('academy_orders').update({ status: 'FILLED', filled_at: new Date().toISOString() }).eq('id', o.id)
     cash = round2(cash - cost)
-    events.push({ kind: 'FILLED', symbol: o.symbol, detail: `Limit filled: ${shares} @ $${fillPrice.toFixed(2)}.` })
+    events.push({ kind: 'FILLED', symbol: o.symbol, detail: `${o.symbol} filled: ${shares} @ $${fillPrice.toFixed(2)}.` })
   }
 
   // ── 2. Manage open bracket positions ──

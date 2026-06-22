@@ -17,12 +17,14 @@ export async function GET() {
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Return the recent order book (all statuses) so the client can show
+  // Working / Filled / Canceled tabs.
   const { data, error } = await supabase
     .from('academy_orders')
     .select('*')
     .eq('user_id', user.id)
-    .eq('status', 'PENDING')
     .order('created_at', { ascending: false })
+    .limit(60)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data ?? [])
 }
@@ -33,7 +35,7 @@ export async function POST(request: Request) {
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json() as Partial<PlaceOrderParams>
-  if (!body.symbol || !body.direction || !body.shares || !body.entryKind) {
+  if (!body.symbol || !body.direction || !body.shares || !body.orderType) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
@@ -41,8 +43,10 @@ export async function POST(request: Request) {
     symbol: body.symbol,
     direction: body.direction === 'SHORT' ? 'SHORT' : 'LONG',
     shares: Number(body.shares),
-    entryKind: body.entryKind === 'LIMIT' ? 'LIMIT' : 'MARKET',
+    orderType: body.orderType,
+    tif: body.tif === 'GTC' ? 'GTC' : 'DAY',
     limitPrice: body.limitPrice ?? null,
+    stopTrigger: body.stopTrigger ?? null,
     stopPrice: body.stopPrice ?? null,
     target1Price: body.target1Price ?? null,
     target2Price: body.target2Price ?? null,

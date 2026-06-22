@@ -31,15 +31,20 @@ interface Position {
   target2Price: number | null
 }
 
-interface PendingOrder {
+interface OrderRow {
   id: string
   symbol: string
   direction: 'LONG' | 'SHORT'
+  order_type: string | null
+  tif: string | null
   shares: number
-  limit_price: number
+  limit_price: number | null
+  stop_trigger: number | null
   stop_price: number | null
   target1_price: number | null
   target2_price: number | null
+  status: 'PENDING' | 'FILLED' | 'CANCELLED'
+  note: string | null
   created_at: string
 }
 
@@ -61,7 +66,8 @@ const MONITOR_POLL_MS = 25_000
 export default function PracticeDesk() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [history, setHistory] = useState<HistoryRow[]>([])
-  const [orders, setOrders] = useState<PendingOrder[]>([])
+  const [orders, setOrders] = useState<OrderRow[]>([])
+  const [orderTab, setOrderTab] = useState<'PENDING' | 'FILLED' | 'CANCELLED'>('PENDING')
   const [botStats, setBotStats] = useState<BotSetupStat[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [closingSymbol, setClosingSymbol] = useState<string | null>(null)
@@ -316,31 +322,55 @@ export default function PracticeDesk() {
         </div>
       )}
 
-      {/* Pending limit orders */}
-      {orders.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>
-            Working orders
-          </h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {orders.map((o) => (
-              <div key={o.id} style={{ padding: '11px 14px', borderRadius: 12, border: '1px dashed var(--border)', background: 'var(--surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 13 }}>{o.symbol} <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-3)' }}>{o.direction === 'SHORT' ? 'short' : 'long'} limit</span></div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                    {o.shares} sh, fills {o.direction === 'LONG' ? 'at/below' : 'at/above'} ${Number(o.limit_price).toFixed(2)}
-                    {o.target1_price != null && <> · bracket T1 ${Number(o.target1_price).toFixed(2)} / T2 ${o.target2_price != null ? Number(o.target2_price).toFixed(2) : '—'}</>}
-                  </div>
-                </div>
-                <button type="button" onClick={() => void cancelOrder(o.id)}
-                  style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                  Cancel
+      {/* Order blotter — Working / Filled / Canceled */}
+      {orders.length > 0 && (() => {
+        const counts = {
+          PENDING: orders.filter((o) => o.status === 'PENDING').length,
+          FILLED: orders.filter((o) => o.status === 'FILLED').length,
+          CANCELLED: orders.filter((o) => o.status === 'CANCELLED').length,
+        }
+        const shown = orders.filter((o) => o.status === orderTab)
+        const typeLabel = (o: OrderRow) => (o.order_type ?? 'LIMIT').replace('_', ' ').toLowerCase()
+        const trigLabel = (o: OrderRow) => {
+          if (o.order_type === 'STOP') return `stop $${Number(o.stop_trigger).toFixed(2)}`
+          if (o.order_type === 'STOP_LIMIT') return `stop $${Number(o.stop_trigger).toFixed(2)} → limit $${Number(o.limit_price).toFixed(2)}`
+          return `limit $${o.limit_price != null ? Number(o.limit_price).toFixed(2) : '—'}`
+        }
+        return (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+              {(['PENDING', 'FILLED', 'CANCELLED'] as const).map((s) => (
+                <button key={s} type="button" onClick={() => setOrderTab(s)}
+                  style={{ padding: '5px 10px', fontSize: 11, fontWeight: 600, borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit',
+                    background: orderTab === s ? 'var(--accent)' : 'var(--morning)', color: orderTab === s ? '#fff' : 'var(--text-2)', border: '1px solid var(--border)' }}>
+                  {s === 'PENDING' ? 'Working' : s === 'FILLED' ? 'Filled' : 'Canceled'} ({counts[s]})
                 </button>
-              </div>
-            ))}
+              ))}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {shown.length === 0 && <div style={{ padding: 14, textAlign: 'center', borderRadius: 10, border: '1px dashed var(--border)', fontSize: 12, color: 'var(--text-3)' }}>Nothing here.</div>}
+              {shown.map((o) => (
+                <div key={o.id} style={{ padding: '11px 14px', borderRadius: 12, border: orderTab === 'PENDING' ? '1px dashed var(--border)' : '1px solid var(--border)', background: 'var(--surface)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{o.symbol} <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-3)' }}>{o.direction === 'SHORT' ? 'sell' : 'buy'} {typeLabel(o)} · {o.tif ?? 'DAY'}</span></div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                      {o.shares} sh · {trigLabel(o)}
+                      {o.target1_price != null && <> · bracket T1 ${Number(o.target1_price).toFixed(2)} / T2 ${o.target2_price != null ? Number(o.target2_price).toFixed(2) : '—'}</>}
+                      {o.note && <> · {o.note}</>}
+                    </div>
+                  </div>
+                  {o.status === 'PENDING' && (
+                    <button type="button" onClick={() => void cancelOrder(o.id)}
+                      style={{ padding: '6px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                      Cancel
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {toast && (
         <div style={{ marginBottom: 16, padding: '11px 14px', borderRadius: 10, background: 'rgba(10,123,106,0.08)', border: '1px solid var(--accent)', fontSize: 12, color: 'var(--text-2)', display: 'flex', justifyContent: 'space-between', gap: 10, lineHeight: 1.5 }}>
