@@ -14,6 +14,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getQuote } from '@/lib/yahoo-finance'
 import { ACADEMY_SEED_CAPITAL, ACADEMY_MIN_TRADE_USD } from '@/lib/academy-config'
+import { computeAccount } from '@/lib/academy-account'
 
 export interface MonitorEvent {
   kind: 'FILLED' | 'T1_HALF' | 'T2_CLOSE' | 'STOP' | 'CANCELLED' | 'EXPIRED'
@@ -100,6 +101,12 @@ export async function placeOrder(
     .from('academy_positions').select('id').eq('user_id', userId).eq('symbol', symbol).maybeSingle()
   if (existing) return { ok: false, error: `Already have an open position in ${symbol} — close it first.`, status: 409 }
 
+  // Account state: PDT + buying power gate every opening order.
+  const account = await computeAccount(supabase, userId)
+  if (account.pdtRestricted) {
+    return { ok: false, error: `Pattern Day Trader rule: you've used ${account.dayTradesUsed} day trades in 5 sessions and your equity is under $${(25000).toLocaleString()}. You can't open new positions until that clears (close-only).`, status: 403 }
+  }
+
   const tif: Tif = p.tif === 'GTC' ? 'GTC' : 'DAY'
 
   // ── Working orders (LIMIT / STOP / STOP_LIMIT) → rest until triggered ──
@@ -132,8 +139,10 @@ export async function placeOrder(
   const shares = round6(p.shares)
   const cost = round2(price * shares)
   if (cost < ACADEMY_MIN_TRADE_USD) return { ok: false, error: `Order too small (min $${ACADEMY_MIN_TRADE_USD})`, status: 400 }
-  const cash = await getCash(supabase, userId)
-  if (cost > cash) return { ok: false, error: 'Not enough cash for that size', status: 400 }
+  if (cost > account.buyingPower) {
+    return { ok: false, error: `Exceeds buying power ($${account.buyingPower.toFixed(2)} available with 2× margin)`, status: 400 }
+  }
+  const cash = await getCash(supabase, userId)   // may go negative (margin loan)
 
   const { data: trade } = await supabase.from('academy_trades').insert({
     user_id: userId, symbol, name: quote.name, action: 'BUY', direction: p.direction,
@@ -216,11 +225,8 @@ export async function monitorAcademyOrders(
 
     const shares = Number(o.shares)
     const cost = round2(fillPrice * shares)
-    if (cost > cash) {
-      await supabase.from('academy_orders').update({ status: 'CANCELLED', note: 'Not enough cash at fill time' }).eq('id', o.id)
-      events.push({ kind: 'CANCELLED', symbol: o.symbol, detail: 'Order triggered but not enough cash — cancelled.' })
-      continue
-    }
+    // Margin account: filling may draw cash negative (a margin loan). Buying
+    // power was gated at placement; we let resting orders fill here.
     const hasBracket = o.stop_price != null || o.target1_price != null || o.target2_price != null
     const { data: trade } = await supabase.from('academy_trades').insert({
       user_id: userId, symbol: o.symbol, name: o.name, action: isLong ? 'BUY' : 'SELL', direction: o.direction,
@@ -246,10 +252,24 @@ export async function monitorAcademyOrders(
     const entry = Number(pos.avg_entry_price)
     const shares = Number(pos.shares)
     const original = Number(pos.original_shares ?? shares)
-    const stop = pos.stop_price != null ? Number(pos.stop_price) : null
+    let stop = pos.stop_price != null ? Number(pos.stop_price) : null
     const t1 = pos.target1_price != null ? Number(pos.target1_price) : null
     const t2 = pos.target2_price != null ? Number(pos.target2_price) : null
     const halfClosed = !!pos.half_closed
+
+    // Trailing stop: ratchet the anchor toward favorable price, derive a
+    // trailing stop level, and treat it as the (tighter) effective stop.
+    const trailPct = pos.trail_percent != null ? Number(pos.trail_percent) : null
+    if (trailPct != null && trailPct > 0) {
+      const prevAnchor = pos.trail_anchor != null ? Number(pos.trail_anchor) : entry
+      const anchor = isLong ? Math.max(prevAnchor, price) : Math.min(prevAnchor, price)
+      const trailStop = isLong ? anchor * (1 - trailPct / 100) : anchor * (1 + trailPct / 100)
+      if (anchor !== prevAnchor) {
+        await supabase.from('academy_positions').update({ trail_anchor: round2(anchor) }).eq('id', pos.id)
+      }
+      // Effective stop is the tighter of hard stop and trailing stop
+      stop = stop == null ? trailStop : (isLong ? Math.max(stop, trailStop) : Math.min(stop, trailStop))
+    }
 
     const hitStop = stop != null && (isLong ? price <= stop : price >= stop)
     const hitT2 = t2 != null && (isLong ? price >= t2 : price <= t2)

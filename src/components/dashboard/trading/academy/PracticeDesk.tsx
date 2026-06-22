@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { RotateCcw, Loader2 } from 'lucide-react'
 import OrderTicket from './OrderTicket'
 import SmartOrderPanel from './SmartOrderPanel'
 import TradeReviewCard, { type ReviewTrade, type ReviewVerdict } from './TradeReviewCard'
@@ -9,6 +8,8 @@ import TradeReviewFeed from './TradeReviewFeed'
 import TradingChart from './TradingChart'
 import TradingSchedule from './TradingSchedule'
 import ChartErrorBoundary from './ChartErrorBoundary'
+import AccountSummary, { type Account } from './AccountSummary'
+import ManagePosition from './ManagePosition'
 
 interface Position {
   symbol: string
@@ -65,6 +66,7 @@ const MONITOR_POLL_MS = 25_000
 
 export default function PracticeDesk() {
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
+  const [account, setAccount] = useState<Account | null>(null)
   const [history, setHistory] = useState<HistoryRow[]>([])
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [orderTab, setOrderTab] = useState<'PENDING' | 'FILLED' | 'CANCELLED'>('PENDING')
@@ -91,6 +93,11 @@ export default function PracticeDesk() {
     if (res.ok) setOrders(await res.json())
   }, [])
 
+  const loadAccount = useCallback(async () => {
+    const res = await fetch('/api/academy/account', { cache: 'no-store' })
+    if (res.ok) setAccount(await res.json())
+  }, [])
+
   const loadStats = useCallback(async () => {
     const res = await fetch('/api/academy/stats', { cache: 'no-store' })
     if (res.ok) {
@@ -100,8 +107,8 @@ export default function PracticeDesk() {
   }, [])
 
   const refreshAll = useCallback(async () => {
-    await Promise.all([loadPortfolio(), loadHistory(), loadOrders(), loadStats()])
-  }, [loadPortfolio, loadHistory, loadOrders, loadStats])
+    await Promise.all([loadPortfolio(), loadAccount(), loadHistory(), loadOrders(), loadStats()])
+  }, [loadPortfolio, loadAccount, loadHistory, loadOrders, loadStats])
 
   useEffect(() => {
     void (async () => {
@@ -211,41 +218,15 @@ export default function PracticeDesk() {
     return <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '24px 0' }}>Loading practice desk…</div>
   }
 
-  const positive = portfolio.totalPnL >= 0
-
   return (
     <div>
-      <div style={{
-        padding: '18px 20px', borderRadius: 14, marginBottom: 16,
-        background: 'var(--surface)', border: '1px solid var(--border)',
-      }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text-3)', marginBottom: 2 }}>Practice account</div>
-            <div style={{ fontSize: 26, fontWeight: 700, letterSpacing: '-0.02em' }}>${portfolio.totalValue.toFixed(2)}</div>
-            <div style={{ fontSize: 13, fontWeight: 600, marginTop: 4, color: positive ? '#15803d' : '#b91c1c' }}>
-              {positive ? '+' : '−'}${Math.abs(portfolio.totalPnL).toFixed(2)} ({positive ? '+' : ''}{portfolio.totalPnLPct.toFixed(2)}%) from ${portfolio.seedCapital} seed
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => void resetAccount()}
-            disabled={resetting}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5,
-              padding: '6px 10px', borderRadius: 8, fontSize: 11.5, fontWeight: 600,
-              border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)',
-              cursor: resetting ? 'wait' : 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            {resetting ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
-            Reset
-          </button>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text-3)' }}>
-          Cash ${portfolio.cash.toFixed(2)} · {portfolio.positions.length} open
-        </div>
-      </div>
+      <AccountSummary
+        account={account}
+        fallbackEquity={portfolio.totalValue}
+        seed={portfolio.seedCapital}
+        onReset={() => void resetAccount()}
+        resetting={resetting}
+      />
 
       {/* ── Chart cockpit ── */}
       <div style={{ marginBottom: 16 }}>
@@ -270,50 +251,52 @@ export default function PracticeDesk() {
             {portfolio.positions.map((pos) => {
               const up = pos.pnl >= 0
               return (
-                <div key={pos.symbol} style={{
-                  padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)',
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
-                }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{pos.symbol}</span>
+                <div key={pos.symbol} style={{ padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14 }}>{pos.symbol}</span>
+                        {pos.managed && (
+                          <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: 'var(--accent)', padding: '1px 6px', borderRadius: 99 }}>
+                            {pos.halfClosed ? 'HALF TAKEN · STOP AT B/E' : 'PROTECTED'}
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                        {pos.direction === 'SHORT' ? 'Short' : 'Long'} · {pos.shares} sh @ ${pos.avgEntryPrice.toFixed(2)} → ${pos.currentPrice.toFixed(2)}
+                        {pos.declaredSetupTag && <> · declared {pos.declaredSetupTag}</>}
+                      </div>
                       {pos.managed && (
-                        <span style={{ fontSize: 9, fontWeight: 700, color: '#fff', background: 'var(--accent)', padding: '1px 6px', borderRadius: 99 }}>
-                          {pos.halfClosed ? 'HALF TAKEN · STOP AT B/E' : 'BRACKET'}
-                        </span>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          {pos.stopPrice != null && <span>Stop ${pos.stopPrice.toFixed(2)}</span>}
+                          {pos.target1Price != null && <span>T1 ${pos.target1Price.toFixed(2)}{pos.halfClosed ? ' ✓' : ''}</span>}
+                          {pos.target2Price != null && <span>T2 ${pos.target2Price.toFixed(2)}</span>}
+                        </div>
                       )}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                      {pos.direction === 'SHORT' ? 'Short' : 'Long'} · {pos.shares} sh @ ${pos.avgEntryPrice.toFixed(2)} → ${pos.currentPrice.toFixed(2)}
-                      {pos.declaredSetupTag && <> · declared {pos.declaredSetupTag}</>}
-                    </div>
-                    {pos.managed && (
-                      <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        {pos.stopPrice != null && <span>Stop ${pos.stopPrice.toFixed(2)}</span>}
-                        {pos.target1Price != null && <span>T1 ${pos.target1Price.toFixed(2)}{pos.halfClosed ? ' ✓' : ''}</span>}
-                        {pos.target2Price != null && <span>T2 ${pos.target2Price.toFixed(2)}</span>}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: up ? '#15803d' : '#b91c1c' }}>
+                          {up ? '+' : ''}{pos.pnlPct.toFixed(2)}%
+                        </div>
+                        <div style={{ fontSize: 11, color: 'var(--text-3)' }}>${pos.value.toFixed(2)}</div>
                       </div>
-                    )}
+                      <button
+                        type="button"
+                        onClick={() => void closePosition(pos.symbol)}
+                        disabled={closingSymbol === pos.symbol}
+                        style={{
+                          padding: '7px 11px', borderRadius: 7, fontSize: 11.5, fontWeight: 600,
+                          border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)',
+                          cursor: closingSymbol === pos.symbol ? 'wait' : 'pointer', fontFamily: 'inherit',
+                        }}
+                      >
+                        {closingSymbol === pos.symbol ? 'Closing…' : 'Close'}
+                      </button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: up ? '#15803d' : '#b91c1c' }}>
-                        {up ? '+' : ''}{pos.pnlPct.toFixed(2)}%
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-3)' }}>${pos.value.toFixed(2)}</div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => void closePosition(pos.symbol)}
-                      disabled={closingSymbol === pos.symbol}
-                      style={{
-                        padding: '7px 11px', borderRadius: 7, fontSize: 11.5, fontWeight: 600,
-                        border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)',
-                        cursor: closingSymbol === pos.symbol ? 'wait' : 'pointer', fontFamily: 'inherit',
-                      }}
-                    >
-                      {closingSymbol === pos.symbol ? 'Closing…' : 'Close'}
-                    </button>
+                  <div style={{ marginTop: 8 }}>
+                    <ManagePosition symbol={pos.symbol} currentPrice={pos.currentPrice} onManaged={() => void refreshAll()} />
                   </div>
                 </div>
               )
