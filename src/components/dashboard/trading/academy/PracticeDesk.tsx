@@ -5,6 +5,9 @@ import { RotateCcw, Loader2 } from 'lucide-react'
 import OrderTicket from './OrderTicket'
 import TradeReviewCard, { type ReviewTrade, type ReviewVerdict } from './TradeReviewCard'
 import TradeReviewFeed from './TradeReviewFeed'
+import TradingChart from './TradingChart'
+import TradingSchedule from './TradingSchedule'
+import ChartErrorBoundary from './ChartErrorBoundary'
 
 interface Position {
   symbol: string
@@ -170,6 +173,20 @@ export default function PracticeDesk() {
         <div style={{ marginTop: 10, fontSize: 11.5, color: 'var(--text-3)' }}>
           Cash ${portfolio.cash.toFixed(2)} · {portfolio.positions.length} open
         </div>
+      </div>
+
+      {/* ── Chart cockpit ── */}
+      <div style={{ marginBottom: 16 }}>
+        <ChartErrorBoundary label="The chart">
+          <TradingChart />
+        </ChartErrorBoundary>
+      </div>
+
+      {/* ── Morning schedule ── */}
+      <div style={{ marginBottom: 16 }}>
+        <ChartErrorBoundary label="The schedule">
+          <TradingSchedule />
+        </ChartErrorBoundary>
       </div>
 
       {portfolio.positions.length > 0 && (
