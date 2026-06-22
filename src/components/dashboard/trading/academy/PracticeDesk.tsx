@@ -10,6 +10,7 @@ import TradingSchedule from './TradingSchedule'
 import ChartErrorBoundary from './ChartErrorBoundary'
 import AccountSummary, { type Account } from './AccountSummary'
 import ManagePosition from './ManagePosition'
+import WatchlistPanel from './WatchlistPanel'
 
 interface Position {
   symbol: string
@@ -77,6 +78,7 @@ export default function PracticeDesk() {
   const [resetting, setResetting] = useState(false)
   const [orderMode, setOrderMode] = useState<'quick' | 'smart'>('quick')
   const [toast, setToast] = useState<string | null>(null)
+  const [chartSymbol, setChartSymbol] = useState('AAPL')
 
   const loadPortfolio = useCallback(async () => {
     const res = await fetch('/api/academy/portfolio', { cache: 'no-store' })
@@ -231,7 +233,14 @@ export default function PracticeDesk() {
       {/* ── Chart cockpit ── */}
       <div style={{ marginBottom: 16 }}>
         <ChartErrorBoundary label="The chart">
-          <TradingChart />
+          <TradingChart symbol={chartSymbol} />
+        </ChartErrorBoundary>
+      </div>
+
+      {/* ── Watchlist ── */}
+      <div style={{ marginBottom: 16 }}>
+        <ChartErrorBoundary label="The watchlist">
+          <WatchlistPanel onPick={setChartSymbol} activeSymbol={chartSymbol} />
         </ChartErrorBoundary>
       </div>
 

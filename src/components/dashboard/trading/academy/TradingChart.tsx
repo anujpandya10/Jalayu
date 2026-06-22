@@ -33,11 +33,22 @@ function toLine(times: number[], arr: (number | null)[]): { time: number; value:
 
 interface Props {
   defaultSymbol?: string
+  /** When set/changed (e.g. tapping a watchlist name), the chart loads it. */
+  symbol?: string
 }
 
-export default function TradingChart({ defaultSymbol = 'AAPL' }: Props) {
-  const [symbolInput, setSymbolInput] = useState(defaultSymbol)
-  const [symbol, setSymbol] = useState(defaultSymbol)
+export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol }: Props) {
+  const [symbolInput, setSymbolInput] = useState(controlledSymbol ?? defaultSymbol)
+  const [symbol, setSymbol] = useState(controlledSymbol ?? defaultSymbol)
+
+  // Follow an externally-selected symbol (watchlist pick)
+  useEffect(() => {
+    if (controlledSymbol && controlledSymbol !== symbol) {
+      setSymbol(controlledSymbol)
+      setSymbolInput(controlledSymbol)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlledSymbol])
   const [interval, setInterval] = useState('5m')
   const [data, setData] = useState<CandlesResponse | null>(null)
   const [loading, setLoading] = useState(true)
