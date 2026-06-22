@@ -16,6 +16,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AssetData } from '@/lib/market-data'
 import { getQuote } from '@/lib/yahoo-finance'
 import { scoreAssetFull, type Signal } from '@/lib/trading-signals'
+import { REAL_SETUP_TAGS } from '@/lib/academy-config'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -46,11 +47,6 @@ export interface CoachReviewResult {
   engineSetup: string
   generatedAt: string
 }
-
-export const REAL_SETUP_TAGS = [
-  'MOMENTUM_LONG', 'OVERSOLD_BOUNCE', 'VWAP_LONG', 'MACD_CROSS_LONG', 'BB_LOWER_BOUNCE',
-  'PUMP_SHORT', 'SUPERNOVA_SHORT', 'VWAP_SHORT',
-]
 
 const COACH_SYSTEM_PROMPT = `You are the lead instructor at an intensive day-trading academy. A student just placed a real (paper) order and you owe them an honest, specific, immediate verdict — never vague, never "good job."
 

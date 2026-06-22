@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { Loader2, Search, TrendingUp, TrendingDown } from 'lucide-react'
-import { REAL_SETUP_TAGS } from '@/lib/academy-coach'
+import { REAL_SETUP_TAGS } from '@/lib/academy-config'
 import SetupStatsBadge from './SetupStatsBadge'
 import type { ReviewTrade, ReviewVerdict } from './TradeReviewCard'
 
