@@ -15,7 +15,7 @@ import { getAllAssets, fetchExpandedStockUniverse, isUsMarketOpen, type AssetDat
 import { getQuote } from '@/lib/yahoo-finance'
 import { scoreAssetFull, filterLongEntries, filterShortEntries, type Signal } from '@/lib/trading-signals'
 import {
-  getTpSl, MIN_TRADE_USD, BREAKEVEN_LOCK_PCT, TRAIL_TRIGGER_PCT, TRAIL_DISTANCE_PCT,
+  getTpSl, MIN_TRADE_USD, BREAKEVEN_LOCK_PCT, TRAIL_TRIGGER_PCT,
 } from '@/lib/trading-config'
 import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
 
@@ -35,6 +35,15 @@ const SESSION_FLATTEN_MIN_ET  = 15 * 60 + 55   // close anything still open at 3
 const DAILY_LOSS_LIMIT_USD = 30   // down $30 on the day (−3%) → stop for the day, protect capital
 const DAILY_PROFIT_LOCK_USD = 25  // up $25 (+2.5%) → green day secured, only take top-conviction setups from here
 const MAX_TRADES_PER_DAY = 16     // many small in/out trades, not a handful of big swings — cut losers fast, stack small wins
+
+// Let winners run — the asymmetry that actually grows an account. The first
+// half comes off at T1 to bank a sure profit and pay for the trade; the BACK
+// half then rides a loose trailing stop with NO upper ceiling. Most trades
+// still finish as small wins, but when a real runner shows up (a name going
+// +10/20% intraday, the kind that was being clipped at +1.5% before), the back
+// half captures most of it — one of those pays for a long string of small
+// losses. This is the Livermore/PTJ lesson the curriculum teaches, in code.
+const RUNNER_TRAIL_PCT = 0.02     // back half trails 2% below its peak — wide enough to survive a normal pullback and stay in the move
 // Self-learning: judge each setup by its own realized record and adapt.
 const LEARN_MIN_SAMPLES = 6
 const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
@@ -209,7 +218,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     } catch { /* skip this symbol this tick */ }
   }))
 
-  // ── 1. Manage open positions: half-close at T1 + move stop to breakeven, trail, exit at T2/stop ──
+  // ── 1. Manage open positions: half-close at T1 + move stop to breakeven, then let the back half RUN on a loose trailing stop (no ceiling) — exit only on the trail/stop ──
   for (const pos of open) {
     const sig = signalBySymbol.get(pos.symbol)
     if (!sig?.indicators) continue
@@ -221,13 +230,13 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     const original = Number(pos.original_shares)
     let stop = pos.stop_price != null ? Number(pos.stop_price) : null
     const t1 = pos.target1_price != null ? Number(pos.target1_price) : null
-    const t2 = pos.target2_price != null ? Number(pos.target2_price) : null
     const halfClosed = !!pos.half_closed
 
-    // Trailing stop once the remaining half is running (post break-even)
+    // Back half rides a loose trailing stop once it's running — no upper target,
+    // so a genuine runner is captured instead of being sold at a fixed ceiling.
     const pnlPct = isLong ? (price - entry) / entry : (entry - price) / entry
     if (halfClosed && pnlPct >= TRAIL_TRIGGER_PCT) {
-      const trail = isLong ? price * (1 - TRAIL_DISTANCE_PCT) : price * (1 + TRAIL_DISTANCE_PCT)
+      const trail = isLong ? price * (1 - RUNNER_TRAIL_PCT) : price * (1 + RUNNER_TRAIL_PCT)
       const improved = stop == null || (isLong ? trail > stop : trail < stop)
       if (improved) {
         const old = stop
@@ -243,7 +252,6 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     }
 
     const hitStop = stop != null && (isLong ? price <= stop : price >= stop)
-    const hitT2 = t2 != null && (isLong ? price >= t2 : price <= t2)
     const hitT1 = t1 != null && (isLong ? price >= t1 : price <= t1)
 
     const closeAll = async (kind: 'STOP_HIT' | 'EXIT_FULL', why: string) => {
@@ -263,8 +271,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
       events.push(`Closed ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)}`)
     }
 
-    if (hitStop) { await closeAll('STOP_HIT', halfClosed ? 'stop (now at break-even or better) was hit' : 'the stop-loss line was hit'); continue }
-    if (hitT2) { await closeAll('EXIT_FULL', 'price reached the final target'); continue }
+    if (hitStop) { await closeAll('STOP_HIT', halfClosed ? 'the trailing stop locked the run in' : 'the stop-loss line was hit'); continue }
 
     if (hitT1 && !halfClosed && t1 != null) {
       const half = Math.min(original / 2, shares)
@@ -411,7 +418,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'ENTRY', price, shares, pnl: 0,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll sell half at ${fmt(target1)} and let the rest run to ${fmt(target2)}.${legendNote}${learnNote}`,
+      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll sell half at ${fmt(target1)} to bank a sure profit, then let the rest run on a trailing stop — no ceiling, so if it turns into a real mover I stay in for it.${legendNote}${learnNote}`,
     })
     events.push(`Entered ${sig.asset.symbol} (${sig.setupTag}) at ${fmt(price)}`)
     void trade // id not currently needed downstream; kept for clarity/future linking
