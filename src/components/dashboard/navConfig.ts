@@ -14,6 +14,7 @@ import {
   Brain,
   Stethoscope,
   FlaskConical,
+  GraduationCap,
   Settings,
 } from 'lucide-react'
 
@@ -47,6 +48,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
       { key: 'people', icon: Users, label: 'People' },
       { key: 'widgets', icon: Puzzle, label: 'Widgets', badge: 'new-pill' },
       { key: 'trading', icon: TrendingUp, label: 'Trading', badge: 'new-pill' },
+      { key: 'academy', icon: GraduationCap, label: 'Academy', badge: 'new-pill' },
       { key: 'strategylab', icon: FlaskConical, label: 'Strategy Lab', badge: 'new-pill' },
       { key: 'settings', icon: Settings, label: 'Settings' },
     ],

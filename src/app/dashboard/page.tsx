@@ -22,6 +22,7 @@ import InsightsView from '@/components/dashboard/views/InsightsView'
 import HealthView from '@/components/dashboard/views/HealthView'
 import UnifiedCalendarView from '@/components/dashboard/views/UnifiedCalendarView'
 import TradingView from '@/components/dashboard/views/TradingView'
+import AcademyTab from '@/components/dashboard/trading/academy/AcademyTab'
 import StrategyLabView from '@/components/dashboard/views/StrategyLabView'
 import SettingsView from '@/components/dashboard/views/SettingsView'
 import FloatingChatButton from '@/components/chat/FloatingChatButton'
@@ -409,6 +410,12 @@ export default function DashboardPage() {
         )
       case 'trading':
         return <TradingView />
+      case 'academy':
+        return (
+          <div style={{ maxWidth: 720, margin: '0 auto', padding: '20px 20px 64px' }}>
+            <AcademyTab />
+          </div>
+        )
       case 'strategylab':
         return <StrategyLabView />
       case 'settings':

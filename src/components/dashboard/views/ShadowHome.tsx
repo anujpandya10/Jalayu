@@ -15,6 +15,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import toast from 'react-hot-toast'
 import type { Profile } from '@/lib/types'
+import { humanizeAIError } from '@/lib/ai-errors'
 
 interface Intent {
   id: string
@@ -783,7 +784,7 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
                   <KindIcon kind={i.kind} size={12} />
                   <p className="sh-row-text">{i.text}</p>
                 </div>
-                {i.error && <p className="sh-row-summary">{i.error}</p>}
+                {i.error && <p className="sh-row-summary">{humanizeAIError(i.error)}</p>}
                 <div className="sh-row-meta">
                   <span>{i.completed_at ? relTime(i.completed_at) : relTime(i.created_at)}</span>
                 </div>
@@ -857,7 +858,7 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
                 </div>
               ) : openIntent.status === 'failed' ? (
                 <div style={{ color: 'var(--error-text)', fontSize: 13 }}>
-                  {openIntent.error || 'Failed without an error message.'}
+                  {humanizeAIError(openIntent.error)}
                 </div>
               ) : (
                 <>

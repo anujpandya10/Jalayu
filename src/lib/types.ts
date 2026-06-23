@@ -244,6 +244,7 @@ export type SidebarView =
   | 'insights'
   | 'health'
   | 'trading'
+  | 'academy'
   | 'strategylab'
   | 'settings'
 
