@@ -12,6 +12,7 @@ import AccountSummary, { type Account } from './AccountSummary'
 import ManagePosition from './ManagePosition'
 import WatchlistPanel from './WatchlistPanel'
 import QuickTradeBar from './QuickTradeBar'
+import TradeAdvisor from './TradeAdvisor'
 
 interface Position {
   symbol: string
@@ -243,10 +244,22 @@ export default function PracticeDesk() {
         </ChartErrorBoundary>
       </div>
 
+      {/* ── Trade Advisor — the desk's own read on this symbol, auto-updating ── */}
+      <div style={{ marginBottom: 16 }}>
+        <ChartErrorBoundary label="The trade advisor">
+          <TradeAdvisor
+            symbol={chartSymbol}
+            cash={portfolio.cash}
+            hasPosition={portfolio.positions.some((p) => p.symbol === chartSymbol)}
+            onTraded={handleSmartPlaced}
+          />
+        </ChartErrorBoundary>
+      </div>
+
       {/* ── One-click quick trade (charted symbol) ── */}
       <div style={{ marginBottom: 16 }}>
         <ChartErrorBoundary label="Quick trade">
-          <QuickTradeBar symbol={chartSymbol} onTraded={handleSmartPlaced} />
+          <QuickTradeBar symbol={chartSymbol} position={portfolio.positions.find((p) => p.symbol === chartSymbol) ?? null} onTraded={handleSmartPlaced} />
         </ChartErrorBoundary>
       </div>
 

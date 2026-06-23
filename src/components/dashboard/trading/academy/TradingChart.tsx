@@ -548,7 +548,21 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         body: JSON.stringify({ symbol, direction, shares: chartQty, orderType: 'MARKET' }),
       })
       const json = await res.json()
-      onTraded?.(res.ok ? (json.message || `${direction === 'LONG' ? 'Bought' : 'Sold'} ${chartQty} ${symbol}`) : (json.error || 'Order failed'))
+      onTraded?.(res.ok ? (json.message || `${direction === 'LONG' ? 'Bought' : 'Shorted'} ${chartQty} ${symbol}`) : (json.error || 'Order failed'))
+    } finally {
+      setChartTradeBusy(null)
+    }
+  }
+
+  const chartClosePosition = async () => {
+    setChartTradeBusy('LONG')
+    try {
+      const res = await fetch('/api/academy/trade', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, intent: 'CLOSE' }),
+      })
+      const json = await res.json()
+      onTraded?.(res.ok ? (json.message || `Closed ${symbol}`) : (json.error || 'Close failed'))
     } finally {
       setChartTradeBusy(null)
     }
@@ -703,21 +717,30 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         <div ref={containerRef} onContextMenu={onContextMenu}
           style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden', cursor: pendingTool ? 'crosshair' : 'default' }} />
 
-        {/* On-chart one-click trade — buy/sell without leaving the chart */}
+        {/* On-chart one-click trade — buy/short without leaving the chart, or close if you already hold it */}
         <div style={{
           position: 'absolute', top: 8, right: 8, zIndex: 5, display: 'flex', alignItems: 'center', gap: 5,
           background: 'rgba(13,17,38,0.85)', borderRadius: 9, padding: 5, border: '1px solid rgba(255,255,255,0.08)',
         }}>
-          <input type="number" value={chartQty} min={1} onChange={(e) => setChartQty(Math.max(1, Number(e.target.value) || 1))}
-            style={{ width: 52, padding: '5px 6px', fontSize: 11.5, fontWeight: 600, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontFamily: 'inherit' }} />
-          <button type="button" onClick={() => void chartTrade('LONG')} disabled={chartTradeBusy != null || !isUsMarketOpenNow()}
-            style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, border: 'none', background: '#16A34A', color: '#fff', cursor: 'pointer', opacity: isUsMarketOpenNow() ? 1 : 0.45 }}>
-            Buy
-          </button>
-          <button type="button" onClick={() => void chartTrade('SHORT')} disabled={chartTradeBusy != null || !isUsMarketOpenNow()}
-            style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, border: 'none', background: '#DC2626', color: '#fff', cursor: 'pointer', opacity: isUsMarketOpenNow() ? 1 : 0.45 }}>
-            Sell
-          </button>
+          {position ? (
+            <button type="button" onClick={() => void chartClosePosition()} disabled={chartTradeBusy != null || !isUsMarketOpenNow()}
+              style={{ padding: '6px 12px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, border: 'none', background: '#1c1917', color: '#fff', cursor: 'pointer', opacity: isUsMarketOpenNow() ? 1 : 0.45 }}>
+              Close {position.direction === 'SHORT' ? 'short' : 'long'} ({position.shares})
+            </button>
+          ) : (
+            <>
+              <input type="number" value={chartQty} min={1} onChange={(e) => setChartQty(Math.max(1, Number(e.target.value) || 1))}
+                style={{ width: 52, padding: '5px 6px', fontSize: 11.5, fontWeight: 600, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontFamily: 'inherit' }} />
+              <button type="button" onClick={() => void chartTrade('LONG')} disabled={chartTradeBusy != null || !isUsMarketOpenNow()}
+                style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, border: 'none', background: '#16A34A', color: '#fff', cursor: 'pointer', opacity: isUsMarketOpenNow() ? 1 : 0.45 }}>
+                Buy
+              </button>
+              <button type="button" onClick={() => void chartTrade('SHORT')} disabled={chartTradeBusy != null || !isUsMarketOpenNow()}
+                style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, border: 'none', background: '#DC2626', color: '#fff', cursor: 'pointer', opacity: isUsMarketOpenNow() ? 1 : 0.45 }}>
+                Short
+              </button>
+            </>
+          )}
         </div>
       </div>
 
