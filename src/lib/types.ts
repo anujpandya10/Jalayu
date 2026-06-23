@@ -246,6 +246,7 @@ export type SidebarView =
   | 'trading'
   | 'academy'
   | 'strategylab'
+  | 'signuprequests'
   | 'settings'
 
 export type JourneyView = 'day1' | 'day2' | 'day7' | 'day30'

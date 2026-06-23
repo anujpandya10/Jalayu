@@ -6,13 +6,20 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useStore } from '@/store/useStore'
 import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
+import { isOwnerEmail } from '@/lib/owner'
 import JalayuLogo from '@/components/JalayuLogo'
 
 export default function TopBar() {
   const { sidebarView, setSidebarView } = useStore()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [isOwner, setIsOwner] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+
+  useEffect(() => {
+    const supabase = createClient()
+    void supabase.auth.getUser().then(({ data }) => setIsOwner(isOwnerEmail(data.user?.email)))
+  }, [])
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -129,7 +136,7 @@ export default function TopBar() {
                   >
                     {section}
                   </div>
-                  {items.map(({ key, icon: Icon, label, badge }) => {
+                  {items.filter((it) => !it.ownerOnly || isOwner).map(({ key, icon: Icon, label, badge }) => {
                     const isActive = sidebarView === key
                     return (
                       <button

@@ -15,6 +15,7 @@ import {
   Stethoscope,
   FlaskConical,
   GraduationCap,
+  Inbox,
   Settings,
 } from 'lucide-react'
 
@@ -23,6 +24,8 @@ export interface NavItem {
   icon: ComponentType<{ size?: number; color?: string }>
   label: string
   badge?: 'dot-red' | 'dot-green' | 'new-pill'
+  /** Only visible to the project owner (e.g. admin surfaces). */
+  ownerOnly?: boolean
 }
 
 export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
@@ -50,6 +53,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
       { key: 'trading', icon: TrendingUp, label: 'Trading', badge: 'new-pill' },
       { key: 'academy', icon: GraduationCap, label: 'Academy', badge: 'new-pill' },
       { key: 'strategylab', icon: FlaskConical, label: 'Strategy Lab', badge: 'new-pill' },
+      { key: 'signuprequests', icon: Inbox, label: 'Sign-up requests', badge: 'dot-green', ownerOnly: true },
       { key: 'settings', icon: Settings, label: 'Settings' },
     ],
   },
