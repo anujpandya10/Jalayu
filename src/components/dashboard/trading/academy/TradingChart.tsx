@@ -80,7 +80,14 @@ export interface ChartPosition {
   currentPrice: number
   pnl: number
   pnlPct: number
+  managed: boolean
+  stopPrice: number | null
+  target1Price: number | null
+  target2Price: number | null
 }
+
+type DragKind = 'stop' | 'target1' | 'target2'
+interface DraggableLine { handle: { applyOptions: (o: { price: number }) => void }; price: number }
 
 interface Props {
   defaultSymbol?: string
@@ -127,6 +134,9 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const [pnlBand, setPnlBand] = useState<{ top: number; height: number; left: number; width: number; up: boolean } | null>(null)
   const [chartQty, setChartQty] = useState(100)
   const [chartTradeBusy, setChartTradeBusy] = useState<'LONG' | 'SHORT' | null>(null)
+  const [dragPrice, setDragPrice] = useState<{ kind: DragKind; price: number; x: number; y: number } | null>(null)
+  const priceLinesRef = useRef<Partial<Record<DragKind, DraggableLine>>>({})
+  const draggingRef = useRef<DragKind | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<unknown>(null)
@@ -268,13 +278,23 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           setHover({ x: rect.left + param.point.x, y: rect.top + param.point.y, price })
         })
 
-        // Open position on this symbol: entry line + a shaded P&L zone that tracks pan/zoom.
+        // Open position on this symbol: entry line + draggable stop/target lines + a P&L zone.
+        priceLinesRef.current = {}
         if (position) {
           const isLong = position.direction === 'LONG'
           candleSeries.createPriceLine({
             price: position.avgEntryPrice, color: '#FFFFFF', lineWidth: 1, lineStyle: 1,
             axisLabelVisible: true, title: `Entry ${isLong ? 'long' : 'short'}`,
           })
+          if (position.managed) {
+            const makeDraggable = (kind: DragKind, price: number, color: string, title: string) => {
+              const handle = candleSeries.createPriceLine({ price, color, lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title })
+              priceLinesRef.current[kind] = { handle, price }
+            }
+            if (position.stopPrice != null) makeDraggable('stop', position.stopPrice, '#EF4444', 'Stop ⇕ drag')
+            if (position.target1Price != null) makeDraggable('target1', position.target1Price, '#22C55E', 'T1 ⇕ drag')
+            if (position.target2Price != null) makeDraggable('target2', position.target2Price, '#16A34A', 'T2 ⇕ drag')
+          }
           const updatePnlBand = () => {
             if (!containerRef.current) return
             const yEntry = candleSeries.priceToCoordinate(position.avgEntryPrice)
@@ -397,6 +417,89 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
       }
     }
   }, [data, series, overlays, drawings, position])
+
+  // Drag-to-adjust stop/target lines. Lives in its own effect (independent of the
+  // heavy chart-rebuild effect) and reads chart/series/line refs lazily at call
+  // time, so it works regardless of the async chart-load timing. Mousedown is
+  // captured ahead of the library's own canvas listeners (capture phase +
+  // stopPropagation) so grabbing a line doesn't also pan the chart.
+  useEffect(() => {
+    const HIT_PX = 7
+
+    const findHit = (y: number): DragKind | null => {
+      const cs = candleSeriesRef.current as { priceToCoordinate: (p: number) => number | null } | null
+      if (!cs) return null
+      for (const kind of ['stop', 'target1', 'target2'] as DragKind[]) {
+        const line = priceLinesRef.current[kind]
+        if (!line) continue
+        const ly = cs.priceToCoordinate(line.price)
+        if (ly != null && Math.abs(ly - y) <= HIT_PX) return kind
+      }
+      return null
+    }
+
+    const onMouseDown = (e: MouseEvent) => {
+      if (pendingToolRef.current || !containerRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const hit = findHit(e.clientY - rect.top)
+      if (hit) {
+        draggingRef.current = hit
+        e.preventDefault()
+        e.stopPropagation()
+      }
+    }
+
+    const onMouseMove = (e: MouseEvent) => {
+      const kind = draggingRef.current
+      const cs = candleSeriesRef.current as { coordinateToPrice: (y: number) => number | null } | null
+      if (!kind || !cs || !containerRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      const price = cs.coordinateToPrice(e.clientY - rect.top)
+      if (price == null) return
+      const line = priceLinesRef.current[kind]
+      if (line) { line.handle.applyOptions({ price }); line.price = price }
+      setDragPrice({ kind, price, x: rect.right - 100, y: e.clientY })
+    }
+
+    const onMouseUp = () => {
+      const kind = draggingRef.current
+      draggingRef.current = null
+      setDragPrice(null)
+      if (!kind) return
+      const line = priceLinesRef.current[kind]
+      if (!line) return
+      const rounded = Math.round(line.price * 100) / 100
+      const body: Record<string, unknown> = { symbol }
+      if (kind === 'stop') body.stopPrice = rounded
+      if (kind === 'target1') body.target1Price = rounded
+      if (kind === 'target2') body.target2Price = rounded
+      const label = kind === 'stop' ? 'Stop' : kind === 'target1' ? 'Target 1' : 'Target 2'
+      void fetch('/api/academy/positions/manage', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      }).then(async (res) => {
+        const json = await res.json().catch(() => ({}))
+        onTraded?.(res.ok ? `${label} moved to $${rounded.toFixed(2)}` : (json.error || `Failed to move ${label.toLowerCase()}`))
+      }).catch(() => onTraded?.(`Failed to move ${label.toLowerCase()}`))
+    }
+
+    const onHoverCursor = (e: MouseEvent) => {
+      if (draggingRef.current || pendingToolRef.current || !containerRef.current) return
+      const rect = containerRef.current.getBoundingClientRect()
+      containerRef.current.style.cursor = findHit(e.clientY - rect.top) ? 'ns-resize' : 'default'
+    }
+
+    const container = containerRef.current
+    container?.addEventListener('mousedown', onMouseDown, { capture: true })
+    container?.addEventListener('mousemove', onHoverCursor)
+    window.addEventListener('mousemove', onMouseMove)
+    window.addEventListener('mouseup', onMouseUp)
+    return () => {
+      container?.removeEventListener('mousedown', onMouseDown, { capture: true })
+      container?.removeEventListener('mousemove', onHoverCursor)
+      window.removeEventListener('mousemove', onMouseMove)
+      window.removeEventListener('mouseup', onMouseUp)
+    }
+  }, [symbol, onTraded])
 
   // Build { title, lines, histogram?, refLines? } for every active oscillator pane.
   const oscPanes = useMemo(() => {
@@ -602,13 +705,23 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         }} />
       )}
 
-      {hover && (
+      {hover && !dragPrice && (
         <div style={{
           position: 'fixed', left: hover.x + 14, top: hover.y - 11, zIndex: 40, pointerEvents: 'none',
           background: '#FBBF24', color: '#1c1917', fontSize: 11.5, fontWeight: 700,
           padding: '3px 9px', borderRadius: 6, boxShadow: '0 3px 10px rgba(0,0,0,0.35)', fontFamily: 'inherit',
         }}>
           {hover.price < 1 ? hover.price.toFixed(4) : hover.price.toFixed(2)}
+        </div>
+      )}
+
+      {dragPrice && (
+        <div style={{
+          position: 'fixed', left: dragPrice.x, top: dragPrice.y - 11, zIndex: 50, pointerEvents: 'none',
+          background: dragPrice.kind === 'stop' ? '#EF4444' : '#22C55E', color: '#fff', fontSize: 11.5, fontWeight: 800,
+          padding: '4px 10px', borderRadius: 6, boxShadow: '0 3px 10px rgba(0,0,0,0.4)', fontFamily: 'inherit',
+        }}>
+          {dragPrice.kind === 'stop' ? 'Stop' : dragPrice.kind === 'target1' ? 'T1' : 'T2'} → ${dragPrice.price.toFixed(2)}
         </div>
       )}
 
@@ -660,6 +773,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
 
       <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
         Real candles from Yahoo. Toggle indicators above; right-click anywhere on the chart for drawing tools.
+        {' '}If you have a managed position open, drag its Stop/T1/T2 lines to adjust them live.
         {' '}Outside US market hours the latest bars may be sparse.
       </div>
     </div>
