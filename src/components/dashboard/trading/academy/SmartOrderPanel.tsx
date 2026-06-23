@@ -46,8 +46,26 @@ export default function SmartOrderPanel({ onPlaced }: Props) {
 
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [suggestion, setSuggestion] = useState<{ verdict: string; aligned: boolean; warning: string | null; score: number } | null>(null)
+  const [suggesting, setSuggesting] = useState(false)
 
   const sym = symbolInput.toUpperCase().trim()
+
+  const suggestLevels = async () => {
+    if (!quote) return
+    setSuggesting(true); setSuggestion(null)
+    try {
+      const res = await fetch(`/api/academy/suggest?symbol=${encodeURIComponent(quote.quote.symbol)}&direction=${direction}`, { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) { setSubmitError(json.error || 'Suggest failed'); return }
+      setStop(String(json.suggested.stop))
+      setT1(String(json.suggested.target1))
+      setT2(String(json.suggested.target2))
+      setSuggestion({ verdict: json.verdict, aligned: json.aligned, warning: json.warning, score: json.score })
+    } finally {
+      setSuggesting(false)
+    }
+  }
 
   const lookup = async () => {
     if (!sym) return
@@ -222,6 +240,25 @@ export default function SmartOrderPanel({ onPlaced }: Props) {
               {numField('Target 1 (sell half)', t1, setT1)}
               {numField('Target 2 (sell rest)', t2, setT2)}
             </div>
+          )}
+
+          {orderType === 'BRACKET' && (
+            <>
+              <button type="button" onClick={() => void suggestLevels()} disabled={suggesting}
+                style={{ width: '100%', padding: '9px 0', marginBottom: 10, borderRadius: 8, fontSize: 12, fontWeight: 600, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: suggesting ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                {suggesting ? 'Reading the chart…' : '✨ Suggest stop & targets (and check the read)'}
+              </button>
+              {suggestion && (
+                <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 8, lineHeight: 1.5,
+                  background: suggestion.aligned ? 'rgba(34,197,94,0.08)' : 'rgba(217,119,6,0.1)',
+                  border: `1px solid ${suggestion.aligned ? 'rgba(34,197,94,0.3)' : 'rgba(217,119,6,0.35)'}` }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: suggestion.aligned ? '#15803d' : '#b45309', marginBottom: suggestion.warning ? 4 : 0 }}>
+                    {suggestion.aligned ? `✓ Read looks ${suggestion.verdict} (score ${suggestion.score.toFixed(1)}) — levels filled in` : `⚠ Caution — ${suggestion.verdict} read (score ${suggestion.score.toFixed(1)})`}
+                  </div>
+                  {suggestion.warning && <div style={{ fontSize: 11.5, color: 'var(--text-2)' }}>{suggestion.warning}</div>}
+                </div>
+              )}
+            </>
           )}
 
           {/* Plan preview */}

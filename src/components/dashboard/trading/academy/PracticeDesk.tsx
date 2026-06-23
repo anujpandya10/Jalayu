@@ -11,6 +11,7 @@ import ChartErrorBoundary from './ChartErrorBoundary'
 import AccountSummary, { type Account } from './AccountSummary'
 import ManagePosition from './ManagePosition'
 import WatchlistPanel from './WatchlistPanel'
+import QuickTradeBar from './QuickTradeBar'
 
 interface Position {
   symbol: string
@@ -234,6 +235,13 @@ export default function PracticeDesk() {
       <div style={{ marginBottom: 16 }}>
         <ChartErrorBoundary label="The chart">
           <TradingChart symbol={chartSymbol} />
+        </ChartErrorBoundary>
+      </div>
+
+      {/* ── One-click quick trade (charted symbol) ── */}
+      <div style={{ marginBottom: 16 }}>
+        <ChartErrorBoundary label="Quick trade">
+          <QuickTradeBar symbol={chartSymbol} onTraded={handleSmartPlaced} />
         </ChartErrorBoundary>
       </div>
 

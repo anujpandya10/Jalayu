@@ -14,7 +14,12 @@ interface CandlesResponse {
 
 type Overlay = 'ema9' | 'ema21' | 'ema50' | 'vwap' | 'bb'
 const INTERVALS: { id: string; label: string }[] = [
-  { id: '1m', label: '1m' }, { id: '5m', label: '5m' }, { id: '15m', label: '15m' }, { id: '1d', label: '1D' },
+  { id: '1m', label: '1m' }, { id: '5m', label: '5m' }, { id: '15m', label: '15m' },
+  { id: '30m', label: '30m' }, { id: '1h', label: '1h' }, { id: '1d', label: '1D' },
+]
+const RANGES: { id: string; label: string }[] = [
+  { id: '1d', label: '1D' }, { id: '5d', label: '5D' }, { id: '1mo', label: '1M' },
+  { id: '3mo', label: '3M' }, { id: '6mo', label: '6M' }, { id: '1y', label: '1Y' },
 ]
 const OVERLAY_META: { id: Overlay; label: string; color: string }[] = [
   { id: 'ema9', label: 'EMA 9', color: '#3B82F6' },
@@ -50,6 +55,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [controlledSymbol])
   const [interval, setInterval] = useState('5m')
+  const [range, setRange] = useState('5d')
   const [data, setData] = useState<CandlesResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -68,11 +74,11 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const drawModeRef = useRef(drawMode)
   drawModeRef.current = drawMode
 
-  const fetchData = useCallback(async (sym: string, iv: string) => {
+  const fetchData = useCallback(async (sym: string, iv: string, rg: string) => {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch(`/api/academy/candles?symbol=${encodeURIComponent(sym)}&interval=${iv}`, { cache: 'no-store' })
+      const res = await fetch(`/api/academy/candles?symbol=${encodeURIComponent(sym)}&interval=${iv}&range=${rg}`, { cache: 'no-store' })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`)
       setData(json as CandlesResponse)
@@ -84,7 +90,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     }
   }, [])
 
-  useEffect(() => { void fetchData(symbol, interval) }, [symbol, interval, fetchData])
+  useEffect(() => { void fetchData(symbol, interval, range) }, [symbol, interval, range, fetchData])
 
   // Pre-compute indicator series from candles
   const series = useMemo(() => {
@@ -239,11 +245,22 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
               {iv.label}
             </button>
           ))}
-          <button type="button" onClick={() => void fetchData(symbol, interval)} disabled={loading} title="Refresh"
+          <button type="button" onClick={() => void fetchData(symbol, interval, range)} disabled={loading} title="Refresh"
             style={{ padding: 5, marginLeft: 2, background: 'var(--surface-2, var(--morning))', border: '1px solid var(--border)', borderRadius: 6, cursor: loading ? 'wait' : 'pointer', display: 'flex' }}>
             <RefreshCw size={11} color="var(--text-2)" />
           </button>
         </div>
+      </div>
+
+      {/* Range (how far back) + interval is in the header above */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Range</span>
+        {RANGES.map((rg) => (
+          <button key={rg.id} type="button" onClick={() => setRange(rg.id)}
+            style={{ padding: '4px 9px', fontSize: 10.5, fontWeight: 600, background: range === rg.id ? 'var(--text)' : 'var(--surface-2, var(--morning))', color: range === rg.id ? 'var(--surface)' : 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {rg.label}
+          </button>
+        ))}
       </div>
 
       {/* Quick tickers */}
