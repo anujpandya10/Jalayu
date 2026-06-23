@@ -12,13 +12,13 @@
  *      only judges what the student already did.
  */
 import Anthropic from '@anthropic-ai/sdk'
+import { getUserAnthropic } from '@/lib/user-ai'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AssetData } from '@/lib/market-data'
 import { getQuote } from '@/lib/yahoo-finance'
 import { scoreAssetFull, type Signal } from '@/lib/trading-signals'
 import { REAL_SETUP_TAGS } from '@/lib/academy-config'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 /** How long to wait after an exit before checking what price actually did next. */
 export const HINDSIGHT_DELAY_SECS = 600
@@ -225,6 +225,7 @@ ${formatDeclaredBlock(params)}
 
 Produce your verdict as the specified JSON object.`
 
+  const anthropic = await getUserAnthropic(userId)
   const resp = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 500,
@@ -281,6 +282,7 @@ ${formatDeclaredBlock(params)}
 
 Judge the exit specifically: was closing here a reasoned decision (stop/target/thesis invalidated) or premature/late relative to the student's own plan? Produce your verdict as the specified JSON object.`
 
+  const anthropic = await getUserAnthropic(userId)
   const resp = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 500,

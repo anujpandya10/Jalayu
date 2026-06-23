@@ -47,10 +47,11 @@ export async function runResearchIntent(
   intentText: string,
   memoryContext: string = '',
   userContext: string = '',
+  client: Anthropic = anthropic,
 ): Promise<ResearchResult> {
   // Order matters: who → what they asked before → how to answer.
   const system = `${SYSTEM_PROMPT}${userContext}${memoryContext}`
-  const resp = await anthropic.messages.create({
+  const resp = await client.messages.create({
     model: MODEL,
     max_tokens: 2000,
     system,

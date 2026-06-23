@@ -5,6 +5,7 @@ import { Loader2, User } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile } from '@/lib/types'
 import { useStore } from '@/store/useStore'
+import ConnectAgent from '@/components/dashboard/views/ConnectAgent'
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
@@ -138,6 +139,7 @@ export default function SettingsView() {
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <ConnectAgent />
         <section className="card">
           <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
             Identity

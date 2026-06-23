@@ -23,6 +23,7 @@ import {
   formatMemoriesForPrompt,
 } from '@/lib/intent-memory'
 import { getUserContext, formatUserContextForPrompt } from '@/lib/user-context'
+import { getUserAnthropic, NoAgentError } from '@/lib/user-ai'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
@@ -142,6 +143,9 @@ async function runIntent(intentId: string, text: string, kind: IntentKind) {
     .eq('id', intentId)
 
   try {
+    // Resolve the user's own AI agent — their key, not the platform's.
+    const client = userId ? await getUserAnthropic(userId) : await getUserAnthropic('')
+
     // Context gathering — both lookups in parallel, both best-effort.
     const [memories, userCtx] = await Promise.all([
       findRelatedMemories(supabase, text).catch(() => []),
@@ -160,17 +164,17 @@ async function runIntent(intentId: string, text: string, kind: IntentKind) {
     let model: string
 
     if (kind === 'draft') {
-      const r = await runDraftIntent(text, memoryContext, userContext)
+      const r = await runDraftIntent(text, memoryContext, userContext, client)
       resultMd = r.resultMd
       resultSummary = r.resultSummary
       model = r.model
     } else if (kind === 'code') {
-      const r = await runCodeIntent(text, memoryContext, userContext)
+      const r = await runCodeIntent(text, memoryContext, userContext, client)
       resultMd = r.resultMd
       resultSummary = r.resultSummary
       model = r.model
     } else {
-      const r = await runResearchIntent(text, memoryContext, userContext)
+      const r = await runResearchIntent(text, memoryContext, userContext, client)
       resultMd = r.resultMd
       resultSummary = r.resultSummary
       citations = r.citations

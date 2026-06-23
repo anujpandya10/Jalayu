@@ -43,6 +43,7 @@ export async function runCodeIntent(
   intentText: string,
   memoryContext: string = '',
   userContext: string = '',
+  client: Anthropic = anthropic,
 ): Promise<CodeResult> {
   const ref: GithubRef | null = parseGithubRef(intentText)
   if (!ref) {
@@ -56,7 +57,7 @@ export async function runCodeIntent(
 
   const userMessage = `${repoBlock}\n\n[CHANGE REQUEST]\n${intentText}`
 
-  const resp = await anthropic.messages.create({
+  const resp = await client.messages.create({
     model: MODEL,
     max_tokens: 4000,
     system,

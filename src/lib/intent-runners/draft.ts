@@ -32,9 +32,10 @@ export async function runDraftIntent(
   intentText: string,
   memoryContext: string = '',
   userContext: string = '',
+  client: Anthropic = anthropic,
 ): Promise<DraftResult> {
   const system = `${SYSTEM_PROMPT}${userContext}${memoryContext}`
-  const resp = await anthropic.messages.create({
+  const resp = await client.messages.create({
     model: MODEL,
     max_tokens: 1500,
     system,
