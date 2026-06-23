@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Loader2, RefreshCw, Pencil, Eraser } from 'lucide-react'
+import { Loader2, RefreshCw, Minus, TrendingUp as TrendlineIcon, Percent, Star, Trash2 } from 'lucide-react'
 import {
   emaArray, vwapArray, bollingerArray, rsiArray, macdArray,
   smaArray, wmaArray, vwmaArray, keltnerArray, donchianArray, psarArray, superTrendArray, ichimokuArray,
@@ -17,6 +17,16 @@ interface CandlesResponse {
   asset: { symbol: string; name: string; price: number; change24h: number }
   candles: Bar[]
 }
+
+interface ChartPoint { time: number; price: number }
+type Drawing =
+  | { id: string; type: 'horizontal'; price: number }
+  | { id: string; type: 'trendline'; p1: ChartPoint; p2: ChartPoint }
+  | { id: string; type: 'fib'; p1: ChartPoint; p2: ChartPoint }
+interface PendingTool { type: 'trendline' | 'fib'; anchor: ChartPoint }
+interface ContextMenuState { x: number; y: number; point: ChartPoint }
+
+const FIB_LEVELS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1]
 
 type Overlay =
   | 'ema9' | 'ema21' | 'ema50' | 'sma20' | 'sma50' | 'sma200' | 'wma' | 'vwma'
@@ -95,15 +105,17 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     rsi: true, macd: false, stoch: false, stochrsi: false, adx: false, cci: false, willr: false,
     roc: false, atr: false, obv: false, mfi: false, cmf: false, ao: false, aroon: false,
   })
-  const [drawMode, setDrawMode] = useState(false)
-  const [lines, setLines] = useState<number[]>([])
+  const [drawings, setDrawings] = useState<Drawing[]>([])
+  const [pendingTool, setPendingTool] = useState<PendingTool | null>(null)
+  const [menu, setMenu] = useState<ContextMenuState | null>(null)
+  const [menuMsg, setMenuMsg] = useState<string | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<unknown>(null)
   const candleSeriesRef = useRef<unknown>(null)
   const priceLineHandlesRef = useRef<unknown[]>([])
-  const drawModeRef = useRef(drawMode)
-  drawModeRef.current = drawMode
+  const pendingToolRef = useRef(pendingTool)
+  pendingToolRef.current = pendingTool
 
   const fetchData = useCallback(async (sym: string, iv: string, rg: string) => {
     setLoading(true)
@@ -272,19 +284,42 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           addLine(series.ichSenkouB, 'rgba(239,68,68,0.5)')
         }
 
-        // Re-apply any drawn horizontal lines
-        for (const price of lines) {
-          const h = candleSeries.createPriceLine({ price, color: '#FBBF24', lineWidth: 1, lineStyle: 0, axisLabelVisible: true })
-          priceLineHandlesRef.current.push(h)
+        // Re-apply saved drawings (horizontal lines, trendlines, fib retracements)
+        for (const d of drawings) {
+          if (d.type === 'horizontal') {
+            const h = candleSeries.createPriceLine({ price: d.price, color: '#FBBF24', lineWidth: 1, lineStyle: 0, axisLabelVisible: true, title: 'H' })
+            priceLineHandlesRef.current.push(h)
+          } else if (d.type === 'trendline') {
+            addLine([{ time: d.p1.time, value: d.p1.price }, { time: d.p2.time, value: d.p2.price }], '#FBBF24', 2)
+          } else if (d.type === 'fib') {
+            for (const ratio of FIB_LEVELS) {
+              const price = d.p1.price + (d.p2.price - d.p1.price) * ratio
+              const h = candleSeries.createPriceLine({
+                price, color: 'rgba(250,204,21,0.7)', lineWidth: 1, lineStyle: 2, axisLabelVisible: true,
+                title: `${(ratio * 100).toFixed(1)}%`,
+              })
+              priceLineHandlesRef.current.push(h)
+            }
+          }
         }
 
-        // Click-to-draw a horizontal line at the clicked price
-        chart.subscribeClick((param: { point?: { y: number } }) => {
-          if (!drawModeRef.current || !param.point) return
+        // Second click of a 2-point tool (trendline / fib) finalizes the drawing
+        chart.subscribeClick((param: { point?: { x: number; y: number } }) => {
+          const tool = pendingToolRef.current
+          if (!tool || !param.point) return
           const price = candleSeries.coordinateToPrice(param.point.y)
-          if (price == null) return
-          const rounded = Math.round(price * 100) / 100
-          setLines((prev) => (prev.includes(rounded) ? prev : [...prev, rounded]))
+          let time: number | null = (chart.timeScale() as { coordinateToTime: (x: number) => number | null }).coordinateToTime(param.point.x)
+          if (time == null) {
+            const logical = (chart.timeScale() as { coordinateToLogical: (x: number) => number | null }).coordinateToLogical(param.point.x)
+            if (logical != null && data) {
+              const idx = Math.max(0, Math.min(data.candles.length - 1, Math.round(logical)))
+              time = data.candles[idx].time
+            }
+          }
+          if (price == null || time == null) return
+          const id = `${Date.now()}`
+          setDrawings((prev) => [...prev, { id, type: tool.type, p1: tool.anchor, p2: { time, price } }])
+          setPendingTool(null)
         })
 
         c.timeScale().fitContent()
@@ -308,7 +343,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         chartRef.current = null
       }
     }
-  }, [data, series, overlays, lines])
+  }, [data, series, overlays, drawings])
 
   // Build { title, lines, histogram?, refLines? } for every active oscillator pane.
   const oscPanes = useMemo(() => {
@@ -335,6 +370,57 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     const s = symbolInput.toUpperCase().trim()
     if (s) { setSymbol(s); onSymbolChange?.(s) }
   }
+
+  /** Screen (x,y) within the chart container → (time, price), clamped to the loaded range. */
+  const resolvePoint = useCallback((x: number, y: number): ChartPoint | null => {
+    if (!chartRef.current || !candleSeriesRef.current || !data) return null
+    const chart = chartRef.current as { timeScale: () => { coordinateToTime: (x: number) => number | null; coordinateToLogical: (x: number) => number | null } }
+    const candleSeries = candleSeriesRef.current as { coordinateToPrice: (y: number) => number | null }
+    const price = candleSeries.coordinateToPrice(y)
+    if (price == null) return null
+    let time = chart.timeScale().coordinateToTime(x)
+    if (time == null) {
+      const logical = chart.timeScale().coordinateToLogical(x)
+      if (logical == null) return null
+      const idx = Math.max(0, Math.min(data.candles.length - 1, Math.round(logical)))
+      time = data.candles[idx].time
+    }
+    return { time, price }
+  }, [data])
+
+  const onContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (!containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const point = resolvePoint(e.clientX - rect.left, e.clientY - rect.top)
+    if (!point) return
+    setMenu({ x: e.clientX, y: e.clientY, point })
+  }
+
+  const addToWatchlist = async () => {
+    setMenu(null)
+    try {
+      const res = await fetch('/api/academy/watchlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol }) })
+      const json = await res.json()
+      setMenuMsg(res.ok ? `${symbol} added to watchlist` : json.error || 'Failed to add')
+    } catch {
+      setMenuMsg('Failed to add')
+    }
+    setTimeout(() => setMenuMsg(null), 2500)
+  }
+
+  // Close the menu on outside click; cancel a pending 2-point tool with Escape.
+  useEffect(() => {
+    if (!menu) return
+    const close = () => setMenu(null)
+    window.addEventListener('mousedown', close)
+    return () => window.removeEventListener('mousedown', close)
+  }, [menu])
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setPendingTool(null); setMenu(null) } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 14 }}>
@@ -391,24 +477,47 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         </div>
       </div>
 
-      {/* Draw tools */}
-      <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
-        <button type="button" onClick={() => setDrawMode((v) => !v)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', fontSize: 10.5, fontWeight: 600, borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit',
-            background: drawMode ? '#FBBF24' : 'var(--morning)', color: drawMode ? '#1c1917' : 'var(--text-2)', border: `1px solid ${drawMode ? '#FBBF24' : 'var(--border)'}` }}>
-          <Pencil size={11} /> {drawMode ? 'Click chart to add line' : 'Draw line'}
-        </button>
-        {lines.length > 0 && (
-          <button type="button" onClick={() => setLines([])}
+      {/* Draw tools — right-click the chart to draw, like Webull */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center', fontSize: 10.5, color: 'var(--text-3)' }}>
+        <span>Right-click the chart to draw a line, trendline, or Fibonacci retracement.</span>
+        {pendingTool && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 9px', borderRadius: 99, background: '#FBBF24', color: '#1c1917', fontWeight: 600 }}>
+            Click a second point to finish the {pendingTool.type === 'fib' ? 'fib retracement' : 'trendline'} (Esc to cancel)
+          </span>
+        )}
+        {drawings.length > 0 && (
+          <button type="button" onClick={() => setDrawings([])}
             style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', fontSize: 10.5, fontWeight: 600, borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit', background: 'var(--morning)', color: 'var(--text-2)', border: '1px solid var(--border)' }}>
-            <Eraser size={11} /> Clear {lines.length}
+            <Trash2 size={11} /> Clear {drawings.length}
           </button>
         )}
+        {menuMsg && <span style={{ color: '#16A34A', fontWeight: 600 }}>{menuMsg}</span>}
       </div>
 
       {error && <div style={{ padding: 10, fontSize: 12, color: '#EF4444' }}>{error}</div>}
 
-      <div ref={containerRef} style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden' }} />
+      <div ref={containerRef} onContextMenu={onContextMenu}
+        style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden', cursor: pendingTool ? 'crosshair' : 'default' }} />
+
+      {menu && (
+        <div style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 9999, minWidth: 200, background: '#161b2e', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.45)', padding: 6, fontSize: 12.5 }}
+          onMouseDown={(e) => e.stopPropagation()}>
+          <MenuItem icon={<Minus size={13} />} label="Horizontal line" onClick={() => {
+            setDrawings((prev) => [...prev, { id: `${Date.now()}`, type: 'horizontal', price: Math.round(menu.point.price * 100) / 100 }])
+            setMenu(null)
+          }} />
+          <MenuItem icon={<TrendlineIcon size={13} />} label="Trendline" onClick={() => { setPendingTool({ type: 'trendline', anchor: menu.point }); setMenu(null) }} />
+          <MenuItem icon={<Percent size={13} />} label="Fibonacci retracement" onClick={() => { setPendingTool({ type: 'fib', anchor: menu.point }); setMenu(null) }} />
+          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
+          <MenuItem icon={<Star size={13} />} label="Add to watchlist" onClick={() => void addToWatchlist()} />
+          {drawings.length > 0 && (
+            <>
+              <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '4px 0' }} />
+              <MenuItem icon={<Trash2 size={13} />} label={`Clear ${drawings.length} drawing${drawings.length === 1 ? '' : 's'}`} onClick={() => { setDrawings([]); setMenu(null) }} />
+            </>
+          )}
+        </div>
+      )}
 
       {/* Timeframe controls — under the chart, Webull-style */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -437,7 +546,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
       ))}
 
       <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
-        Real candles from Yahoo. Toggle indicators above; tap <strong>Draw line</strong> then click the chart to mark a support/resistance or your target price.
+        Real candles from Yahoo. Toggle indicators above; right-click anywhere on the chart for drawing tools.
         {' '}Outside US market hours the latest bars may be sparse.
       </div>
     </div>
@@ -456,6 +565,18 @@ function Toggle({ active, color, label, onClick }: { active: boolean; color: str
         opacity: active ? 1 : 0.6,
       }}>
       <span style={{ width: 8, height: 8, borderRadius: 2, background: color }} />
+      {label}
+    </button>
+  )
+}
+
+function MenuItem({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '8px 10px', borderRadius: 7, border: 'none', background: 'transparent', color: '#E2E6F0', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12.5, textAlign: 'left' }}
+      onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.08)' }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}>
+      <span style={{ color: '#9CA8C2', display: 'flex' }}>{icon}</span>
       {label}
     </button>
   )
