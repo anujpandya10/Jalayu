@@ -40,9 +40,11 @@ interface Props {
   defaultSymbol?: string
   /** When set/changed (e.g. tapping a watchlist name), the chart loads it. */
   symbol?: string
+  /** Fires when the user loads a different symbol in the chart, so the rest of the desk (quick trade) can follow. */
+  onSymbolChange?: (symbol: string) => void
 }
 
-export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol }: Props) {
+export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol, onSymbolChange }: Props) {
   const [symbolInput, setSymbolInput] = useState(controlledSymbol ?? defaultSymbol)
   const [symbol, setSymbol] = useState(controlledSymbol ?? defaultSymbol)
 
@@ -216,7 +218,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
 
   const submitSymbol = () => {
     const s = symbolInput.toUpperCase().trim()
-    if (s) setSymbol(s)
+    if (s) { setSymbol(s); onSymbolChange?.(s) }
   }
 
   return (
@@ -238,35 +240,16 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           )}
           {loading && <Loader2 size={12} className="animate-spin" color="var(--text-3)" />}
         </div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          {INTERVALS.map((iv) => (
-            <button key={iv.id} type="button" onClick={() => setInterval(iv.id)}
-              style={{ padding: '4px 8px', fontSize: 10.5, fontWeight: 600, background: interval === iv.id ? 'var(--accent)' : 'var(--surface-2, var(--morning))', color: interval === iv.id ? '#fff' : 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
-              {iv.label}
-            </button>
-          ))}
-          <button type="button" onClick={() => void fetchData(symbol, interval, range)} disabled={loading} title="Refresh"
-            style={{ padding: 5, marginLeft: 2, background: 'var(--surface-2, var(--morning))', border: '1px solid var(--border)', borderRadius: 6, cursor: loading ? 'wait' : 'pointer', display: 'flex' }}>
-            <RefreshCw size={11} color="var(--text-2)" />
-          </button>
-        </div>
-      </div>
-
-      {/* Range (how far back) + interval is in the header above */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginRight: 2 }}>Range</span>
-        {RANGES.map((rg) => (
-          <button key={rg.id} type="button" onClick={() => setRange(rg.id)}
-            style={{ padding: '4px 9px', fontSize: 10.5, fontWeight: 600, background: range === rg.id ? 'var(--text)' : 'var(--surface-2, var(--morning))', color: range === rg.id ? 'var(--surface)' : 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {rg.label}
-          </button>
-        ))}
+        <button type="button" onClick={() => void fetchData(symbol, interval, range)} disabled={loading} title="Refresh"
+          style={{ padding: 5, background: 'var(--surface-2, var(--morning))', border: '1px solid var(--border)', borderRadius: 6, cursor: loading ? 'wait' : 'pointer', display: 'flex' }}>
+          <RefreshCw size={11} color="var(--text-2)" />
+        </button>
       </div>
 
       {/* Quick tickers */}
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 10 }}>
         {QUICK.map((s) => (
-          <button key={s} type="button" onClick={() => { setSymbolInput(s); setSymbol(s) }}
+          <button key={s} type="button" onClick={() => { setSymbolInput(s); setSymbol(s); onSymbolChange?.(s) }}
             style={{ padding: '3px 8px', fontSize: 10.5, fontWeight: 500, background: symbol === s ? 'var(--accent)' : 'var(--morning)', color: symbol === s ? '#fff' : 'var(--text-3)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit' }}>
             {s}
           </button>
@@ -297,6 +280,25 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
       {error && <div style={{ padding: 10, fontSize: 12, color: '#EF4444' }}>{error}</div>}
 
       <div ref={containerRef} style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden' }} />
+
+      {/* Timeframe controls — under the chart, Webull-style */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Range</span>
+        {RANGES.map((rg) => (
+          <button key={rg.id} type="button" onClick={() => setRange(rg.id)}
+            style={{ padding: '4px 9px', fontSize: 10.5, fontWeight: 600, background: range === rg.id ? 'var(--text)' : 'var(--surface-2, var(--morning))', color: range === rg.id ? 'var(--surface)' : 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {rg.label}
+          </button>
+        ))}
+        <span style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 2px' }} />
+        <span style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Candles</span>
+        {INTERVALS.map((iv) => (
+          <button key={iv.id} type="button" onClick={() => setInterval(iv.id)}
+            style={{ padding: '4px 8px', fontSize: 10.5, fontWeight: 600, background: interval === iv.id ? 'var(--accent)' : 'var(--surface-2, var(--morning))', color: interval === iv.id ? '#fff' : 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', fontFamily: 'inherit' }}>
+            {iv.label}
+          </button>
+        ))}
+      </div>
 
       {showRsi && series && (
         <div style={{ marginTop: 6 }}>

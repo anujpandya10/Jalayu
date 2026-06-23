@@ -25,24 +25,42 @@ async function fetchChart(symbol: string, range: string): Promise<unknown> {
   return res.json()
 }
 
+// Short-lived in-memory cache so the chart, watchlist, account and monitor
+// don't each hammer Yahoo for the same ticker (which triggers 429s). On a
+// rate-limit / failure we serve the last good value rather than erroring.
+const QUOTE_TTL_MS = 15_000
+const quoteCache = new Map<string, { at: number; quote: YahooQuote }>()
+
 export async function getQuote(symbol: string): Promise<YahooQuote> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = await fetchChart(symbol, '5d') as any
-  const result = data?.chart?.result?.[0]
-  if (!result) throw new Error(`No data for ${symbol}`)
+  const key = symbol.toUpperCase()
+  const cached = quoteCache.get(key)
+  if (cached && Date.now() - cached.at < QUOTE_TTL_MS) return cached.quote
 
-  const meta = result.meta
-  const price: number = meta.regularMarketPrice ?? 0
-  const prevClose: number = meta.chartPreviousClose ?? meta.previousClose ?? price
-  const change = price - prevClose
-  const changePct = prevClose !== 0 ? (change / prevClose) * 100 : 0
-  const name: string = meta.longName ?? meta.shortName ?? symbol
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await fetchChart(symbol, '5d') as any
+    const result = data?.chart?.result?.[0]
+    if (!result) throw new Error(`No data for ${symbol}`)
 
-  const closes: number[] = (result.indicators?.quote?.[0]?.close ?? [])
-    .filter((c: number | null) => c != null)
-    .slice(-5)
+    const meta = result.meta
+    const price: number = meta.regularMarketPrice ?? 0
+    const prevClose: number = meta.chartPreviousClose ?? meta.previousClose ?? price
+    const change = price - prevClose
+    const changePct = prevClose !== 0 ? (change / prevClose) * 100 : 0
+    const name: string = meta.longName ?? meta.shortName ?? symbol
 
-  return { symbol, name, price, change, changePct, sparkline: closes }
+    const closes: number[] = (result.indicators?.quote?.[0]?.close ?? [])
+      .filter((c: number | null) => c != null)
+      .slice(-5)
+
+    const quote: YahooQuote = { symbol, name, price, change, changePct, sparkline: closes }
+    quoteCache.set(key, { at: Date.now(), quote })
+    return quote
+  } catch (err) {
+    // Rate-limited or transient failure → serve the last good quote if we have one
+    if (cached) return cached.quote
+    throw err
+  }
 }
 
 export async function getOHLC(symbol: string, range: string): Promise<YahooOHLC> {

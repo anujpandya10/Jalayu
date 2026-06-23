@@ -13,6 +13,7 @@
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getQuote } from '@/lib/yahoo-finance'
+import { isUsMarketOpen } from '@/lib/market-data'
 import { ACADEMY_SEED_CAPITAL, ACADEMY_MIN_TRADE_USD } from '@/lib/academy-config'
 import { computeAccount } from '@/lib/academy-account'
 
@@ -88,6 +89,11 @@ export async function placeOrder(
   const symbol = p.symbol.toUpperCase().trim()
   if (!/^[A-Z.]{1,10}$/.test(symbol)) return { ok: false, error: 'Enter a valid ticker', status: 400 }
   if (!(p.shares > 0)) return { ok: false, error: 'Shares must be greater than 0', status: 400 }
+
+  // Stocks-only practice: no orders when the US market is closed.
+  if (!isUsMarketOpen()) {
+    return { ok: false, error: 'US market is closed (opens 9:30am–4:00pm ET, weekdays). Orders can only be placed during market hours.', status: 409 }
+  }
 
   const hasBracket = p.stopPrice != null || p.target1Price != null || p.target2Price != null
 

@@ -234,7 +234,7 @@ export default function PracticeDesk() {
       {/* ── Chart cockpit ── */}
       <div style={{ marginBottom: 16 }}>
         <ChartErrorBoundary label="The chart">
-          <TradingChart symbol={chartSymbol} />
+          <TradingChart symbol={chartSymbol} onSymbolChange={setChartSymbol} />
         </ChartErrorBoundary>
       </div>
 
