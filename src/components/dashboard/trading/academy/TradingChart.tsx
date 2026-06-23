@@ -15,6 +15,7 @@ import { isUsMarketOpenNow } from '@/lib/market-hours'
 interface CandlesResponse {
   symbol: string
   interval: string
+  range: string
   asset: { symbol: string; name: string; price: number; change24h: number }
   candles: Bar[]
 }
@@ -39,8 +40,10 @@ const INTERVALS: { id: string; label: string }[] = [
 ]
 const RANGES: { id: string; label: string }[] = [
   { id: '1d', label: '1D' }, { id: '5d', label: '5D' }, { id: '1mo', label: '1M' },
-  { id: '3mo', label: '3M' }, { id: '6mo', label: '6M' }, { id: '1y', label: '1Y' },
+  { id: '3mo', label: '3M' }, { id: '6mo', label: '6M' }, { id: '1y', label: '1Y' }, { id: 'max', label: 'ALL' },
 ]
+const RANGE_IDS = RANGES.map((r) => r.id)
+const INTERVAL_IDS_ORDER = ['1m', '5m', '15m', '30m', '1h', '1d']
 const OVERLAY_META: { id: Overlay; label: string; color: string }[] = [
   { id: 'ema9', label: 'EMA 9', color: '#3B82F6' },
   { id: 'ema21', label: 'EMA 21', color: '#F59E0B' },
@@ -147,6 +150,9 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const priceLineHandlesRef = useRef<unknown[]>([])
   const pendingToolRef = useRef(pendingTool)
   pendingToolRef.current = pendingTool
+  // Guards the auto-expand-on-scroll-past-the-edge logic below: set the moment
+  // we bump range/interval to fetch more history, cleared once that fetch lands.
+  const autoExpandingRef = useRef(false)
 
   const fetchData = useCallback(async (sym: string, iv: string, rg: string) => {
     setLoading(true)
@@ -165,6 +171,8 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   }, [])
 
   useEffect(() => { void fetchData(symbol, interval, range) }, [symbol, interval, range, fetchData])
+  // New data has landed (or the fetch failed) — safe to react to the next scroll-to-edge again.
+  useEffect(() => { autoExpandingRef.current = false }, [data])
 
   // Pre-compute indicator series from candles
   const series = useMemo(() => {
@@ -410,6 +418,36 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         })
 
         c.timeScale().fitContent()
+
+        // Zooming/panning past the oldest loaded bar shows nothing because that's
+        // genuinely all we've fetched — Webull/TradingView solve this by quietly
+        // loading more history the moment you scroll into that empty space.
+        // Logical range goes negative past the left edge, which is the signal we
+        // want (unlike "from <= 0", which is also true right after fitContent()
+        // fits everything on screen and would fire on every load).
+        const ts = c.timeScale() as { getVisibleLogicalRange: () => { from: number; to: number } | null; subscribeVisibleLogicalRangeChange: (cb: () => void) => void }
+        const onVisibleRangeChange = () => {
+          if (autoExpandingRef.current) return
+          const lr = ts.getVisibleLogicalRange()
+          if (!lr || lr.from > -2) return
+          const curRange = data.range ?? range
+          const curInterval = data.interval ?? interval
+          const rIdx = RANGE_IDS.indexOf(curRange)
+          const iIdx = INTERVAL_IDS_ORDER.indexOf(curInterval)
+          if (rIdx >= 0 && rIdx < RANGE_IDS.length - 1) {
+            autoExpandingRef.current = true
+            setRange(RANGE_IDS[rIdx + 1])
+          } else if (iIdx >= 0 && iIdx < INTERVAL_IDS_ORDER.length - 1) {
+            // Already at the widest range this interval's granularity supports —
+            // step to a coarser candle so there's more history to show.
+            autoExpandingRef.current = true
+            const nextInterval = INTERVAL_IDS_ORDER[iIdx + 1]
+            setInterval(nextInterval)
+            setRange(nextInterval === '1d' ? 'max' : '1y')
+          }
+        }
+        ts.subscribeVisibleLogicalRangeChange(onVisibleRangeChange)
+
         const onResize = () => {
           if (containerRef.current && chartRef.current) {
             ;(chartRef.current as { applyOptions: (o: { width: number }) => void }).applyOptions({ width: containerRef.current.clientWidth })

@@ -9,20 +9,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
 const ALLOWED_INTERVALS = new Set(['1m', '5m', '15m', '30m', '1h', '1d'])
-const ALLOWED_RANGES = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y'])
+const ALLOWED_RANGES = new Set(['1d', '5d', '1mo', '3mo', '6mo', '1y', 'max'])
 const YF_HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
   Accept: 'application/json',
 }
 
-const RANGE_DAYS: Record<string, number> = { '1d': 1, '5d': 5, '1mo': 30, '3mo': 90, '6mo': 180, '1y': 365 }
+const RANGE_DAYS: Record<string, number> = { '1d': 1, '5d': 5, '1mo': 30, '3mo': 90, '6mo': 180, '1y': 365, max: Infinity }
 
 /** Yahoo limits how far back each intraday interval can go — clamp to keep requests valid. */
 function clampRange(interval: string, range: string): string {
   const days = RANGE_DAYS[range] ?? 5
   if (interval === '1m' && days > 5) return '5d'        // 1m: ~7d max
   if ((interval === '5m' || interval === '15m' || interval === '30m') && days > 60) return '1mo'
-  return range                                            // 1h up to ~2y, 1d unlimited
+  if (interval === '1h' && days > 730) return '1y'       // 1h: Yahoo allows ~2y, but our UI tops out at 1y
+  return range                                            // 1d truly unlimited — 'max' is allowed through
 }
 
 interface ChartBar {
