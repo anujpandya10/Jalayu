@@ -23,12 +23,45 @@ export const AUTO_SEED_CAPITAL = 1000
 const MAX_SLOTS = 3
 const MAX_POSITION_PCT = 0.32
 const COOLDOWN_MINUTES = 20
-const PREP_START_MIN_ET = 9 * 60 + 15  // 9:15am ET — 15 min before the open
+const PREP_START_MIN_ET = 9 * 60 + 15      // 9:15am ET — 15 min before the open
 const MARKET_OPEN_MIN_ET = 9 * 60 + 30
+// Morning-only session: take entries for the volatile first ~3 hours, then
+// stop and flatten — the afternoon chop isn't worth the risk for this style.
+const ENTRY_WINDOW_END_MIN_ET = 12 * 60 + 30   // no new entries after 12:30pm ET
+const SESSION_FLATTEN_MIN_ET  = 12 * 60 + 35   // close anything still open at 12:35pm ET
+
+// Risk discipline (the part that actually keeps an account alive):
+const DAILY_LOSS_LIMIT_USD = 30   // down $30 on the day (−3%) → stop for the day, protect capital
+const DAILY_PROFIT_LOCK_USD = 20  // up $20 (+2%) → green day secured, only take top-conviction setups
+const MAX_TRADES_PER_DAY = 6      // don't overtrade — quality over quantity
+// Self-learning: judge each setup by its own realized record and adapt.
+const LEARN_MIN_SAMPLES = 6
+const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
+const LEARN_GREAT_WINRATE = 0.60  // >60% → size it up
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 const r6 = (n: number) => Math.round(n * 1e6) / 1e6
 const fmt = (n: number) => `$${n.toFixed(2)}`
+
+function etDateKeyOf(d: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d)
+}
+
+/** Win rate + sample count per setup tag from this account's own closed trades. */
+async function learnSetupStats(supabase: SupabaseClient, userId: string): Promise<Map<string, { wins: number; total: number; winRate: number }>> {
+  const { data } = await supabase
+    .from('academy_auto_trades').select('setup_tag, pnl').eq('user_id', userId).not('pnl', 'is', null).order('created_at', { ascending: false }).limit(120)
+  const byTag = new Map<string, { wins: number; total: number; winRate: number }>()
+  for (const t of data ?? []) {
+    const tag = t.setup_tag ?? 'UNTAGGED'
+    const cur = byTag.get(tag) ?? { wins: 0, total: 0, winRate: 0 }
+    cur.total++
+    if (Number(t.pnl) > 0) cur.wins++
+    byTag.set(tag, cur)
+  }
+  for (const v of byTag.values()) v.winRate = v.total > 0 ? v.wins / v.total : 0
+  return byTag
+}
 
 /** The curriculum chapter (legendary trader) behind a given setup tag, if any. */
 function legendFor(setupTag: string) {
@@ -229,7 +262,51 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
 
   await supabase.from('academy_auto_portfolio').update({ cash, updated_at: new Date().toISOString() }).eq('user_id', userId)
 
-  // ── 2. Scan for a new entry if a slot is free ──
+  const { minutesOfDay: minsNow, dateKey: todayEt } = nowEt()
+
+  // ── 2. End-of-morning flatten: close everything still open once the window's over ──
+  if (minsNow >= SESSION_FLATTEN_MIN_ET) {
+    const { data: leftoverRaw } = await supabase.from('academy_auto_positions').select('*').eq('user_id', userId)
+    for (const pos of leftoverRaw ?? []) {
+      const sig = signalBySymbol.get(pos.symbol)
+      let price = sig?.asset.price
+      if (price == null) { try { price = (await getQuote(pos.symbol)).price } catch { continue } }
+      const isLong = pos.direction === 'LONG'
+      const entry = Number(pos.avg_entry_price)
+      const shares = Number(pos.shares)
+      const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
+      await supabase.from('academy_auto_trades').insert({
+        user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
+        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, reason: 'End of morning session — flattened',
+        ema9: sig?.indicators?.ema9 ?? null, ema21: sig?.indicators?.ema21 ?? null, vwap: sig?.indicators?.vwap ?? null, rsi: sig?.indicators?.rsi ?? null,
+      })
+      await supabase.from('academy_auto_positions').delete().eq('id', pos.id)
+      cash = r2(cash + (isLong ? price * shares : entry * shares + pnl))
+      await log(supabase, userId, {
+        symbol: pos.symbol, kind: 'EXIT_FULL', price, shares, pnl,
+        note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)}) — end of the morning session. I trade the active first few hours, not the slow afternoon chop, and I don't hold overnight.`,
+      })
+      events.push(`Flattened ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)} (session end)`)
+    }
+    await supabase.from('academy_auto_portfolio').update({ cash, updated_at: new Date().toISOString() }).eq('user_id', userId)
+    return { ran: true, events }
+  }
+
+  // ── 3. Entry gates: morning-only window + daily risk discipline ──
+  if (minsNow >= ENTRY_WINDOW_END_MIN_ET) return { ran: true, events } // past the entry window; just managing now
+
+  const { data: todayTradesRaw } = await supabase
+    .from('academy_auto_trades').select('pnl, action, created_at').eq('user_id', userId)
+    .gte('created_at', new Date(Date.now() - 16 * 3600_000).toISOString())
+  const todayTrades = (todayTradesRaw ?? []).filter((t) => etDateKeyOf(new Date(t.created_at as string)) === todayEt)
+  const realizedToday = todayTrades.filter((t) => t.pnl != null).reduce((s, t) => s + Number(t.pnl), 0)
+  const entriesToday = todayTrades.filter((t) => t.pnl == null).length
+
+  if (realizedToday <= -DAILY_LOSS_LIMIT_USD) return { ran: true, events } // hit the daily stop — capital protection, done for today
+  if (entriesToday >= MAX_TRADES_PER_DAY) return { ran: true, events }      // don't overtrade
+  const greenLockActive = realizedToday >= DAILY_PROFIT_LOCK_USD            // up enough → only top-conviction from here
+
+  // ── 4. Scan for a new entry if a slot is free ──
   const { data: stillOpenRaw } = await supabase.from('academy_auto_positions').select('symbol').eq('user_id', userId)
   const heldSymbols = new Set((stillOpenRaw ?? []).map((p) => p.symbol))
   let slotsFree = MAX_SLOTS - heldSymbols.size
@@ -239,6 +316,8 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     .from('academy_auto_trades').select('symbol, created_at').eq('user_id', userId)
     .gte('created_at', new Date(Date.now() - COOLDOWN_MINUTES * 60_000).toISOString())
   const cooling = new Set((recentRaw ?? []).map((r) => r.symbol))
+
+  const learned = await learnSetupStats(supabase, userId)
 
   const assets = (await getAllAssets()).filter((a) => a.assetType === 'stock' && !heldSymbols.has(a.symbol) && !cooling.has(a.symbol))
   if (assets.length === 0) return { ran: true, events }
@@ -256,8 +335,17 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     const price = sig.asset.price
     const ind = sig.indicators
 
+    // Self-learning: a setup that's been losing for THIS account gets benched;
+    // a proven one gets sized up. Green-lock day demands top conviction.
+    const stat = learned.get(sig.setupTag)
+    if (stat && stat.total >= LEARN_MIN_SAMPLES && stat.winRate < LEARN_BAD_WINRATE) continue
+    if (greenLockActive && Math.abs(sig.score) < 6) continue
+    const learnMult = stat && stat.total >= LEARN_MIN_SAMPLES
+      ? (stat.winRate >= LEARN_GREAT_WINRATE ? 1.2 : stat.winRate < 0.45 ? 0.6 : 1.0)
+      : 1.0
+
     const equity = cash // approx: cash is the binding constraint for new entries
-    const budget = Math.min(equity * MAX_POSITION_PCT, cash * 0.9)
+    const budget = Math.min(equity * MAX_POSITION_PCT * learnMult, cash * 0.9)
     if (budget < MIN_TRADE_USD) continue
     const shares = r6(budget / price)
     const total = r2(price * shares)
@@ -289,10 +377,13 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     const trendNote = ind.ema9 >= ind.ema21 ? `EMA9 (${ind.ema9.toFixed(2)}) above EMA21 (${ind.ema21.toFixed(2)}) — trend is up` : `EMA9 (${ind.ema9.toFixed(2)}) below EMA21 (${ind.ema21.toFixed(2)}) — trend is down`
     const chapter = legendFor(sig.setupTag)
     const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
+    const learnNote = stat && stat.total >= LEARN_MIN_SAMPLES
+      ? ` (My record on this setup so far: ${stat.wins}/${stat.total} = ${Math.round(stat.winRate * 100)}% — ${learnMult > 1 ? 'sizing it up' : learnMult < 1 ? 'sizing it down' : 'normal size'}.)`
+      : ''
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'ENTRY', price, shares, pnl: 0,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll sell half at ${fmt(target1)} and let the rest run to ${fmt(target2)}.${legendNote}`,
+      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll sell half at ${fmt(target1)} and let the rest run to ${fmt(target2)}.${legendNote}${learnNote}`,
     })
     events.push(`Entered ${sig.asset.symbol} (${sig.setupTag}) at ${fmt(price)}`)
     void trade // id not currently needed downstream; kept for clarity/future linking

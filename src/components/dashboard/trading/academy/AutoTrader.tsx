@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Bot, Play, Pause, RotateCcw, Loader2 } from 'lucide-react'
 import { isUsMarketOpenNow } from '@/lib/market-hours'
+import TradingChart from './TradingChart'
+import ChartErrorBoundary from './ChartErrorBoundary'
 
 interface AutoPosition {
   symbol: string; name: string; direction: 'LONG' | 'SHORT'
@@ -21,6 +23,13 @@ interface LogRow {
   price: number | null; shares: number | null; pnl: number | null
   ema9: number | null; ema21: number | null; vwap: number | null; rsi: number | null
   created_at: string
+}
+
+interface AutoStats {
+  equityCurve: number[]; seedCapital: number
+  totalClosed: number; wins: number; winRatePct: number
+  totalRealized: number; realizedToday: number
+  setupStats: { setupTag: string; total: number; wins: number; winRatePct: number; pnl: number }[]
 }
 
 const KIND_META: Record<string, { label: string; color: string }> = {
@@ -46,6 +55,7 @@ const REFRESH_MS = 20_000
 export default function AutoTrader() {
   const [portfolio, setPortfolio] = useState<AutoPortfolio | null>(null)
   const [log, setLog] = useState<LogRow[]>([])
+  const [stats, setStats] = useState<AutoStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
   const [resetting, setResetting] = useState(false)
@@ -60,15 +70,19 @@ export default function AutoTrader() {
     const res = await fetch('/api/academy/auto/log', { cache: 'no-store' })
     if (res.ok) setLog(await res.json())
   }, [])
+  const loadStats = useCallback(async () => {
+    const res = await fetch('/api/academy/auto/stats', { cache: 'no-store' })
+    if (res.ok) setStats(await res.json())
+  }, [])
 
   useEffect(() => {
-    void (async () => { await Promise.all([loadPortfolio(), loadLog()]); setLoading(false) })()
-  }, [loadPortfolio, loadLog])
+    void (async () => { await Promise.all([loadPortfolio(), loadLog(), loadStats()]); setLoading(false) })()
+  }, [loadPortfolio, loadLog, loadStats])
 
   useEffect(() => {
-    const id = setInterval(() => { void loadPortfolio(); void loadLog() }, REFRESH_MS)
+    const id = setInterval(() => { void loadPortfolio(); void loadLog(); void loadStats() }, REFRESH_MS)
     return () => clearInterval(id)
-  }, [loadPortfolio, loadLog])
+  }, [loadPortfolio, loadLog, loadStats])
 
   // Client-side tick while the tab is open, for an instant feel. The cron
   // covers it the rest of the time.
@@ -130,6 +144,17 @@ export default function AutoTrader() {
   const marketOpen = isUsMarketOpenNow()
   const positive = portfolio.totalPnL >= 0
 
+  // What the monitor chart watches: whatever it's holding, else the first name
+  // from today's watchlist, else a sensible default.
+  const todayScan = log.find((r) => r.kind === 'SCAN' && r.symbol)
+  const heldPos = portfolio.positions[0] ?? null
+  const chartSymbol = heldPos?.symbol ?? todayScan?.symbol ?? 'SPY'
+  const chartPosition = heldPos ? {
+    direction: heldPos.direction, shares: heldPos.shares, avgEntryPrice: heldPos.avgEntryPrice,
+    currentPrice: heldPos.currentPrice, pnl: heldPos.pnl, pnlPct: heldPos.pnlPct,
+    managed: true, stopPrice: heldPos.stopPrice, target1Price: heldPos.target1Price, target2Price: heldPos.target2Price,
+  } : null
+
   return (
     <div>
       <div style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 16, background: 'var(--surface)', border: '1px solid var(--border)' }}>
@@ -185,6 +210,54 @@ export default function AutoTrader() {
           </div>
         )}
       </div>
+
+      {/* Stat tiles + equity curve — the desk's scoreboard */}
+      {stats && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
+          <StatTile label="Today's P&L" value={`${stats.realizedToday >= 0 ? '+' : ''}$${stats.realizedToday.toFixed(2)}`} color={stats.realizedToday >= 0 ? '#16A34A' : '#DC2626'} />
+          <StatTile label="Total P&L" value={`${stats.totalRealized >= 0 ? '+' : ''}$${stats.totalRealized.toFixed(2)}`} color={stats.totalRealized >= 0 ? '#16A34A' : '#DC2626'} />
+          <StatTile label="Win rate" value={`${stats.winRatePct}%`} sub={`${stats.wins}/${stats.totalClosed} trades`} />
+          <div style={{ gridColumn: 'span 2', minWidth: 200, padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
+            <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Equity curve (realized)</div>
+            <EquityCurve points={stats.equityCurve} seed={stats.seedCapital} />
+          </div>
+        </div>
+      )}
+
+      {/* Live monitor chart — what it's watching/holding right now, read-only */}
+      <div style={{ marginBottom: 16 }}>
+        <ChartErrorBoundary label="The monitor chart">
+          <TradingChart symbol={chartSymbol} position={chartPosition} readOnly />
+        </ChartErrorBoundary>
+      </div>
+
+      {/* Per-setup learning table */}
+      {stats && stats.setupStats.length > 0 && (
+        <div style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>What it&apos;s learning</h3>
+          <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '0 0 10px' }}>
+            Each setup&apos;s real record on this account. Below ~35% over enough tries, it benches that setup; above 60%, it sizes it up. This is how it gets sharper over time.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+            {stats.setupStats.map((s) => {
+              const benched = s.total >= 6 && s.winRatePct < 35
+              const favored = s.total >= 6 && s.winRatePct >= 60
+              return (
+                <div key={s.setupTag} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto auto', gap: 10, alignItems: 'center', padding: '7px 10px', borderRadius: 8, background: 'var(--morning)', fontSize: 11.5 }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{s.setupTag.replace(/_/g, ' ')}</span>
+                  <span style={{ color: 'var(--text-3)' }}>{s.wins}/{s.total}</span>
+                  <span style={{ fontWeight: 700, color: s.winRatePct >= 50 ? '#16A34A' : '#DC2626' }}>{s.winRatePct}%</span>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, padding: '2px 7px', borderRadius: 99, minWidth: 58, textAlign: 'center',
+                    background: benched ? 'rgba(239,68,68,0.12)' : favored ? 'rgba(34,197,94,0.12)' : 'transparent',
+                    color: benched ? '#DC2626' : favored ? '#16A34A' : 'var(--text-3)' }}>
+                    {benched ? 'Benched' : favored ? 'Favored' : 'Normal'}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Open positions */}
       {portfolio.positions.length > 0 && (
@@ -300,5 +373,36 @@ export default function AutoTrader() {
         )}
       </div>
     </div>
+  )
+}
+
+function StatTile({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
+  return (
+    <div style={{ padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
+      <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 700, color: color ?? 'var(--text)', marginTop: 2 }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 1 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function EquityCurve({ points, seed }: { points: number[]; seed: number }) {
+  const W = 260, H = 48
+  if (points.length < 2) {
+    return <div style={{ fontSize: 11, color: 'var(--text-3)', paddingTop: 8 }}>Not enough closed trades yet to plot a curve.</div>
+  }
+  const series = [seed, ...points]
+  const min = Math.min(...series), max = Math.max(...series)
+  const range = max - min || 1
+  const x = (i: number) => (i / (series.length - 1)) * W
+  const y = (v: number) => H - ((v - min) / range) * H
+  const path = series.map((v, i) => `${i === 0 ? 'M' : 'L'} ${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ')
+  const last = series[series.length - 1]
+  const up = last >= seed
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" style={{ display: 'block' }}>
+      <line x1={0} y1={y(seed)} x2={W} y2={y(seed)} stroke="var(--border)" strokeWidth={1} strokeDasharray="3 3" />
+      <path d={path} fill="none" stroke={up ? '#16A34A' : '#DC2626'} strokeWidth={1.5} />
+    </svg>
   )
 }

@@ -99,9 +99,11 @@ interface Props {
   position?: ChartPosition | null
   /** Fires after a successful on-chart Buy/Sell so the parent can refresh portfolio + show the verdict. */
   onTraded?: (message: string) => void
+  /** Monitor mode: show position lines + P&L but no on-chart trade box and no draggable lines (the bot is in control). */
+  readOnly?: boolean
 }
 
-export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol, onSymbolChange, position, onTraded }: Props) {
+export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol, onSymbolChange, position, onTraded, readOnly = false }: Props) {
   const [symbolInput, setSymbolInput] = useState(controlledSymbol ?? defaultSymbol)
   const [symbol, setSymbol] = useState(controlledSymbol ?? defaultSymbol)
 
@@ -437,6 +439,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   // captured ahead of the library's own canvas listeners (capture phase +
   // stopPropagation) so grabbing a line doesn't also pan the chart.
   useEffect(() => {
+    if (readOnly) return  // monitor mode: the bot owns the lines, no manual dragging
     const HIT_PX = 7
 
     const findHit = (y: number): DragKind | null => {
@@ -512,7 +515,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
       window.removeEventListener('mousemove', onMouseMove)
       window.removeEventListener('mouseup', onMouseUp)
     }
-  }, [symbol, onTraded])
+  }, [symbol, onTraded, readOnly])
 
   // Build { title, lines, histogram?, refLines? } for every active oscillator pane.
   const oscPanes = useMemo(() => {
@@ -718,7 +721,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden', cursor: pendingTool ? 'crosshair' : 'default' }} />
 
         {/* On-chart one-click trade — buy/short without leaving the chart, or close if you already hold it */}
-        <div style={{
+        {!readOnly && <div style={{
           position: 'absolute', top: 8, right: 8, zIndex: 5, display: 'flex', alignItems: 'center', gap: 5,
           background: 'rgba(13,17,38,0.85)', borderRadius: 9, padding: 5, border: '1px solid rgba(255,255,255,0.08)',
         }}>
@@ -741,7 +744,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
               </button>
             </>
           )}
-        </div>
+        </div>}
       </div>
 
       {pnlBand && (
