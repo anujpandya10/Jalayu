@@ -20,8 +20,14 @@ import {
 import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
 
 export const AUTO_SEED_CAPITAL = 1000
-const MAX_SLOTS = 4
-const MAX_POSITION_PCT = 0.28
+// Concentrate the $1000 into a couple of meaningful positions instead of
+// sprinkling it across many tiny ones — a win has to move the account, not
+// nudge it. Two ~$460 positions deploy ~92% of equity; the tight per-trade
+// stop (≈0.4%) keeps the downside of that size to only a few dollars a trade,
+// while the now-uncapped back half is what turns a real runner into a $20-80
+// win. Bigger size barely changes the loss, but massively changes the win.
+const MAX_SLOTS = 2
+const MAX_POSITION_PCT = 0.46
 const COOLDOWN_MINUTES = 8        // short leash — jump back into the same name once it resets up, don't sit out
 const PREP_START_MIN_ET = 9 * 60 + 15      // 9:15am ET — 15 min before the open
 const MARKET_OPEN_MIN_ET = 9 * 60 + 30
@@ -33,7 +39,7 @@ const SESSION_FLATTEN_MIN_ET  = 15 * 60 + 55   // close anything still open at 3
 
 // Risk discipline (the part that actually keeps an account alive):
 const DAILY_LOSS_LIMIT_USD = 30   // down $30 on the day (−3%) → stop for the day, protect capital
-const DAILY_PROFIT_LOCK_USD = 25  // up $25 (+2.5%) → green day secured, only take top-conviction setups from here
+const DAILY_PROFIT_LOCK_USD = 60  // up $60 (+6%) → strong day secured, tighten to top-conviction only (high enough that one good runner doesn't choke the day off)
 const MAX_TRADES_PER_DAY = 16     // many small in/out trades, not a handful of big swings — cut losers fast, stack small wins
 
 // Let winners run — the asymmetry that actually grows an account. The first
@@ -342,10 +348,17 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
   const greenLockActive = realizedToday >= DAILY_PROFIT_LOCK_USD            // up enough → only top-conviction from here
 
   // ── 4. Scan for a new entry if a slot is free ──
-  const { data: stillOpenRaw } = await supabase.from('academy_auto_positions').select('symbol').eq('user_id', userId)
+  const { data: stillOpenRaw } = await supabase.from('academy_auto_positions').select('symbol, shares, avg_entry_price').eq('user_id', userId)
   const heldSymbols = new Set((stillOpenRaw ?? []).map((p) => p.symbol))
   let slotsFree = MAX_SLOTS - heldSymbols.size
   if (slotsFree <= 0) return { ran: true, events }
+
+  // Size every new position off the WHOLE account's equity (cash + what's
+  // already deployed), not just the cash left lying around — otherwise each
+  // successive position this session shrinks as cash gets tied up, which is
+  // exactly why entries were coming out tiny.
+  const heldValue = (stillOpenRaw ?? []).reduce((s, p) => s + Number(p.shares) * Number(p.avg_entry_price), 0)
+  const accountEquity = cash + heldValue
 
   const { data: recentRaw } = await supabase
     .from('academy_auto_trades').select('symbol, created_at').eq('user_id', userId)
@@ -379,8 +392,9 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
       ? (stat.winRate >= LEARN_GREAT_WINRATE ? 1.2 : stat.winRate < 0.45 ? 0.6 : 1.0)
       : 1.0
 
-    const equity = cash // approx: cash is the binding constraint for new entries
-    const budget = Math.min(equity * MAX_POSITION_PCT * learnMult, cash * 0.9)
+    // Target size is a fixed slice of total equity; cash is just the hard
+    // ceiling we can't spend past (no margin on this account).
+    const budget = Math.min(accountEquity * MAX_POSITION_PCT * learnMult, cash * 0.92)
     if (budget < MIN_TRADE_USD) continue
     const shares = r6(budget / price)
     const total = r2(price * shares)
