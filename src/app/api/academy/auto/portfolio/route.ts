@@ -42,7 +42,8 @@ export async function GET() {
 
   const totalValue = cash + positionsValue
   return NextResponse.json({
-    cash, enabled: portfolio.enabled, positions: enriched,
+    cash, enabled: portfolio.enabled, autoStart: portfolio.auto_start, lastSessionDate: portfolio.last_session_date,
+    positions: enriched,
     totalValue, totalPnL: totalValue - AUTO_SEED_CAPITAL, totalPnLPct: ((totalValue - AUTO_SEED_CAPITAL) / AUTO_SEED_CAPITAL) * 100,
     seedCapital: AUTO_SEED_CAPITAL,
   })

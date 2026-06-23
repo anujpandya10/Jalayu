@@ -12,7 +12,8 @@ interface AutoPosition {
   entryEma9: number | null; entryEma21: number | null; entryVwap: number | null; entryRsi: number | null
 }
 interface AutoPortfolio {
-  cash: number; enabled: boolean; positions: AutoPosition[]
+  cash: number; enabled: boolean; autoStart: boolean; lastSessionDate: string | null
+  positions: AutoPosition[]
   totalValue: number; totalPnL: number; totalPnLPct: number; seedCapital: number
 }
 interface LogRow {
@@ -28,6 +29,8 @@ const KIND_META: Record<string, { label: string; color: string }> = {
   EXIT_FULL: { label: 'Closed', color: '#15803d' },
   STOP_HIT: { label: 'Stopped out', color: '#DC2626' },
   STOP_MOVED: { label: 'Moved stop', color: '#D97706' },
+  SCAN: { label: 'Watchlist', color: '#8B5CF6' },
+  INFO: { label: 'Note', color: 'var(--text-3)' },
 }
 
 const TICK_MS = 25_000
@@ -110,6 +113,16 @@ export default function AutoTrader() {
     } finally { setResetting(false) }
   }
 
+  const toggleAutoStart = async () => {
+    if (!portfolio) return
+    const next = !portfolio.autoStart
+    setPortfolio({ ...portfolio, autoStart: next }) // optimistic
+    await fetch('/api/academy/auto/autostart', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ autoStart: next }),
+    })
+    await loadPortfolio()
+  }
+
   if (loading || !portfolio) {
     return <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '24px 0' }}>Loading the auto trader…</div>
   }
@@ -125,11 +138,18 @@ export default function AutoTrader() {
           <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Auto Trader</h2>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>US stocks · market hours only · its own $1,000</span>
         </div>
-        <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55, margin: '0 0 12px' }}>
-          This account trades itself, on the same setup logic the curriculum teaches and the same break-even/trailing-stop
-          discipline the main bot runs on. It only enters during US market hours, on real stocks, and narrates every
-          decision below — watch what it does, then try applying the same read yourself on the Practice desk.
+        <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55, margin: '0 0 10px' }}>
+          This account trades itself, combining the curriculum's real setups (momentum, oversold bounce, VWAP, MACD cross,
+          Bollinger bounce, fading extremes) with the same break-even + trailing-stop discipline the main bot runs on.
+          Every morning at 9:15am ET it preps like a real session — scans, picks a short watchlist, explains why — then
+          trades the open. Small, defined losses are normal here; the discipline is letting winners run further than
+          losers cost. Watch what it does below, then try the same read yourself on the Practice desk.
         </p>
+
+        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginBottom: 12, fontSize: 11.5, color: 'var(--text-2)', cursor: 'pointer' }}>
+          <input type="checkbox" checked={portfolio.autoStart} onChange={() => void toggleAutoStart()} style={{ accentColor: 'var(--accent)' }} />
+          Auto-start every trading day at 9:15am ET (no need to click Start) — keeps running after you close this tab
+        </label>
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
           <div>
@@ -204,6 +224,25 @@ export default function AutoTrader() {
           </div>
         </div>
       )}
+
+      {/* Today's watchlist — the morning prep, grouped separately for a quick read */}
+      {(() => {
+        const today = log[0] ? new Date(log[0].created_at).toDateString() : null
+        const watchlist = log.filter((r) => r.kind === 'SCAN' && r.symbol && new Date(r.created_at).toDateString() === today)
+        if (watchlist.length === 0) return null
+        return (
+          <div style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
+            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>Today&apos;s watchlist — built at pre-market prep</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {watchlist.map((row) => (
+                <div key={row.id} style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--morning)', fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.5 }}>
+                  {row.note}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* The narrated trade log — what it did and why, in plain English */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>

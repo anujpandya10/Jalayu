@@ -17,15 +17,34 @@ import { scoreAssetFull, filterLongEntries, filterShortEntries, type Signal } fr
 import {
   getTpSl, MIN_TRADE_USD, BREAKEVEN_LOCK_PCT, TRAIL_TRIGGER_PCT, TRAIL_DISTANCE_PCT,
 } from '@/lib/trading-config'
+import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
 
 export const AUTO_SEED_CAPITAL = 1000
 const MAX_SLOTS = 3
 const MAX_POSITION_PCT = 0.32
 const COOLDOWN_MINUTES = 20
+const PREP_START_MIN_ET = 9 * 60 + 15  // 9:15am ET — 15 min before the open
+const MARKET_OPEN_MIN_ET = 9 * 60 + 30
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 const r6 = (n: number) => Math.round(n * 1e6) / 1e6
 const fmt = (n: number) => `$${n.toFixed(2)}`
+
+/** The curriculum chapter (legendary trader) behind a given setup tag, if any. */
+function legendFor(setupTag: string) {
+  return ACADEMY_CURRICULUM.find((c) => c.mappedSetupTags.includes(setupTag)) ?? null
+}
+
+function nowEt(): { minutesOfDay: number; dateKey: string; weekday: string } {
+  const fmtParts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const get = (t: string) => fmtParts.find((p) => p.type === t)?.value ?? ''
+  const hh = parseInt(get('hour'), 10)
+  const mm = parseInt(get('minute'), 10)
+  return { minutesOfDay: hh * 60 + mm, dateKey: `${get('year')}-${get('month')}-${get('day')}`, weekday: get('weekday') }
+}
 
 async function getPortfolio(supabase: SupabaseClient, userId: string) {
   const { data } = await supabase.from('academy_auto_portfolio').select('*').eq('user_id', userId).maybeSingle()
@@ -44,12 +63,72 @@ async function log(
 
 interface RunResult { ran: boolean; reason?: string; events: string[] }
 
+/**
+ * Once per trading day, at/after 9:15am ET: arm the bot for the day (so it
+ * starts itself without a manual click) and narrate a pre-market watchlist —
+ * the same "scan, pick a few, explain why" routine before any order goes in.
+ * Gated by last_session_date so it only fires once per day no matter how
+ * often the cron/client tick calls in. Mutates `portfolio` in place so the
+ * rest of this tick sees the freshly-armed state immediately.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function maybeRunMorningKickoff(supabase: SupabaseClient, userId: string, portfolio: any, events: string[]) {
+  if (!portfolio.auto_start) return
+  const { minutesOfDay, dateKey, weekday } = nowEt()
+  if (weekday === 'Sat' || weekday === 'Sun') return
+  if (minutesOfDay < PREP_START_MIN_ET) return
+  if (portfolio.last_session_date === dateKey) return
+
+  await supabase.from('academy_auto_portfolio')
+    .update({ enabled: true, last_session_date: dateKey, updated_at: new Date().toISOString() })
+    .eq('user_id', userId)
+  portfolio.enabled = true
+  portfolio.last_session_date = dateKey
+
+  const minsToOpen = MARKET_OPEN_MIN_ET - minutesOfDay
+  await log(supabase, userId, {
+    kind: 'INFO',
+    note: minsToOpen > 0
+      ? `Good morning. Markets open in ${minsToOpen} minute${minsToOpen === 1 ? '' : 's'} — starting pre-market prep. Today's plan is the same as every day: small, defined losses are fine and expected — the discipline is letting winners run further than the losers cost. Let's see how it goes.`
+      : `Good morning. Markets are already open — starting today's session. Small, defined losses are fine — the discipline is letting winners run further than losers cost.`,
+  })
+  events.push('Started morning prep')
+
+  try {
+    const assets = (await getAllAssets()).filter((a) => a.assetType === 'stock')
+    const scored = await Promise.allSettled(assets.map((a) => scoreAssetFull(a)))
+    const signals = scored.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<Signal>).value)
+    const ranked = signals.filter((s) => s.setupTag !== 'UNTAGGED').sort((a, b) => Math.abs(b.score) - Math.abs(a.score)).slice(0, 5)
+
+    if (ranked.length === 0) {
+      await log(supabase, userId, { kind: 'SCAN', note: `Scanned ${assets.length} stocks — nothing with a confirmed setup yet. I'll keep watching as the open gets closer.` })
+    } else {
+      for (const sig of ranked) {
+        const chapter = legendFor(sig.setupTag)
+        const ind = sig.indicators
+        const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
+        await log(supabase, userId, {
+          symbol: sig.asset.symbol, kind: 'SCAN', price: sig.asset.price,
+          ema9: ind?.ema9 ?? null, ema21: ind?.ema21 ?? null, vwap: ind?.vwap ?? null, rsi: ind?.rsi ?? null,
+          note: `Watching ${sig.asset.symbol} for the open (score ${sig.score.toFixed(1)}, ${sig.setupTag.replace(/_/g, ' ').toLowerCase()}) — ${sig.reason}.${legendNote}`,
+        })
+      }
+      events.push(`Built today's watchlist: ${ranked.map((s) => s.asset.symbol).join(', ')}`)
+    }
+  } catch {
+    // best effort — a failed morning scan shouldn't block the rest of the tick
+  }
+}
+
 export async function runAutoTraderTick(supabase: SupabaseClient, userId: string): Promise<RunResult> {
   const events: string[] = []
-  if (!isUsMarketOpen()) return { ran: false, reason: 'Market closed', events }
-
   const portfolio = await getPortfolio(supabase, userId)
-  if (!portfolio || !portfolio.enabled) return { ran: false, reason: 'Auto trader is off', events }
+  if (!portfolio) return { ran: false, reason: 'no portfolio', events }
+
+  await maybeRunMorningKickoff(supabase, userId, portfolio, events)
+
+  if (!isUsMarketOpen()) return { ran: events.length > 0, reason: 'Market closed', events }
+  if (!portfolio.enabled) return { ran: false, reason: 'Auto trader is off', events }
 
   let cash = Number(portfolio.cash)
 
@@ -208,10 +287,12 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     await supabase.from('academy_auto_portfolio').update({ cash, updated_at: new Date().toISOString() }).eq('user_id', userId)
 
     const trendNote = ind.ema9 >= ind.ema21 ? `EMA9 (${ind.ema9.toFixed(2)}) above EMA21 (${ind.ema21.toFixed(2)}) — trend is up` : `EMA9 (${ind.ema9.toFixed(2)}) below EMA21 (${ind.ema21.toFixed(2)}) — trend is down`
+    const chapter = legendFor(sig.setupTag)
+    const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'ENTRY', price, shares, pnl: 0,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll sell half at ${fmt(target1)} and let the rest run to ${fmt(target2)}.`,
+      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll sell half at ${fmt(target1)} and let the rest run to ${fmt(target2)}.${legendNote}`,
     })
     events.push(`Entered ${sig.asset.symbol} (${sig.setupTag}) at ${fmt(price)}`)
     void trade // id not currently needed downstream; kept for clarity/future linking
