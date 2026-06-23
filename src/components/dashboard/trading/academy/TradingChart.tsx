@@ -10,6 +10,7 @@ import {
   type Bar,
 } from '@/lib/chart-indicators'
 import IndicatorPane, { type PaneLine } from './IndicatorPane'
+import { isUsMarketOpenNow } from '@/lib/market-hours'
 
 interface CandlesResponse {
   symbol: string
@@ -72,15 +73,28 @@ function toLine(times: number[], arr: (number | null)[]): { time: number; value:
   return out
 }
 
+export interface ChartPosition {
+  direction: 'LONG' | 'SHORT'
+  shares: number
+  avgEntryPrice: number
+  currentPrice: number
+  pnl: number
+  pnlPct: number
+}
+
 interface Props {
   defaultSymbol?: string
   /** When set/changed (e.g. tapping a watchlist name), the chart loads it. */
   symbol?: string
   /** Fires when the user loads a different symbol in the chart, so the rest of the desk (quick trade) can follow. */
   onSymbolChange?: (symbol: string) => void
+  /** The desk's open position in the charted symbol, if any — drives the entry line + live P&L readout/band. */
+  position?: ChartPosition | null
+  /** Fires after a successful on-chart Buy/Sell so the parent can refresh portfolio + show the verdict. */
+  onTraded?: (message: string) => void
 }
 
-export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol, onSymbolChange }: Props) {
+export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol, onSymbolChange, position, onTraded }: Props) {
   const [symbolInput, setSymbolInput] = useState(controlledSymbol ?? defaultSymbol)
   const [symbol, setSymbol] = useState(controlledSymbol ?? defaultSymbol)
 
@@ -110,6 +124,9 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
   const [menuMsg, setMenuMsg] = useState<string | null>(null)
   const [hover, setHover] = useState<{ x: number; y: number; price: number } | null>(null)
+  const [pnlBand, setPnlBand] = useState<{ top: number; height: number; left: number; width: number; up: boolean } | null>(null)
+  const [chartQty, setChartQty] = useState(100)
+  const [chartTradeBusy, setChartTradeBusy] = useState<'LONG' | 'SHORT' | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<unknown>(null)
@@ -251,6 +268,31 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           setHover({ x: rect.left + param.point.x, y: rect.top + param.point.y, price })
         })
 
+        // Open position on this symbol: entry line + a shaded P&L zone that tracks pan/zoom.
+        if (position) {
+          const isLong = position.direction === 'LONG'
+          candleSeries.createPriceLine({
+            price: position.avgEntryPrice, color: '#FFFFFF', lineWidth: 1, lineStyle: 1,
+            axisLabelVisible: true, title: `Entry ${isLong ? 'long' : 'short'}`,
+          })
+          const updatePnlBand = () => {
+            if (!containerRef.current) return
+            const yEntry = candleSeries.priceToCoordinate(position.avgEntryPrice)
+            const yNow = candleSeries.priceToCoordinate(position.currentPrice)
+            if (yEntry == null || yNow == null) { setPnlBand(null); return }
+            const rect = containerRef.current.getBoundingClientRect()
+            setPnlBand({
+              top: rect.top + Math.min(yEntry, yNow), height: Math.max(2, Math.abs(yNow - yEntry)),
+              left: rect.left, width: rect.width, up: position.pnl >= 0,
+            })
+          }
+          updatePnlBand()
+          c.timeScale().subscribeVisibleTimeRangeChange(updatePnlBand)
+          window.addEventListener('resize', updatePnlBand)
+        } else {
+          setPnlBand(null)
+        }
+
         const addLine = (lineData: { time: number; value: number }[], color: string, width = 1) => {
           if (lineData.length === 0) return
           const s = c.addLineSeries
@@ -354,7 +396,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         chartRef.current = null
       }
     }
-  }, [data, series, overlays, drawings])
+  }, [data, series, overlays, drawings, position])
 
   // Build { title, lines, histogram?, refLines? } for every active oscillator pane.
   const oscPanes = useMemo(() => {
@@ -380,6 +422,20 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const submitSymbol = () => {
     const s = symbolInput.toUpperCase().trim()
     if (s) { setSymbol(s); onSymbolChange?.(s) }
+  }
+
+  const chartTrade = async (direction: 'LONG' | 'SHORT') => {
+    setChartTradeBusy(direction)
+    try {
+      const res = await fetch('/api/academy/orders', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol, direction, shares: chartQty, orderType: 'MARKET' }),
+      })
+      const json = await res.json()
+      onTraded?.(res.ok ? (json.message || `${direction === 'LONG' ? 'Bought' : 'Sold'} ${chartQty} ${symbol}`) : (json.error || 'Order failed'))
+    } finally {
+      setChartTradeBusy(null)
+    }
   }
 
   /** Screen (x,y) within the chart container → (time, price), clamped to the loaded range. */
@@ -450,6 +506,14 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
               ${data.asset.price.toFixed(2)} <span style={{ color: data.asset.change24h >= 0 ? '#16A34A' : '#DC2626' }}>{data.asset.change24h >= 0 ? '+' : ''}{data.asset.change24h.toFixed(2)}%</span>
             </span>
           )}
+          {position && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 10px', borderRadius: 99, fontSize: 12.5, fontWeight: 800,
+              background: position.pnl >= 0 ? 'rgba(34,197,94,0.14)' : 'rgba(239,68,68,0.12)', color: position.pnl >= 0 ? '#16A34A' : '#DC2626',
+            }}>
+              {position.direction === 'SHORT' ? 'Short' : 'Long'} {position.shares} · {position.pnl >= 0 ? '+' : ''}${Math.abs(position.pnl).toFixed(2)} ({position.pnl >= 0 ? '+' : ''}{position.pnlPct.toFixed(2)}%)
+            </span>
+          )}
           {loading && <Loader2 size={12} className="animate-spin" color="var(--text-3)" />}
         </div>
         <button type="button" onClick={() => void fetchData(symbol, interval, range)} disabled={loading} title="Refresh"
@@ -507,8 +571,36 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
 
       {error && <div style={{ padding: 10, fontSize: 12, color: '#EF4444' }}>{error}</div>}
 
-      <div ref={containerRef} onContextMenu={onContextMenu}
-        style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden', cursor: pendingTool ? 'crosshair' : 'default' }} />
+      <div style={{ position: 'relative' }}>
+        <div ref={containerRef} onContextMenu={onContextMenu}
+          style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden', cursor: pendingTool ? 'crosshair' : 'default' }} />
+
+        {/* On-chart one-click trade — buy/sell without leaving the chart */}
+        <div style={{
+          position: 'absolute', top: 8, right: 8, zIndex: 5, display: 'flex', alignItems: 'center', gap: 5,
+          background: 'rgba(13,17,38,0.85)', borderRadius: 9, padding: 5, border: '1px solid rgba(255,255,255,0.08)',
+        }}>
+          <input type="number" value={chartQty} min={1} onChange={(e) => setChartQty(Math.max(1, Number(e.target.value) || 1))}
+            style={{ width: 52, padding: '5px 6px', fontSize: 11.5, fontWeight: 600, borderRadius: 6, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontFamily: 'inherit' }} />
+          <button type="button" onClick={() => void chartTrade('LONG')} disabled={chartTradeBusy != null || !isUsMarketOpenNow()}
+            style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, border: 'none', background: '#16A34A', color: '#fff', cursor: 'pointer', opacity: isUsMarketOpenNow() ? 1 : 0.45 }}>
+            Buy
+          </button>
+          <button type="button" onClick={() => void chartTrade('SHORT')} disabled={chartTradeBusy != null || !isUsMarketOpenNow()}
+            style={{ padding: '6px 10px', fontSize: 11.5, fontWeight: 800, borderRadius: 6, border: 'none', background: '#DC2626', color: '#fff', cursor: 'pointer', opacity: isUsMarketOpenNow() ? 1 : 0.45 }}>
+            Sell
+          </button>
+        </div>
+      </div>
+
+      {pnlBand && (
+        <div style={{
+          position: 'fixed', left: pnlBand.left, top: pnlBand.top, width: pnlBand.width, height: pnlBand.height,
+          zIndex: 3, pointerEvents: 'none', background: pnlBand.up ? 'rgba(34,197,94,0.12)' : 'rgba(239,68,68,0.12)',
+          borderTop: `1px solid ${pnlBand.up ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}`,
+          borderBottom: `1px solid ${pnlBand.up ? 'rgba(34,197,94,0.4)' : 'rgba(239,68,68,0.4)'}`,
+        }} />
+      )}
 
       {hover && (
         <div style={{

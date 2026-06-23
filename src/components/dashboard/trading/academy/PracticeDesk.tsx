@@ -234,7 +234,12 @@ export default function PracticeDesk() {
       {/* ── Chart cockpit ── */}
       <div style={{ marginBottom: 16 }}>
         <ChartErrorBoundary label="The chart">
-          <TradingChart symbol={chartSymbol} onSymbolChange={setChartSymbol} />
+          <TradingChart
+            symbol={chartSymbol}
+            onSymbolChange={setChartSymbol}
+            position={portfolio.positions.find((p) => p.symbol === chartSymbol) ?? null}
+            onTraded={handleSmartPlaced}
+          />
         </ChartErrorBoundary>
       </div>
 
