@@ -228,10 +228,10 @@ export async function fetchStockPrice(symbol: string, fallbackName: string): Pro
   } catch { return null }
 }
 
-// ── Yahoo Finance day gainers screener (pump candidates) ──────────────────────
-async function fetchTopGainers(): Promise<AssetData[]> {
+// ── Yahoo Finance predefined screeners (gainers/losers/most-active/small-cap) ──
+async function fetchScreener(scrId: string, count: number): Promise<AssetData[]> {
   try {
-    const url = 'https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=40&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap'
+    const url = `https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=${scrId}&count=${count}&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap`
     const res = await fetch(url, {
       headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' },
       cache: 'no-store',
@@ -259,6 +259,30 @@ async function fetchTopGainers(): Promise<AssetData[]> {
       }))
       .filter((a) => a.symbol !== '')
   } catch { return [] }
+}
+
+async function fetchTopGainers(): Promise<AssetData[]> {
+  return fetchScreener('day_gainers', 40)
+}
+
+/**
+ * Casts a much wider net than the fixed watchlist: gainers, losers, the
+ * busiest tickers of the day, and small/penny-cap movers, in parallel —
+ * so a mover outside the curated list (a SPCX-type name) still shows up.
+ * Stock-only, market-hours-only, deduplicated. Used by the Auto Trader.
+ */
+export async function fetchExpandedStockUniverse(): Promise<AssetData[]> {
+  const screenerIds = ['day_gainers', 'day_losers', 'most_actives', 'small_cap_gainers', 'undervalued_growth_stocks']
+  const settled = await Promise.allSettled(screenerIds.map((id) => fetchScreener(id, 100)))
+  const seen = new Set<string>()
+  const out: AssetData[] = []
+  for (const r of settled) {
+    if (r.status !== 'fulfilled') continue
+    for (const a of r.value) {
+      if (!seen.has(a.symbol)) { seen.add(a.symbol); out.push(a) }
+    }
+  }
+  return out
 }
 
 // ── Frankfurter API — real forex exchange rates, free, no key ─────────────────

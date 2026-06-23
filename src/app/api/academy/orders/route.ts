@@ -50,8 +50,9 @@ export async function POST(request: Request) {
     stopPrice: body.stopPrice ?? null,
     target1Price: body.target1Price ?? null,
     target2Price: body.target2Price ?? null,
+    overrideGate: body.overrideGate ?? false,
   })
 
-  if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
-  return NextResponse.json({ ok: true, filled: result.filled, message: result.message })
+  if (!result.ok) return NextResponse.json({ error: result.error, gate: result.gate, needsOverride: result.needsOverride }, { status: result.status })
+  return NextResponse.json({ ok: true, filled: result.filled, message: result.message, gate: result.gate })
 }

@@ -11,7 +11,7 @@
  * (main multi-asset bot) — none of the three ever touch each other.
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getAllAssets, isUsMarketOpen, type AssetData } from '@/lib/market-data'
+import { getAllAssets, fetchExpandedStockUniverse, isUsMarketOpen, type AssetData } from '@/lib/market-data'
 import { getQuote } from '@/lib/yahoo-finance'
 import { scoreAssetFull, filterLongEntries, filterShortEntries, type Signal } from '@/lib/trading-signals'
 import {
@@ -20,20 +20,21 @@ import {
 import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
 
 export const AUTO_SEED_CAPITAL = 1000
-const MAX_SLOTS = 3
-const MAX_POSITION_PCT = 0.32
-const COOLDOWN_MINUTES = 20
+const MAX_SLOTS = 4
+const MAX_POSITION_PCT = 0.28
+const COOLDOWN_MINUTES = 8        // short leash — jump back into the same name once it resets up, don't sit out
 const PREP_START_MIN_ET = 9 * 60 + 15      // 9:15am ET — 15 min before the open
 const MARKET_OPEN_MIN_ET = 9 * 60 + 30
-// Morning-only session: take entries for the volatile first ~3 hours, then
-// stop and flatten — the afternoon chop isn't worth the risk for this style.
-const ENTRY_WINDOW_END_MIN_ET = 12 * 60 + 30   // no new entries after 12:30pm ET
-const SESSION_FLATTEN_MIN_ET  = 12 * 60 + 35   // close anything still open at 12:35pm ET
+// Full-day session: the open is the most volatile window but movers show up
+// all day (afternoon momentum, news-driven small caps) — stay scanning and
+// in/out the whole session instead of stopping at lunch, flatten near the close.
+const ENTRY_WINDOW_END_MIN_ET = 15 * 60 + 50   // no new entries after 3:50pm ET
+const SESSION_FLATTEN_MIN_ET  = 15 * 60 + 55   // close anything still open at 3:55pm ET
 
 // Risk discipline (the part that actually keeps an account alive):
 const DAILY_LOSS_LIMIT_USD = 30   // down $30 on the day (−3%) → stop for the day, protect capital
-const DAILY_PROFIT_LOCK_USD = 20  // up $20 (+2%) → green day secured, only take top-conviction setups
-const MAX_TRADES_PER_DAY = 6      // don't overtrade — quality over quantity
+const DAILY_PROFIT_LOCK_USD = 25  // up $25 (+2.5%) → green day secured, only take top-conviction setups from here
+const MAX_TRADES_PER_DAY = 16     // many small in/out trades, not a handful of big swings — cut losers fast, stack small wins
 // Self-learning: judge each setup by its own realized record and adapt.
 const LEARN_MIN_SAMPLES = 6
 const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
@@ -61,6 +62,33 @@ async function learnSetupStats(supabase: SupabaseClient, userId: string): Promis
   }
   for (const v of byTag.values()) v.winRate = v.total > 0 ? v.wins / v.total : 0
   return byTag
+}
+
+/**
+ * The bot's actual scan universe: the curated watchlist (always scored)
+ * plus a wide, multi-screener sweep (gainers, losers, most-active,
+ * small/penny-cap) — every name's headline % move gets checked cheaply
+ * every tick (no network beyond the screener calls), but only the biggest
+ * movers from that sweep go on to the expensive full candle+indicator score,
+ * so a mover outside the fixed list (a SPCX-type name) still gets caught
+ * without fanning out hundreds of Yahoo candle requests per minute and
+ * tripping the same rate-limiting that already shows up as 429s.
+ */
+const EXPANDED_SCORE_CAP = 50
+
+async function getStockScanUniverse(): Promise<AssetData[]> {
+  const [fixed, expanded] = await Promise.all([getAllAssets(), fetchExpandedStockUniverse()])
+  const seen = new Set<string>()
+  const out: AssetData[] = []
+  for (const a of fixed.filter((x) => x.assetType === 'stock')) {
+    if (!seen.has(a.symbol)) { seen.add(a.symbol); out.push(a) }
+  }
+  const rest = expanded
+    .filter((a) => !seen.has(a.symbol))
+    .sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))
+    .slice(0, EXPANDED_SCORE_CAP)
+  for (const a of rest) { seen.add(a.symbol); out.push(a) }
+  return out
 }
 
 /** The curriculum chapter (legendary trader) behind a given setup tag, if any. */
@@ -128,7 +156,7 @@ async function maybeRunMorningKickoff(supabase: SupabaseClient, userId: string, 
   events.push('Started morning prep')
 
   try {
-    const assets = (await getAllAssets()).filter((a) => a.assetType === 'stock')
+    const assets = await getStockScanUniverse()
     const scored = await Promise.allSettled(assets.map((a) => scoreAssetFull(a)))
     const signals = scored.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<Signal>).value)
     const ranked = signals.filter((s) => s.setupTag !== 'UNTAGGED').sort((a, b) => Math.abs(b.score) - Math.abs(a.score)).slice(0, 5)
@@ -319,7 +347,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
 
   const learned = await learnSetupStats(supabase, userId)
 
-  const assets = (await getAllAssets()).filter((a) => a.assetType === 'stock' && !heldSymbols.has(a.symbol) && !cooling.has(a.symbol))
+  const assets = (await getStockScanUniverse()).filter((a) => !heldSymbols.has(a.symbol) && !cooling.has(a.symbol))
   if (assets.length === 0) return { ran: true, events }
 
   const scored = await Promise.allSettled(assets.map((a) => scoreAssetFull(a)))

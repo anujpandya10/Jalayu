@@ -139,6 +139,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const [pnlBand, setPnlBand] = useState<{ top: number; height: number; left: number; width: number; up: boolean } | null>(null)
   const [chartQty, setChartQty] = useState(100)
   const [chartTradeBusy, setChartTradeBusy] = useState<'LONG' | 'SHORT' | null>(null)
+  const [chartGateBlocked, setChartGateBlocked] = useState<{ direction: 'LONG' | 'SHORT'; gate: { verdict: 'GOOD' | 'WEAK' | 'BAD'; reason: string } } | null>(null)
   const [showSignals, setShowSignals] = useState(true)
   const [dragPrice, setDragPrice] = useState<{ kind: DragKind; price: number; x: number; y: number } | null>(null)
   const priceLinesRef = useRef<Partial<Record<DragKind, DraggableLine>>>({})
@@ -581,15 +582,21 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     if (s) { setSymbol(s); onSymbolChange?.(s) }
   }
 
-  const chartTrade = async (direction: 'LONG' | 'SHORT') => {
+  const chartTrade = async (direction: 'LONG' | 'SHORT', overrideGate = false) => {
     setChartTradeBusy(direction)
     try {
       const res = await fetch('/api/academy/orders', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, direction, shares: chartQty, orderType: 'MARKET' }),
+        body: JSON.stringify({ symbol, direction, shares: chartQty, orderType: 'MARKET', overrideGate }),
       })
       const json = await res.json()
-      onTraded?.(res.ok ? (json.message || `${direction === 'LONG' ? 'Bought' : 'Shorted'} ${chartQty} ${symbol}`) : (json.error || 'Order failed'))
+      if (!res.ok && json.needsOverride && json.gate) {
+        setChartGateBlocked({ direction, gate: json.gate })
+        return
+      }
+      setChartGateBlocked(null)
+      const verdictPrefix = json.gate?.verdict === 'GOOD' ? '✓ Good entry — ' : json.gate?.verdict === 'WEAK' ? '⚠ Weak setup — ' : ''
+      onTraded?.(res.ok ? verdictPrefix + (json.message || `${direction === 'LONG' ? 'Bought' : 'Shorted'} ${chartQty} ${symbol}`) : (json.error || 'Order failed'))
     } finally {
       setChartTradeBusy(null)
     }
@@ -783,6 +790,27 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
             </>
           )}
         </div>}
+
+        {chartGateBlocked && (
+          <div style={{
+            position: 'absolute', top: 44, right: 8, zIndex: 5, width: 260,
+            background: 'rgba(13,17,38,0.95)', borderRadius: 9, padding: 10, border: '1px solid rgba(220,38,38,0.4)',
+          }}>
+            <div style={{ fontSize: 11, color: '#fca5a5', lineHeight: 1.5, marginBottom: 8 }}>
+              <strong style={{ color: '#f87171' }}>No real edge here.</strong> {chartGateBlocked.gate.reason}
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button type="button" onClick={() => setChartGateBlocked(null)}
+                style={{ flex: 1, padding: '6px 0', borderRadius: 6, fontSize: 11, fontWeight: 700, border: '1px solid rgba(255,255,255,0.15)', background: 'transparent', color: '#fff', cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button type="button" onClick={() => void chartTrade(chartGateBlocked.direction, true)}
+                style={{ flex: 1, padding: '6px 0', borderRadius: 6, fontSize: 11, fontWeight: 700, border: 'none', background: '#DC2626', color: '#fff', cursor: 'pointer' }}>
+                Trade anyway
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {pnlBand && (

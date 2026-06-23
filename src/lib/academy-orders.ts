@@ -14,8 +14,54 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getQuote } from '@/lib/yahoo-finance'
 import { isUsMarketOpen } from '@/lib/market-data'
+import type { AssetData } from '@/lib/market-data'
 import { ACADEMY_SEED_CAPITAL, ACADEMY_MIN_TRADE_USD } from '@/lib/academy-config'
 import { computeAccount } from '@/lib/academy-account'
+import { scoreAssetFull, filterLongEntries, filterShortEntries } from '@/lib/trading-signals'
+
+export interface EntryGate {
+  verdict: 'GOOD' | 'WEAK' | 'BAD'
+  reason: string
+  matchedSetup?: string
+}
+
+/**
+ * Judges a human order by the exact same bar the auto-bot holds its own
+ * entries to (filterLongEntries/filterShortEntries) — not a separate,
+ * invented heuristic. GOOD = a real, currently-firing setup in that
+ * direction. WEAK = right direction but no confirmed setup yet (a guess,
+ * not an edge). BAD = the setup is actually firing the other way — this
+ * specific order has no real edge and gets blocked unless overridden.
+ */
+async function evaluateEntryGate(
+  quote: { symbol: string; name: string; price: number; changePct: number },
+  direction: 'LONG' | 'SHORT',
+): Promise<EntryGate> {
+  const asset: AssetData = {
+    symbol: quote.symbol, name: quote.name, price: quote.price,
+    change24h: quote.changePct, change7d: 0, assetType: 'stock',
+  }
+  const sig = await scoreAssetFull(asset)
+  const passes = direction === 'LONG' ? filterLongEntries([sig]).length > 0 : filterShortEntries([sig]).length > 0
+  const setupLabel = sig.setupTag.replace(/_/g, ' ').toLowerCase()
+  if (passes) {
+    return {
+      verdict: 'GOOD',
+      reason: `${setupLabel} setup, score ${sig.score.toFixed(1)} — a real, currently-firing setup in this direction.`,
+      matchedSetup: sig.setupTag,
+    }
+  }
+  if (sig.direction === direction) {
+    return {
+      verdict: 'WEAK',
+      reason: `Right direction, but nothing confirmed yet (score ${sig.score.toFixed(1)}, ${setupLabel}) — a mild lean, not a real setup.`,
+    }
+  }
+  return {
+    verdict: 'BAD',
+    reason: `The read here is actually ${sig.direction === 'LONG' ? 'bullish' : 'bearish'} (score ${sig.score.toFixed(1)}, ${setupLabel}) — going ${direction.toLowerCase()} fights it. No real edge for this trade.`,
+  }
+}
 
 export interface MonitorEvent {
   kind: 'FILLED' | 'T1_HALF' | 'T2_CLOSE' | 'STOP' | 'CANCELLED' | 'EXPIRED'
@@ -70,6 +116,8 @@ export interface PlaceOrderParams {
   stopPrice?: number | null
   target1Price?: number | null
   target2Price?: number | null
+  /** Resubmit with this after a BAD-gate rejection to place it anyway. */
+  overrideGate?: boolean
 }
 
 export interface PlaceOrderResult {
@@ -78,6 +126,8 @@ export interface PlaceOrderResult {
   status: number
   filled?: boolean
   message?: string
+  gate?: EntryGate
+  needsOverride?: boolean
 }
 
 /** Place a market (immediate) or limit (pending) order, optionally bracketed. */
@@ -115,6 +165,13 @@ export async function placeOrder(
 
   const tif: Tif = p.tif === 'GTC' ? 'GTC' : 'DAY'
 
+  // Same bar the bot holds its own entries to — block a no-edge order unless
+  // explicitly overridden; let GOOD/WEAK through (WEAK still gets surfaced).
+  const gate = await evaluateEntryGate(quote, p.direction)
+  if (gate.verdict === 'BAD' && !p.overrideGate) {
+    return { ok: false, error: gate.reason, status: 422, gate, needsOverride: true }
+  }
+
   // ── Working orders (LIMIT / STOP / STOP_LIMIT) → rest until triggered ──
   if (p.orderType !== 'MARKET') {
     if ((p.orderType === 'LIMIT' || p.orderType === 'STOP_LIMIT') && !(Number(p.limitPrice) > 0)) {
@@ -137,7 +194,7 @@ export async function placeOrder(
     const trigWord = p.orderType === 'STOP' || p.orderType === 'STOP_LIMIT'
       ? `triggers at $${Number(p.stopTrigger).toFixed(2)}`
       : `fills when ${symbol} ${p.direction === 'LONG' ? 'drops to' : 'rises to'} $${Number(p.limitPrice).toFixed(2)}`
-    return { ok: true, status: 200, filled: false, message: `${p.orderType.replace('_', ' ')} order working (${tif}) — ${trigWord}.` }
+    return { ok: true, status: 200, filled: false, message: `${p.orderType.replace('_', ' ')} order working (${tif}) — ${trigWord}.`, gate }
   }
 
   // ── MARKET entry → fill now ──
@@ -167,7 +224,10 @@ export async function placeOrder(
   if (posErr) return { ok: false, error: posErr.message, status: 500 }
 
   await setCash(supabase, userId, cash - cost)
-  return { ok: true, status: 200, filled: true, message: hasBracket ? `Bought ${shares} ${symbol} @ $${price.toFixed(2)} — bracket is now being managed.` : `Bought ${shares} ${symbol} @ $${price.toFixed(2)}.` }
+  return {
+    ok: true, status: 200, filled: true, gate,
+    message: hasBracket ? `Bought ${shares} ${symbol} @ $${price.toFixed(2)} — bracket is now being managed.` : `Bought ${shares} ${symbol} @ $${price.toFixed(2)}.`,
+  }
 }
 
 /** Fill due limit orders + manage open bracket positions for one user. */

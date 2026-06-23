@@ -1,10 +1,11 @@
 'use client'
 
 import { useState } from 'react'
-import { Zap, Loader2, X } from 'lucide-react'
+import { Zap, Loader2, X, ShieldAlert } from 'lucide-react'
 import { isUsMarketOpenNow } from '@/lib/market-hours'
 
 interface HeldPosition { direction: 'LONG' | 'SHORT'; shares: number }
+interface EntryGate { verdict: 'GOOD' | 'WEAK' | 'BAD'; reason: string; matchedSetup?: string }
 
 interface Props {
   symbol: string
@@ -25,18 +26,25 @@ export default function QuickTradeBar({ symbol, position, onTraded }: Props) {
   const [qty, setQty] = useState(100)
   const [busy, setBusy] = useState<'LONG' | 'SHORT' | 'CLOSE' | null>(null)
   const [err, setErr] = useState<string | null>(null)
+  const [blocked, setBlocked] = useState<{ direction: 'LONG' | 'SHORT'; gate: EntryGate } | null>(null)
   const marketOpen = isUsMarketOpenNow()
 
-  const trade = async (direction: 'LONG' | 'SHORT') => {
+  const trade = async (direction: 'LONG' | 'SHORT', overrideGate = false) => {
     setBusy(direction); setErr(null)
     try {
       const res = await fetch('/api/academy/orders', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, direction, shares: qty, orderType: 'MARKET' }),
+        body: JSON.stringify({ symbol, direction, shares: qty, orderType: 'MARKET', overrideGate }),
       })
       const json = await res.json()
-      if (!res.ok) { setErr(json.error || 'Order failed'); return }
-      onTraded(json.message || `${direction === 'LONG' ? 'Bought' : 'Shorted'} ${qty} ${symbol}`)
+      if (!res.ok) {
+        if (json.needsOverride && json.gate) { setBlocked({ direction, gate: json.gate }); return }
+        setErr(json.error || 'Order failed')
+        return
+      }
+      setBlocked(null)
+      const verdictPrefix = json.gate?.verdict === 'GOOD' ? '✓ Good entry — ' : json.gate?.verdict === 'WEAK' ? '⚠ Weak setup — ' : ''
+      onTraded(verdictPrefix + (json.message || `${direction === 'LONG' ? 'Bought' : 'Shorted'} ${qty} ${symbol}`))
     } finally {
       setBusy(null)
     }
@@ -73,6 +81,27 @@ export default function QuickTradeBar({ symbol, position, onTraded }: Props) {
       {!marketOpen && (
         <div style={{ marginBottom: 10, padding: '9px 12px', borderRadius: 8, background: 'var(--morning)', border: '1px solid var(--border)', fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.5 }}>
           US market is closed (9:30am–4:00pm ET, weekdays). Orders resume when it opens.
+        </div>
+      )}
+
+      {blocked && (
+        <div style={{ marginBottom: 10, padding: '10px 12px', borderRadius: 8, background: 'rgba(220,38,38,0.08)', border: '1px solid rgba(220,38,38,0.3)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, marginBottom: 8 }}>
+            <ShieldAlert size={14} color="#DC2626" style={{ marginTop: 1, flexShrink: 0 }} />
+            <div style={{ fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.5 }}>
+              <strong style={{ color: '#DC2626' }}>No real edge here.</strong> {blocked.gate.reason}
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button type="button" onClick={() => setBlocked(null)}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 7, fontSize: 11.5, fontWeight: 700, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Cancel
+            </button>
+            <button type="button" onClick={() => void trade(blocked.direction, true)}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 7, fontSize: 11.5, fontWeight: 700, border: 'none', background: '#DC2626', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+              Trade anyway
+            </button>
+          </div>
         </div>
       )}
 
