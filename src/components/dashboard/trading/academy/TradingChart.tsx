@@ -109,6 +109,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const [pendingTool, setPendingTool] = useState<PendingTool | null>(null)
   const [menu, setMenu] = useState<ContextMenuState | null>(null)
   const [menuMsg, setMenuMsg] = useState<string | null>(null)
+  const [hover, setHover] = useState<{ x: number; y: number; price: number } | null>(null)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<unknown>(null)
@@ -241,6 +242,15 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         candleSeriesRef.current = candleSeries
         priceLineHandlesRef.current = []
 
+        // Live price tag that follows the cursor — so you know exactly where a line will land.
+        chart.subscribeCrosshairMove((param: { point?: { x: number; y: number } }) => {
+          if (!param.point || !containerRef.current) { setHover(null); return }
+          const price = candleSeries.coordinateToPrice(param.point.y)
+          if (price == null) { setHover(null); return }
+          const rect = containerRef.current.getBoundingClientRect()
+          setHover({ x: rect.left + param.point.x, y: rect.top + param.point.y, price })
+        })
+
         const addLine = (lineData: { time: number; value: number }[], color: string, width = 1) => {
           if (lineData.length === 0) return
           const s = c.addLineSeries
@@ -338,6 +348,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
 
     return () => {
       disposed = true
+      setHover(null)
       if (chartRef.current) {
         try { (chartRef.current as { remove: () => void }).remove() } catch { /* ignore */ }
         chartRef.current = null
@@ -498,6 +509,16 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
 
       <div ref={containerRef} onContextMenu={onContextMenu}
         style={{ width: '100%', height: 380, background: '#0d1126', borderRadius: 8, overflow: 'hidden', cursor: pendingTool ? 'crosshair' : 'default' }} />
+
+      {hover && (
+        <div style={{
+          position: 'fixed', left: hover.x + 14, top: hover.y - 11, zIndex: 40, pointerEvents: 'none',
+          background: '#FBBF24', color: '#1c1917', fontSize: 11.5, fontWeight: 700,
+          padding: '3px 9px', borderRadius: 6, boxShadow: '0 3px 10px rgba(0,0,0,0.35)', fontFamily: 'inherit',
+        }}>
+          {hover.price < 1 ? hover.price.toFixed(4) : hover.price.toFixed(2)}
+        </div>
+      )}
 
       {menu && (
         <div style={{ position: 'fixed', left: menu.x, top: menu.y, zIndex: 9999, minWidth: 200, background: '#161b2e', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 10, boxShadow: '0 12px 32px rgba(0,0,0,0.45)', padding: 6, fontSize: 12.5 }}
