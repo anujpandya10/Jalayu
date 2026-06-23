@@ -20,14 +20,15 @@ import {
 import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
 
 export const AUTO_SEED_CAPITAL = 1000
-// Concentrate the $1000 into a couple of meaningful positions instead of
-// sprinkling it across many tiny ones — a win has to move the account, not
-// nudge it. Two ~$460 positions deploy ~92% of equity; the tight per-trade
-// stop (≈0.4%) keeps the downside of that size to only a few dollars a trade,
-// while the now-uncapped back half is what turns a real runner into a $20-80
-// win. Bigger size barely changes the loss, but massively changes the win.
-const MAX_SLOTS = 2
-const MAX_POSITION_PCT = 0.46
+// The active-scalper model: hold up to 5 names at once, jump into the cleanest
+// gaps as they set up, bank profit, rotate to the next. ~$160 a name puts
+// ~$800 of the $1000 to work (the rest is buffer), matching a "$500-800 at
+// risk" day. The day's profit is the SUM of many small scalps across the 5
+// slots cycling all session — not one or two big swings. Each trade still
+// banks half at the first target (the "take profit and move on") and lets the
+// back half run uncapped, so the occasional bigger winner rides on top.
+const MAX_SLOTS = 5
+const MAX_POSITION_PCT = 0.16
 const COOLDOWN_MINUTES = 8        // short leash — jump back into the same name once it resets up, don't sit out
 const PREP_START_MIN_ET = 9 * 60 + 15      // 9:15am ET — 15 min before the open
 const MARKET_OPEN_MIN_ET = 9 * 60 + 30
@@ -39,8 +40,8 @@ const SESSION_FLATTEN_MIN_ET  = 15 * 60 + 55   // close anything still open at 3
 
 // Risk discipline (the part that actually keeps an account alive):
 const DAILY_LOSS_LIMIT_USD = 30   // down $30 on the day (−3%) → stop for the day, protect capital
-const DAILY_PROFIT_LOCK_USD = 60  // up $60 (+6%) → strong day secured, tighten to top-conviction only (high enough that one good runner doesn't choke the day off)
-const MAX_TRADES_PER_DAY = 16     // many small in/out trades, not a handful of big swings — cut losers fast, stack small wins
+const DAILY_PROFIT_LOCK_USD = 55  // the daily goal (~$50-60): once hit, the day is won — tighten to top-conviction only so a greedy late trade can't give it back. "Take profit and walk away," at the day level.
+const MAX_TRADES_PER_DAY = 30     // active all-day rotation across the 5 slots — the daily loss limit (not the trade count) is the real backstop if a day goes bad
 
 // Let winners run — the asymmetry that actually grows an account. The first
 // half comes off at T1 to bank a sure profit and pay for the trade; the BACK
@@ -51,12 +52,12 @@ const MAX_TRADES_PER_DAY = 16     // many small in/out trades, not a handful of 
 // losses. This is the Livermore/PTJ lesson the curriculum teaches, in code.
 const RUNNER_TRAIL_PCT = 0.02     // back half trails 2% below its peak — wide enough to survive a normal pullback and stay in the move
 
-// Wide net, but only swing at fat pitches. The scan universe is huge now (every
-// screener mover, penny to mega-cap), so a marginal score-3 setup off some
-// random choppy small-cap is exactly the kind of entry that drags the win rate
-// down. Demand genuinely high conviction before risking real size — this is the
-// "only act when the bars are clearly set up" discipline expressed as one number.
-const AUTO_MIN_CONVICTION = 5     // |score| ≥ 5 of 10 to enter — meaningfully pickier than the base filter
+// Wide net, but only swing at decent pitches. The scan universe is huge now
+// (every screener mover, penny to mega-cap), so the weakest marginal setups off
+// random choppy small-caps drag the win rate down. Demand real conviction —
+// but not SO high it sits idle: with 5 slots to keep working an active session,
+// the bar is set to stay busy on the genuinely-set-up bars, not every wiggle.
+const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier than the base floor, loose enough to keep ~5 names working
 // Self-learning: judge each setup by its own realized record and adapt.
 const LEARN_MIN_SAMPLES = 6
 const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
