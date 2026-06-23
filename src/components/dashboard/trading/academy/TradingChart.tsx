@@ -2,7 +2,13 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Loader2, RefreshCw, Pencil, Eraser } from 'lucide-react'
-import { emaArray, vwapArray, bollingerArray, rsiArray, macdArray, type Bar } from '@/lib/chart-indicators'
+import {
+  emaArray, vwapArray, bollingerArray, rsiArray, macdArray,
+  smaArray, wmaArray, vwmaArray, keltnerArray, donchianArray, psarArray, superTrendArray, ichimokuArray,
+  stochasticArray, stochRsiArray, adxArray, cciArray, williamsRArray, rocArray, atrArray,
+  awesomeArray, aroonArray, obvArray, mfiArray, cmfArray,
+  type Bar,
+} from '@/lib/chart-indicators'
 import IndicatorPane, { type PaneLine } from './IndicatorPane'
 
 interface CandlesResponse {
@@ -12,7 +18,10 @@ interface CandlesResponse {
   candles: Bar[]
 }
 
-type Overlay = 'ema9' | 'ema21' | 'ema50' | 'vwap' | 'bb'
+type Overlay =
+  | 'ema9' | 'ema21' | 'ema50' | 'sma20' | 'sma50' | 'sma200' | 'wma' | 'vwma'
+  | 'vwap' | 'bb' | 'keltner' | 'donchian' | 'supertrend' | 'psar' | 'ichimoku'
+type OscId = 'rsi' | 'macd' | 'stoch' | 'stochrsi' | 'adx' | 'cci' | 'willr' | 'roc' | 'atr' | 'obv' | 'mfi' | 'cmf' | 'ao' | 'aroon'
 const INTERVALS: { id: string; label: string }[] = [
   { id: '1m', label: '1m' }, { id: '5m', label: '5m' }, { id: '15m', label: '15m' },
   { id: '30m', label: '30m' }, { id: '1h', label: '1h' }, { id: '1d', label: '1D' },
@@ -25,8 +34,25 @@ const OVERLAY_META: { id: Overlay; label: string; color: string }[] = [
   { id: 'ema9', label: 'EMA 9', color: '#3B82F6' },
   { id: 'ema21', label: 'EMA 21', color: '#F59E0B' },
   { id: 'ema50', label: 'EMA 50', color: '#A855F7' },
+  { id: 'sma20', label: 'SMA 20', color: '#60A5FA' },
+  { id: 'sma50', label: 'SMA 50', color: '#FB923C' },
+  { id: 'sma200', label: 'SMA 200', color: '#F43F5E' },
+  { id: 'wma', label: 'WMA 20', color: '#34D399' },
+  { id: 'vwma', label: 'VWMA 20', color: '#2DD4BF' },
   { id: 'vwap', label: 'VWAP', color: '#22D3EE' },
   { id: 'bb', label: 'Bollinger', color: '#94A3B8' },
+  { id: 'keltner', label: 'Keltner', color: '#C084FC' },
+  { id: 'donchian', label: 'Donchian', color: '#E879F9' },
+  { id: 'supertrend', label: 'SuperTrend', color: '#10B981' },
+  { id: 'psar', label: 'Parabolic SAR', color: '#FACC15' },
+  { id: 'ichimoku', label: 'Ichimoku', color: '#F87171' },
+]
+const OSC_META: { id: OscId; label: string }[] = [
+  { id: 'rsi', label: 'RSI' }, { id: 'macd', label: 'MACD' }, { id: 'stoch', label: 'Stochastic' },
+  { id: 'stochrsi', label: 'Stoch RSI' }, { id: 'adx', label: 'ADX/DMI' }, { id: 'cci', label: 'CCI' },
+  { id: 'willr', label: 'Williams %R' }, { id: 'roc', label: 'ROC' }, { id: 'atr', label: 'ATR' },
+  { id: 'obv', label: 'OBV' }, { id: 'mfi', label: 'MFI' }, { id: 'cmf', label: 'CMF' },
+  { id: 'ao', label: 'Awesome' }, { id: 'aroon', label: 'Aroon' },
 ]
 const QUICK = ['AAPL', 'TSLA', 'NVDA', 'SPY', 'QQQ', 'AMD', 'MSFT', 'AMZN']
 
@@ -62,10 +88,13 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [overlays, setOverlays] = useState<Record<Overlay, boolean>>({
-    ema9: true, ema21: true, ema50: false, vwap: true, bb: false,
+    ema9: true, ema21: true, ema50: false, sma20: false, sma50: false, sma200: false, wma: false, vwma: false,
+    vwap: true, bb: false, keltner: false, donchian: false, supertrend: false, psar: false, ichimoku: false,
   })
-  const [showRsi, setShowRsi] = useState(true)
-  const [showMacd, setShowMacd] = useState(false)
+  const [oscillators, setOscillators] = useState<Record<OscId, boolean>>({
+    rsi: true, macd: false, stoch: false, stochrsi: false, adx: false, cci: false, willr: false,
+    roc: false, atr: false, obv: false, mfi: false, cmf: false, ao: false, aroon: false,
+  })
   const [drawMode, setDrawMode] = useState(false)
   const [lines, setLines] = useState<number[]>([])
 
@@ -102,20 +131,66 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     const closes = candles.map((c) => c.close)
     const bb = bollingerArray(closes)
     const macd = macdArray(closes)
+    const kelt = keltnerArray(candles)
+    const donch = donchianArray(candles)
+    const st = superTrendArray(candles)
+    const ich = ichimokuArray(candles)
+    const stoch = stochasticArray(candles)
+    const stochRsi = stochRsiArray(closes)
+    const adx = adxArray(candles)
+    const aroon = aroonArray(candles)
+
     return {
       times,
+      // Overlays
       ema9: toLine(times, emaArray(closes, 9)),
       ema21: toLine(times, emaArray(closes, 21)),
       ema50: toLine(times, emaArray(closes, 50)),
+      sma20: toLine(times, smaArray(closes, 20)),
+      sma50: toLine(times, smaArray(closes, 50)),
+      sma200: toLine(times, smaArray(closes, 200)),
+      wma: toLine(times, wmaArray(closes, 20)),
+      vwma: toLine(times, vwmaArray(candles, 20)),
       vwap: toLine(times, vwapArray(candles)),
       bbUpper: toLine(times, bb.map((b) => (b ? b.upper : null))),
       bbMid: toLine(times, bb.map((b) => (b ? b.middle : null))),
       bbLower: toLine(times, bb.map((b) => (b ? b.lower : null))),
+      keltUpper: toLine(times, kelt.map((k) => (k ? k.upper : null))),
+      keltMid: toLine(times, kelt.map((k) => (k ? k.middle : null))),
+      keltLower: toLine(times, kelt.map((k) => (k ? k.lower : null))),
+      donchUpper: toLine(times, donch.map((d) => (d ? d.upper : null))),
+      donchMid: toLine(times, donch.map((d) => (d ? d.middle : null))),
+      donchLower: toLine(times, donch.map((d) => (d ? d.lower : null))),
+      supertrendUp: toLine(times, st.map((s) => (s && s.up ? s.value : null))),
+      supertrendDown: toLine(times, st.map((s) => (s && !s.up ? s.value : null))),
+      psar: toLine(times, psarArray(candles)),
+      ichTenkan: toLine(times, ich.map((i) => i.tenkan)),
+      ichKijun: toLine(times, ich.map((i) => i.kijun)),
+      ichSenkouA: toLine(times, ich.map((i) => i.senkouA)),
+      ichSenkouB: toLine(times, ich.map((i) => i.senkouB)),
+      // Oscillators
       rsi: toLine(times, rsiArray(closes)),
       macdLine: toLine(times, macd.map((m) => (m ? m.macd : null))),
       macdSignal: toLine(times, macd.map((m) => (m ? m.signal : null))),
       macdHist: macd.map((m, i) => (m ? { time: times[i], value: m.hist, color: m.hist >= 0 ? 'rgba(34,197,94,0.5)' : 'rgba(239,68,68,0.5)' } : null))
         .filter(Boolean) as { time: number; value: number; color: string }[],
+      stochK: toLine(times, stoch.map((s) => (s ? s.k : null))),
+      stochD: toLine(times, stoch.map((s) => (s ? s.d : null))),
+      stochRsiK: toLine(times, stochRsi.map((s) => (s ? s.k : null))),
+      stochRsiD: toLine(times, stochRsi.map((s) => (s ? s.d : null))),
+      adx: toLine(times, adx.map((a) => (a ? a.adx : null))),
+      plusDI: toLine(times, adx.map((a) => (a ? a.plusDI : null))),
+      minusDI: toLine(times, adx.map((a) => (a ? a.minusDI : null))),
+      cci: toLine(times, cciArray(candles)),
+      willr: toLine(times, williamsRArray(candles)),
+      roc: toLine(times, rocArray(closes)),
+      atr: toLine(times, atrArray(candles)),
+      obv: toLine(times, obvArray(candles)),
+      mfi: toLine(times, mfiArray(candles)),
+      cmf: toLine(times, cmfArray(candles)),
+      ao: toLine(times, awesomeArray(candles)),
+      aroonUp: toLine(times, aroon.map((a) => (a ? a.up : null))),
+      aroonDown: toLine(times, aroon.map((a) => (a ? a.down : null))),
     }
   }, [data])
 
@@ -165,11 +240,36 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         if (overlays.ema9) addLine(series.ema9, '#3B82F6')
         if (overlays.ema21) addLine(series.ema21, '#F59E0B')
         if (overlays.ema50) addLine(series.ema50, '#A855F7')
+        if (overlays.sma20) addLine(series.sma20, '#60A5FA')
+        if (overlays.sma50) addLine(series.sma50, '#FB923C')
+        if (overlays.sma200) addLine(series.sma200, '#F43F5E')
+        if (overlays.wma) addLine(series.wma, '#34D399')
+        if (overlays.vwma) addLine(series.vwma, '#2DD4BF')
         if (overlays.vwap) addLine(series.vwap, '#22D3EE', 2)
         if (overlays.bb) {
           addLine(series.bbUpper, 'rgba(148,163,184,0.7)')
           addLine(series.bbMid, 'rgba(148,163,184,0.4)')
           addLine(series.bbLower, 'rgba(148,163,184,0.7)')
+        }
+        if (overlays.keltner) {
+          addLine(series.keltUpper, 'rgba(192,132,252,0.7)')
+          addLine(series.keltMid, 'rgba(192,132,252,0.4)')
+          addLine(series.keltLower, 'rgba(192,132,252,0.7)')
+        }
+        if (overlays.donchian) {
+          addLine(series.donchUpper, 'rgba(232,121,249,0.7)')
+          addLine(series.donchLower, 'rgba(232,121,249,0.7)')
+        }
+        if (overlays.supertrend) {
+          addLine(series.supertrendUp, '#10B981', 2)
+          addLine(series.supertrendDown, '#EF4444', 2)
+        }
+        if (overlays.psar) addLine(series.psar, '#FACC15')
+        if (overlays.ichimoku) {
+          addLine(series.ichTenkan, '#F87171')
+          addLine(series.ichKijun, '#60A5FA')
+          addLine(series.ichSenkouA, 'rgba(34,197,94,0.5)')
+          addLine(series.ichSenkouB, 'rgba(239,68,68,0.5)')
         }
 
         // Re-apply any drawn horizontal lines
@@ -210,11 +310,26 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     }
   }, [data, series, overlays, lines])
 
-  const rsiLines: PaneLine[] = series ? [{ data: series.rsi, color: '#E879F9', lineWidth: 1 }] : []
-  const macdLines: PaneLine[] = series ? [
-    { data: series.macdLine, color: '#3B82F6', lineWidth: 1 },
-    { data: series.macdSignal, color: '#F59E0B', lineWidth: 1 },
-  ] : []
+  // Build { title, lines, histogram?, refLines? } for every active oscillator pane.
+  const oscPanes = useMemo(() => {
+    if (!series) return []
+    const panes: { id: OscId; title: string; lines: PaneLine[]; histogram?: { data: { time: number; value: number; color?: string }[] }; refLines?: { price: number; color: string }[] }[] = []
+    if (oscillators.rsi) panes.push({ id: 'rsi', title: 'RSI (14) — 30 / 70 bands', lines: [{ data: series.rsi, color: '#E879F9' }], refLines: [{ price: 70, color: 'rgba(239,68,68,0.4)' }, { price: 30, color: 'rgba(34,197,94,0.4)' }] })
+    if (oscillators.macd) panes.push({ id: 'macd', title: 'MACD (12 / 26 / 9)', lines: [{ data: series.macdLine, color: '#3B82F6' }, { data: series.macdSignal, color: '#F59E0B' }], histogram: { data: series.macdHist } })
+    if (oscillators.stoch) panes.push({ id: 'stoch', title: 'Stochastic (14, 3)', lines: [{ data: series.stochK, color: '#3B82F6' }, { data: series.stochD, color: '#F59E0B' }], refLines: [{ price: 80, color: 'rgba(239,68,68,0.4)' }, { price: 20, color: 'rgba(34,197,94,0.4)' }] })
+    if (oscillators.stochrsi) panes.push({ id: 'stochrsi', title: 'Stoch RSI', lines: [{ data: series.stochRsiK, color: '#3B82F6' }, { data: series.stochRsiD, color: '#F59E0B' }], refLines: [{ price: 80, color: 'rgba(239,68,68,0.4)' }, { price: 20, color: 'rgba(34,197,94,0.4)' }] })
+    if (oscillators.adx) panes.push({ id: 'adx', title: 'ADX / DMI (14)', lines: [{ data: series.adx, color: '#94A3B8', lineWidth: 2 }, { data: series.plusDI, color: '#22C55E' }, { data: series.minusDI, color: '#EF4444' }], refLines: [{ price: 25, color: 'rgba(148,163,184,0.4)' }] })
+    if (oscillators.cci) panes.push({ id: 'cci', title: 'CCI (20)', lines: [{ data: series.cci, color: '#A855F7' }], refLines: [{ price: 100, color: 'rgba(239,68,68,0.4)' }, { price: -100, color: 'rgba(34,197,94,0.4)' }] })
+    if (oscillators.willr) panes.push({ id: 'willr', title: 'Williams %R (14)', lines: [{ data: series.willr, color: '#F87171' }], refLines: [{ price: -20, color: 'rgba(239,68,68,0.4)' }, { price: -80, color: 'rgba(34,197,94,0.4)' }] })
+    if (oscillators.roc) panes.push({ id: 'roc', title: 'ROC (12)', lines: [{ data: series.roc, color: '#2DD4BF' }], refLines: [{ price: 0, color: 'rgba(148,163,184,0.3)' }] })
+    if (oscillators.atr) panes.push({ id: 'atr', title: 'ATR (14)', lines: [{ data: series.atr, color: '#FB923C' }] })
+    if (oscillators.obv) panes.push({ id: 'obv', title: 'OBV', lines: [{ data: series.obv, color: '#60A5FA' }] })
+    if (oscillators.mfi) panes.push({ id: 'mfi', title: 'MFI (14)', lines: [{ data: series.mfi, color: '#34D399' }], refLines: [{ price: 80, color: 'rgba(239,68,68,0.4)' }, { price: 20, color: 'rgba(34,197,94,0.4)' }] })
+    if (oscillators.cmf) panes.push({ id: 'cmf', title: 'Chaikin Money Flow (20)', lines: [{ data: series.cmf, color: '#FACC15' }], refLines: [{ price: 0, color: 'rgba(148,163,184,0.3)' }] })
+    if (oscillators.ao) panes.push({ id: 'ao', title: 'Awesome Oscillator', lines: [{ data: series.ao, color: '#10B981' }], refLines: [{ price: 0, color: 'rgba(148,163,184,0.3)' }] })
+    if (oscillators.aroon) panes.push({ id: 'aroon', title: 'Aroon (25)', lines: [{ data: series.aroonUp, color: '#22C55E' }, { data: series.aroonDown, color: '#EF4444' }] })
+    return panes
+  }, [series, oscillators])
 
   const submitSymbol = () => {
     const s = symbolInput.toUpperCase().trim()
@@ -256,14 +371,28 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         ))}
       </div>
 
-      {/* Overlay + pane toggles + draw tools */}
+      {/* Overlay toggles */}
+      <div style={{ marginBottom: 6 }}>
+        <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 4px' }}>Overlays</div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {OVERLAY_META.map((o) => (
+            <Toggle key={o.id} active={overlays[o.id]} color={o.color} label={o.label} onClick={() => setOverlays((p) => ({ ...p, [o.id]: !p[o.id] }))} />
+          ))}
+        </div>
+      </div>
+
+      {/* Oscillator / pane toggles */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 4px' }}>Indicators</div>
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+          {OSC_META.map((o) => (
+            <Toggle key={o.id} active={oscillators[o.id]} color="#94A3B8" label={o.label} onClick={() => setOscillators((p) => ({ ...p, [o.id]: !p[o.id] }))} />
+          ))}
+        </div>
+      </div>
+
+      {/* Draw tools */}
       <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 10, alignItems: 'center' }}>
-        {OVERLAY_META.map((o) => (
-          <Toggle key={o.id} active={overlays[o.id]} color={o.color} label={o.label} onClick={() => setOverlays((p) => ({ ...p, [o.id]: !p[o.id] }))} />
-        ))}
-        <Toggle active={showRsi} color="#E879F9" label="RSI" onClick={() => setShowRsi((v) => !v)} />
-        <Toggle active={showMacd} color="#3B82F6" label="MACD" onClick={() => setShowMacd((v) => !v)} />
-        <span style={{ width: 1, height: 18, background: 'var(--border)', margin: '0 2px' }} />
         <button type="button" onClick={() => setDrawMode((v) => !v)}
           style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 9px', fontSize: 10.5, fontWeight: 600, borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit',
             background: drawMode ? '#FBBF24' : 'var(--morning)', color: drawMode ? '#1c1917' : 'var(--text-2)', border: `1px solid ${drawMode ? '#FBBF24' : 'var(--border)'}` }}>
@@ -300,18 +429,12 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         ))}
       </div>
 
-      {showRsi && series && (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ fontSize: 10, color: 'var(--text-3)', margin: '6px 2px 2px' }}>RSI (14) — 30 / 70 bands</div>
-          <IndicatorPane height={100} lines={rsiLines} refLines={[{ price: 70, color: 'rgba(239,68,68,0.4)' }, { price: 30, color: 'rgba(34,197,94,0.4)' }]} />
+      {oscPanes.map((pane) => (
+        <div key={pane.id} style={{ marginTop: 6 }}>
+          <div style={{ fontSize: 10, color: 'var(--text-3)', margin: '6px 2px 2px' }}>{pane.title}</div>
+          <IndicatorPane height={pane.histogram ? 110 : 100} lines={pane.lines} histogram={pane.histogram} refLines={pane.refLines} />
         </div>
-      )}
-      {showMacd && series && (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ fontSize: 10, color: 'var(--text-3)', margin: '6px 2px 2px' }}>MACD (12 / 26 / 9)</div>
-          <IndicatorPane height={110} lines={macdLines} histogram={{ data: series.macdHist }} />
-        </div>
-      )}
+      ))}
 
       <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 8, lineHeight: 1.5 }}>
         Real candles from Yahoo. Toggle indicators above; tap <strong>Draw line</strong> then click the chart to mark a support/resistance or your target price.
