@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { BookOpen, LineChart, FastForward } from 'lucide-react'
+import { BookOpen, LineChart, FastForward, Bot } from 'lucide-react'
 import CurriculumBrowser from './CurriculumBrowser'
 import PracticeDesk from './PracticeDesk'
 import BarReplay from './BarReplay'
+import AutoTrader from './AutoTrader'
 
-type AcademyView = 'curriculum' | 'practice' | 'replay'
+type AcademyView = 'curriculum' | 'practice' | 'replay' | 'auto'
 
 /**
  * Academy — the live trading classroom. Two sub-views: the curriculum
@@ -28,6 +29,7 @@ export default function AcademyTab() {
           { id: 'curriculum' as const, label: 'Curriculum', icon: <BookOpen size={14} /> },
           { id: 'practice' as const, label: 'Practice desk', icon: <LineChart size={14} /> },
           { id: 'replay' as const, label: 'Bar Replay', icon: <FastForward size={14} /> },
+          { id: 'auto' as const, label: 'Auto Trader', icon: <Bot size={14} /> },
         ]).map((t) => (
           <button
             key={t.id}
@@ -52,6 +54,7 @@ export default function AcademyTab() {
       {view === 'curriculum' && <CurriculumBrowser />}
       {view === 'practice' && <PracticeDesk />}
       {view === 'replay' && <BarReplay />}
+      {view === 'auto' && <AutoTrader />}
     </div>
   )
 }

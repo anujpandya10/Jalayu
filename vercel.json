@@ -23,6 +23,10 @@
     {
       "path": "/api/cron/academy-orders",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/academy-auto-trader",
+      "schedule": "* * * * *"
     }
   ]
 }
