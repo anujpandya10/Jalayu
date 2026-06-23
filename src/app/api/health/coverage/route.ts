@@ -13,7 +13,7 @@ import {
   type WebSearchResult,
 } from '@/lib/web-search'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 interface CoverageBody {
   question: string
@@ -99,6 +99,7 @@ export async function POST(request: Request) {
       }))
     claudeMessages.push({ role: 'user', content: question })
 
+    const anthropic = await getUserAnthropic(user.id)
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1200,

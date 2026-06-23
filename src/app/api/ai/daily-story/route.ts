@@ -13,9 +13,7 @@
  */
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import Anthropic from '@anthropic-ai/sdk'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 const STORY_FOLDER_NAME = '📖 Daily Story'
 
 function isoDateOnly(d: Date): string {
@@ -225,6 +223,7 @@ TONE EXAMPLES:
 
 OUTPUT: Just the story in markdown. No title (the note has a date title already). No preamble. Just write.`
 
+    const anthropic = await getUserAnthropic(user.id)
     const resp = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1200,

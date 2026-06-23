@@ -16,7 +16,7 @@ import { createClient } from '@/lib/supabase-server'
 import Anthropic from '@anthropic-ai/sdk'
 import { snapshotNote } from '@/lib/note-revisions'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 interface ScreenContext {
   view?: string
@@ -65,7 +65,7 @@ interface CaptureClassification {
   reason: string
 }
 
-async function classifyCapture(text: string, screen?: ScreenContext): Promise<CaptureClassification> {
+async function classifyCapture(text: string, screen: ScreenContext | undefined, client: Anthropic): Promise<CaptureClassification> {
   const today = new Date().toISOString().split('T')[0]
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
 
@@ -103,7 +103,7 @@ RULES:
 - Preserve user's wording in title/body — don't paraphrase.
 - If the user is in a project folder ("${screen?.folderName ?? '—'}") and the thought is project-related (idea, observation, todo about that project), the destination is "note" and body should mention the folder context.`
 
-  const resp = await anthropic.messages.create({
+  const resp = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 600,
     system,
@@ -526,6 +526,7 @@ If the user asks for suggestions WITHOUT asking to save them (e.g., "what could 
     },
   ] : []
 
+  const anthropic = await getUserAnthropic(userId)
   const resp = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 4000,
@@ -630,7 +631,7 @@ export async function POST(request: Request) {
 
     // CAPTURE mode — always execute the best guess. "note" is a safe
     // fallback for ambiguous thoughts; user can move items later if needed.
-    const classification = await classifyCapture(text, body.context)
+    const classification = await classifyCapture(text, body.context, await getUserAnthropic(user.id))
 
     // Special path: vault_hint never auto-saves. Return the raw value so
     // the client can prompt for PIN and encrypt it client-side.

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { getUserAnthropic } from '@/lib/user-ai'
 
 function verifyCron(req: Request) {
   const secret = process.env.CRON_SECRET
@@ -14,7 +14,6 @@ export async function GET(req: Request) {
   const admin = createAdminClient()
   if (!admin) return NextResponse.json({ error: 'Server not configured' }, { status: 503 })
 
-  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
   const now = new Date()
   const fourteenDaysAgo = new Date(Date.now() - 14 * 86400000).toISOString()
   const sevenDaysAgo = new Date(Date.now() - 7 * 86400000).toISOString()
@@ -213,6 +212,7 @@ Generate exactly this JSON (no markdown, valid JSON only):
 
     let intelligenceData: Record<string, string> = {}
     try {
+      const anthropic = await getUserAnthropic(profile.id)
       const msg = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1500,

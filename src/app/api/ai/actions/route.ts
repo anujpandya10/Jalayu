@@ -3,7 +3,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { buildMedicationReminderFields } from '@/lib/medication-reminder'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 const TOOLS: Anthropic.Tool[] = [
   {
@@ -267,6 +267,7 @@ export async function POST(request: Request) {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) return new Response(JSON.stringify({ executed: [] }), { headers: { 'Content-Type': 'application/json' } })
 
+    const anthropic = await getUserAnthropic(user.id)
     const now = new Date()
     const today = now.toISOString().split('T')[0]
     const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })

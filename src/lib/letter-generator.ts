@@ -16,7 +16,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getUserContext, formatUserContextForPrompt, type UserContextSnapshot } from '@/lib/user-context'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 const MODEL = 'claude-sonnet-4-20250514'
 
@@ -138,8 +138,8 @@ function chooseDeepeningQuestion(
 // Shared LLM call
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function callClaude(system: string, userMessage: string): Promise<string> {
-  const resp = await anthropic.messages.create({
+async function callClaude(system: string, userMessage: string, client: Anthropic): Promise<string> {
+  const resp = await client.messages.create({
     model: MODEL,
     max_tokens: 500,
     system,
@@ -245,6 +245,7 @@ export async function generateDailyLetter(
   const textMd = await callClaude(
     `${DAILY_SYSTEM_PROMPT}${userBlock}${questionInstruction}`,
     userMessage,
+    await getUserAnthropic(userId),
   )
 
   // Stamp last_deepening_at if we successfully wove a question in
@@ -281,6 +282,7 @@ export async function generateWelcomeLetter(
   const textMd = await callClaude(
     `${WELCOME_SYSTEM_PROMPT}${userBlock}`,
     userMessage,
+    await getUserAnthropic(userId),
   )
 
   return { textMd, model: MODEL, letterDate: dateKey, deepeningQuestion: null }

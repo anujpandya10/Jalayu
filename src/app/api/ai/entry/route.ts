@@ -1,8 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
 import { langInstruction } from '@/lib/language'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 export async function GET() {
   try {
@@ -170,6 +168,7 @@ Write your opening message. Non-negotiable rules:
 - If intelligence signals are present, weave the most relevant one into your opening naturally — but like you noticed it yourself, not like you're reading a report.
 - If energy debt is signaled, be gentle and acknowledge the weight without dramatizing.`
 
+    const anthropic = await getUserAnthropic(user.id)
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 220,

@@ -1,11 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { detectLanguage, langInstruction } from '@/lib/language'
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+import { getUserAnthropic } from '@/lib/user-ai'
 
 function toneFromProfile(workType: string | null, struggles: string[] | null) {
   const w = workType || ''
@@ -540,6 +536,7 @@ EQUAL REVERENCE â€” Bible, Quran, Gita, Stoics, Tao, Buddha, secular thinkers â€
     // We collect the full response text after streaming completes
     let collectedResponse = ''
 
+    const anthropic = await getUserAnthropic(user.id)
     const stream = anthropic.messages.stream({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 1000,

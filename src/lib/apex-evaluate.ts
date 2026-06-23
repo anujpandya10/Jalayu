@@ -15,8 +15,7 @@ import { fetchCandles } from '@/lib/candle-data'
 import { computeIndicators, calculateRSI } from '@/lib/indicators'
 import { scoreAssetFull } from '@/lib/trading-signals'
 import { SEED_CAPITAL } from '@/lib/trading-config'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 export interface ApexDecisionPayload {
   decision: 'BUY' | 'SELL' | 'HOLD'
@@ -190,6 +189,7 @@ ${indBlock}
 
 Produce your decision as the specified JSON object. Stop loss and take profit MUST be absolute price values relative to current price, with at least a 1:2 R/R ratio.`
 
+  const anthropic = await getUserAnthropic(userId)
   const resp = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 600,

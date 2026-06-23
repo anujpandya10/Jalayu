@@ -1,9 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
 import { langInstruction } from '@/lib/language'
 import { LIFE_SCENARIO_PROMPT } from '@/lib/life-scenarios'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 export async function GET() {
   try {
@@ -104,6 +102,7 @@ RETURN THIS JSON (no markdown, no explanation, just the raw object):
 If they have no tasks: note reflects their fresh start; focus = 'Tell me what you want to work on today.'; tip and chapter reflect a beginning.
 Do not invent tasks they haven't listed. Only reference real data.`
 
+    const anthropic = await getUserAnthropic(user.id)
     const message = await anthropic.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 300,

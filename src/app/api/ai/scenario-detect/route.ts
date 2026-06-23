@@ -1,9 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
+import { getUserAnthropic } from '@/lib/user-ai'
 
 interface ScenarioDetectBody {
   message: string
@@ -54,6 +50,7 @@ Return ONLY valid JSON, no other text.
 Message to analyze:
 "${message.replace(/"/g, '\\"')}"`
 
+    const anthropic = await getUserAnthropic(user.id)
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5',
       max_tokens: 300,

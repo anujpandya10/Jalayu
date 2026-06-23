@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { createAdminClient } from '@/lib/supabase-admin'
+import { getUserAnthropic } from '@/lib/user-ai'
 
 function verifyCron(req: Request) {
   const secret = process.env.CRON_SECRET
@@ -18,12 +18,6 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Server not configured' }, { status: 503 })
   }
 
-  const key = process.env.ANTHROPIC_API_KEY
-  if (!key) {
-    return NextResponse.json({ skipped: true, reason: 'No ANTHROPIC_API_KEY' })
-  }
-
-  const anthropic = new Anthropic({ apiKey: key })
   const today = new Date().toISOString().split('T')[0]
   const startOfDay = `${today}T00:00:00.000Z`
   const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
@@ -66,6 +60,8 @@ Last week: ${moodScores.length} mood logs${avgMood ? `, avg ${avgMood}/5` : ''}.
 Recent reflections: ${(refl || []).map((r) => [r.one_word, r.win_of_day].filter(Boolean).join(' — ')).join(' | ') || 'none'}.
 Be specific and kind. No medical claims.`
 
+    let anthropic
+    try { anthropic = await getUserAnthropic(p.id) } catch { continue }  // no connected agent → skip
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 220,

@@ -25,8 +25,6 @@ import {
 import { getUserContext, formatUserContextForPrompt } from '@/lib/user-context'
 import { getUserAnthropic, NoAgentError } from '@/lib/user-ai'
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
-
 // Allow the runner to finish well within Vercel's 300s default
 export const maxDuration = 300
 
@@ -105,25 +103,6 @@ function detectKindHeuristic(text: string): IntentKind {
     if (first.startsWith(verb + ' ') || first.startsWith(verb + ':')) return 'draft'
   }
   return 'research'
-}
-
-// Reserved for the ambiguous-case classifier (not yet wired — keeping the
-// surface ready so we can swap heuristic → LLM without re-plumbing).
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function detectKindLLM(text: string): Promise<IntentKind> {
-  try {
-    const resp = await anthropic.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 8,
-      system: 'Classify the user intent as either "research" (they want information found / synthesised) or "draft" (they want text written). Output ONLY one word: research or draft.',
-      messages: [{ role: 'user', content: text }],
-    })
-    const out = resp.content.find((b) => b.type === 'text')
-    const word = out && 'text' in out ? out.text.trim().toLowerCase() : ''
-    return word === 'draft' ? 'draft' : 'research'
-  } catch {
-    return 'research'
-  }
 }
 
 // ── Worker ────────────────────────────────────────────────────────────────────

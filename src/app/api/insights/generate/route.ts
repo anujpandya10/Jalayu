@@ -1,7 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { createClient } from '@/lib/supabase-server'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { getUserAnthropic } from '@/lib/user-ai'
 
 export async function POST(request: Request) {
   try {
@@ -46,6 +44,7 @@ Context:
 
 Write a single insight that is honest, specific, and actionable. Do not be generic. Reference actual patterns if available. Max 3 sentences.`
 
+    const anthropic = await getUserAnthropic(user.id)
     const message = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
       max_tokens: 200,
