@@ -50,6 +50,13 @@ const MAX_TRADES_PER_DAY = 16     // many small in/out trades, not a handful of 
 // half captures most of it — one of those pays for a long string of small
 // losses. This is the Livermore/PTJ lesson the curriculum teaches, in code.
 const RUNNER_TRAIL_PCT = 0.02     // back half trails 2% below its peak — wide enough to survive a normal pullback and stay in the move
+
+// Wide net, but only swing at fat pitches. The scan universe is huge now (every
+// screener mover, penny to mega-cap), so a marginal score-3 setup off some
+// random choppy small-cap is exactly the kind of entry that drags the win rate
+// down. Demand genuinely high conviction before risking real size — this is the
+// "only act when the bars are clearly set up" discipline expressed as one number.
+const AUTO_MIN_CONVICTION = 5     // |score| ≥ 5 of 10 to enter — meaningfully pickier than the base filter
 // Self-learning: judge each setup by its own realized record and adapt.
 const LEARN_MIN_SAMPLES = 6
 const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
@@ -374,7 +381,9 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
   const signals = scored.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<Signal>).value)
   const longs = filterLongEntries(signals)
   const shorts = filterShortEntries(signals)
-  const candidates = [...longs, ...shorts].sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
+  const candidates = [...longs, ...shorts]
+    .filter((s) => Math.abs(s.score) >= AUTO_MIN_CONVICTION)   // only the clearly-set-up bars, not every marginal one
+    .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
 
   for (const sig of candidates) {
     if (slotsFree <= 0) break
