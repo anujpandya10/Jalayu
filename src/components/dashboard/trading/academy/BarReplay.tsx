@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { Loader2, Play, Pause, SkipForward, RotateCcw, FastForward } from 'lucide-react'
-import { emaArray, vwapArray, type Bar } from '@/lib/chart-indicators'
+import { emaArray, vwapArray, computeSignalMarkers, type Bar } from '@/lib/chart-indicators'
 
 interface CandlesResponse {
   symbol: string
@@ -46,6 +46,7 @@ export default function BarReplay() {
   const [position, setPosition] = useState<ReplayPosition | null>(null)
   const [closed, setClosed] = useState<ClosedTrade[]>([])
   const [qty, setQty] = useState(100)
+  const [showSignals, setShowSignals] = useState(true)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<unknown>(null)
@@ -111,6 +112,11 @@ export default function BarReplay() {
           grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
           rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
           timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false },
+          crosshair: {
+            mode: 1,
+            horzLine: { color: '#FBBF24', width: 1, style: 2, labelBackgroundColor: '#FBBF24' },
+            vertLine: { color: 'rgba(255,255,255,0.4)', width: 1, style: 2, labelBackgroundColor: 'rgba(255,255,255,0.25)' },
+          },
         })
         chartRef.current = chart
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +125,13 @@ export default function BarReplay() {
           ? c.addCandlestickSeries({ upColor: '#22C55E', downColor: '#EF4444', borderVisible: false, wickUpColor: '#22C55E', wickDownColor: '#EF4444' })
           : c.addSeries((lib as { CandlestickSeries: unknown }).CandlestickSeries, { upColor: '#22C55E', downColor: '#EF4444', borderVisible: false })
         candleSeries.setData(visible)
+        if (showSignals) {
+          const markers = computeSignalMarkers(visible)
+          if (markers.length > 0) {
+            const createSeriesMarkers = (lib as { createSeriesMarkers?: (s: unknown, m: unknown[]) => unknown }).createSeriesMarkers
+            createSeriesMarkers?.(candleSeries, markers)
+          }
+        }
 
         const times = visible.map((b) => b.time)
         const closes = visible.map((b) => b.close)
@@ -150,7 +163,7 @@ export default function BarReplay() {
       disposed = true
       if (chartRef.current) { try { (chartRef.current as { remove: () => void }).remove() } catch { /* ignore */ } chartRef.current = null }
     }
-  }, [started, replayIndex, candles, position])
+  }, [started, replayIndex, candles, position, showSignals])
 
   const openLong = () => { if (currentPrice != null) { setPosition({ direction: 'LONG', shares: qty, entryPrice: currentPrice }); setCash((c) => c - currentPrice * qty) } }
   const openShort = () => { if (currentPrice != null) { setPosition({ direction: 'SHORT', shares: qty, entryPrice: currentPrice }); setCash((c) => c - currentPrice * qty) } }
@@ -223,11 +236,24 @@ export default function BarReplay() {
       {started && (
         <>
           {/* Account strip */}
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10, fontSize: 12 }}>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 6, fontSize: 12 }}>
             <span style={{ color: 'var(--text-2)' }}>Equity <strong style={{ color: 'var(--text)' }}>${equity.toFixed(2)}</strong></span>
             <span style={{ color: totalPnl >= 0 ? '#16A34A' : '#DC2626', fontWeight: 700 }}>{totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)}</span>
             {closed.length > 0 && <span style={{ color: 'var(--text-3)' }}>{wins}/{closed.length} wins</span>}
             <span style={{ marginLeft: 'auto', color: 'var(--text-3)' }}>Bar {replayIndex} / {candles.length}</span>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => setShowSignals((v) => !v)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 9px', fontSize: 10.5, fontWeight: 600, borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit',
+                background: showSignals ? 'var(--surface-2, var(--morning))' : 'transparent', color: showSignals ? 'var(--text)' : 'var(--text-3)', border: `1px solid ${showSignals ? 'var(--border)' : 'transparent'}`, opacity: showSignals ? 1 : 0.6 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: '#16A34A' }} /> Buy/sell signals
+            </button>
+            {showSignals && (
+              <span style={{ fontSize: 10, color: 'var(--text-3)', lineHeight: 1.4 }}>
+                ▲ green = a real long setup just fired · ▼ red = a short setup — hover an arrow to see which one.
+              </span>
+            )}
           </div>
 
           <div ref={containerRef} style={{ width: '100%', height: 360, background: '#0d1126', borderRadius: 8, overflow: 'hidden', marginBottom: 10 }} />

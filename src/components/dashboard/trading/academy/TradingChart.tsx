@@ -6,7 +6,7 @@ import {
   emaArray, vwapArray, bollingerArray, rsiArray, macdArray,
   smaArray, wmaArray, vwmaArray, keltnerArray, donchianArray, psarArray, superTrendArray, ichimokuArray,
   stochasticArray, stochRsiArray, adxArray, cciArray, williamsRArray, rocArray, atrArray,
-  awesomeArray, aroonArray, obvArray, mfiArray, cmfArray,
+  awesomeArray, aroonArray, obvArray, mfiArray, cmfArray, computeSignalMarkers,
   type Bar,
 } from '@/lib/chart-indicators'
 import IndicatorPane, { type PaneLine } from './IndicatorPane'
@@ -134,6 +134,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const [pnlBand, setPnlBand] = useState<{ top: number; height: number; left: number; width: number; up: boolean } | null>(null)
   const [chartQty, setChartQty] = useState(100)
   const [chartTradeBusy, setChartTradeBusy] = useState<'LONG' | 'SHORT' | null>(null)
+  const [showSignals, setShowSignals] = useState(true)
   const [dragPrice, setDragPrice] = useState<{ kind: DragKind; price: number; x: number; y: number } | null>(null)
   const priceLinesRef = useRef<Partial<Record<DragKind, DraggableLine>>>({})
   const draggingRef = useRef<DragKind | null>(null)
@@ -234,6 +235,10 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     }
   }, [data])
 
+  // "Where could I have bought/sold" teaching markers — recreates the bot's
+  // real pattern logic (RSI/EMA/MACD/VWAP/Bollinger) on the loaded candles.
+  const signalMarkers = useMemo(() => (data ? computeSignalMarkers(data.candles) : []), [data])
+
   // Build the main candlestick chart + overlays
   useEffect(() => {
     if (!containerRef.current || !data || !series || data.candles.length === 0) return
@@ -256,7 +261,11 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
           rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
           timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false },
-          crosshair: { mode: 1 },
+          crosshair: {
+            mode: 1,
+            horzLine: { color: '#FBBF24', width: 1, style: 2, labelBackgroundColor: '#FBBF24' },
+            vertLine: { color: 'rgba(255,255,255,0.4)', width: 1, style: 2, labelBackgroundColor: 'rgba(255,255,255,0.25)' },
+          },
         })
         chartRef.current = chart
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -268,6 +277,10 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         candleSeries.setData(data.candles)
         candleSeriesRef.current = candleSeries
         priceLineHandlesRef.current = []
+        if (showSignals && signalMarkers.length > 0) {
+          const createSeriesMarkers = (lib as { createSeriesMarkers?: (s: unknown, m: unknown[]) => unknown }).createSeriesMarkers
+          createSeriesMarkers?.(candleSeries, signalMarkers)
+        }
 
         // Live price tag that follows the cursor — so you know exactly where a line will land.
         chart.subscribeCrosshairMove((param: { point?: { x: number; y: number } }) => {
@@ -416,7 +429,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         chartRef.current = null
       }
     }
-  }, [data, series, overlays, drawings, position])
+  }, [data, series, overlays, drawings, position, showSignals, signalMarkers])
 
   // Drag-to-adjust stop/target lines. Lives in its own effect (independent of the
   // heavy chart-rebuild effect) and reads chart/series/line refs lazily at call
@@ -652,6 +665,18 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           {OSC_META.map((o) => (
             <Toggle key={o.id} active={oscillators[o.id]} color="#94A3B8" label={o.label} onClick={() => setOscillators((p) => ({ ...p, [o.id]: !p[o.id] }))} />
           ))}
+        </div>
+      </div>
+
+      {/* Teaching markers — "where could I have bought/sold here" */}
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <Toggle active={showSignals} color="#16A34A" label="Buy/sell signals" onClick={() => setShowSignals((v) => !v)} />
+          {showSignals && (
+            <span style={{ fontSize: 10, color: 'var(--text-3)', lineHeight: 1.4 }}>
+              ▲ green = a real long setup (momentum/oversold/VWAP/MACD/Bollinger) just fired here · ▼ red = a short setup. Hover an arrow for which one. Same logic the bot trades, simplified for the chart.
+            </span>
+          )}
         </div>
       </div>
 

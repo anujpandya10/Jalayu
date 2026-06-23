@@ -479,3 +479,67 @@ export function ichimokuArray(bars: Bar[], conv = 9, base = 26, spanB = 52): Ich
     return { tenkan, kijun, senkouA, senkouB }
   })
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Teaching overlay: "where would the bot have bought/sold here"
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface SignalMarker {
+  time: number
+  position: 'aboveBar' | 'belowBar'
+  color: string
+  shape: 'arrowUp' | 'arrowDown'
+  text: string
+}
+
+/**
+ * A simplified, client-safe recreation of the live engine's real setup logic
+ * (trading-signals.ts) for teaching — marks the bar where a named pattern
+ * just turned true (edge-triggered: one marker per occurrence, not one for
+ * every bar the condition stays valid). Deliberately omits the engine's 24h
+ * % change pre-filter, since that's about which SYMBOLS get scanned, not the
+ * bar-level pattern this overlay is teaching.
+ */
+export function computeSignalMarkers(bars: Bar[]): SignalMarker[] {
+  if (bars.length < 30) return []
+  const closes = bars.map((b) => b.close)
+  const volumes = bars.map((b) => b.volume || 0)
+  const ema9 = emaArray(closes, 9)
+  const ema21 = emaArray(closes, 21)
+  const rsi = rsiArray(closes)
+  const vwap = vwapArray(bars)
+  const bb = bollingerArray(closes)
+  const macd = macdArray(closes)
+  const volAvg = smaArray(volumes, 20)
+
+  const markers: SignalMarker[] = []
+  let prevLong = false
+  let prevShort = false
+
+  for (let i = 21; i < bars.length; i++) {
+    const e9 = ema9[i], e21 = ema21[i], r = rsi[i], v = vwap[i], b = bb[i], m = macd[i]
+    if (e9 == null || e21 == null || r == null) { prevLong = false; prevShort = false; continue }
+    const avgVol = volAvg[i]
+    const volSpike = avgVol && avgVol > 0 ? volumes[i] / avgVol : 1
+    const vwapDevPct = v ? ((closes[i] - v) / v) * 100 : 0
+
+    const longHits: { color: string; text: string }[] = []
+    if (e9 > e21 && r >= 45 && r <= 75 && volSpike >= 1.3) longHits.push({ color: '#16A34A', text: 'Momentum long' })
+    if (r < 35 && vwapDevPct < -1.0) longHits.push({ color: '#22C55E', text: 'Oversold bounce' })
+    if (r >= 42 && r <= 60 && e9 > e21 * 1.001 && Math.abs(vwapDevPct) < 0.15) longHits.push({ color: '#06B6D4', text: 'VWAP support' })
+    if (m && m.hist > 0 && r >= 40 && r <= 70 && e9 > e21) longHits.push({ color: '#3B82F6', text: 'MACD cross' })
+    if (b && closes[i] <= b.lower * 1.008 && r < 38 && r > 15) longHits.push({ color: '#A855F7', text: 'BB lower bounce' })
+
+    const shortHits: { color: string; text: string }[] = []
+    if (r >= 72 && e9 < e21 && volSpike >= 2) shortHits.push({ color: '#DC2626', text: 'Pump fade (short)' })
+    if (vwapDevPct > 1.5 && r >= 68 && r <= 80 && e9 < e21) shortHits.push({ color: '#EF4444', text: 'VWAP short' })
+
+    const longNow = longHits.length > 0
+    const shortNow = shortHits.length > 0
+    if (longNow && !prevLong) markers.push({ time: bars[i].time, position: 'belowBar', color: longHits[0].color, shape: 'arrowUp', text: longHits[0].text })
+    if (shortNow && !prevShort) markers.push({ time: bars[i].time, position: 'aboveBar', color: shortHits[0].color, shape: 'arrowDown', text: shortHits[0].text })
+    prevLong = longNow
+    prevShort = shortNow
+  }
+  return markers
+}
