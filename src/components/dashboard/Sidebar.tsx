@@ -1,17 +1,33 @@
 'use client'
 
+import { useEffect } from 'react'
 import { Search, LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import { useStore } from '@/store/useStore'
 import { getDisplayName, getDayNumber } from '@/lib/utils'
-import { NAV_SECTIONS } from '@/components/dashboard/navConfig'
+import { visibleNavSections } from '@/components/dashboard/navConfig'
 
 export default function Sidebar() {
-  const { profile, sidebarView, setSidebarView, setShowChatPanel } = useStore()
+  const { profile, sidebarView, setSidebarView, setShowChatPanel, enabledModules, setEnabledModules } = useStore()
   const name = getDisplayName(profile)
   const dayNumber = profile ? getDayNumber(profile.created_at) : 1
   const router = useRouter()
+
+  // Load the user's personalization once. Until it lands (and whenever a user
+  // has never personalized), enabledModules stays a "show everything" fallback,
+  // so the nav can never come up empty.
+  useEffect(() => {
+    if (enabledModules !== null) return
+    let cancelled = false
+    fetch('/api/modules')
+      .then((r) => r.json())
+      .then((d: { enabled?: string[] }) => { if (!cancelled) setEnabledModules(d.enabled ?? []) })
+      .catch(() => { if (!cancelled) setEnabledModules([]) })
+    return () => { cancelled = true }
+  }, [enabledModules, setEnabledModules])
+
+  const navSections = visibleNavSections(enabledModules ? new Set(enabledModules) : null)
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -70,7 +86,7 @@ export default function Sidebar() {
           overflowY: 'auto',
         }}
       >
-        {NAV_SECTIONS.map(({ section, items }) => (
+        {navSections.map(({ section, items }) => (
           <div key={section}>
             <div
               style={{

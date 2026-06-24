@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, User } from 'lucide-react'
+import { Loader2, User, LayoutGrid, RotateCcw } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile } from '@/lib/types'
 import { useStore } from '@/store/useStore'
 import ConnectAgent from '@/components/dashboard/views/ConnectAgent'
+import LifeIntake from '@/components/dashboard/LifeIntake'
 
 const labelStyle: React.CSSProperties = {
   display: 'block',
@@ -28,10 +29,24 @@ const inputStyle: React.CSSProperties = {
 }
 
 export default function SettingsView() {
-  const { profile, setProfile } = useStore()
+  const { profile, setProfile, setEnabledModules } = useStore()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [authEmail, setAuthEmail] = useState<string | null>(null)
+  const [showIntake, setShowIntake] = useState(false)
+
+  const resetPersonalization = async () => {
+    if (!confirm('Reset your Jalayu setup? This clears your module choices and shows everything again.')) return
+    try {
+      const res = await fetch('/api/intake', { method: 'DELETE' })
+      if (!res.ok) { toast.error('Could not reset'); return }
+      setEnabledModules([])
+      setShowIntake(false)
+      toast.success('Reset — every module is visible again')
+    } catch {
+      toast.error('Could not reset')
+    }
+  }
 
   const [fullName, setFullName] = useState('')
   const [nickname, setNickname] = useState('')
@@ -139,6 +154,32 @@ export default function SettingsView() {
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <section className="card">
+          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
+            Your Jalayu
+          </p>
+          {showIntake ? (
+            <div style={{ marginTop: 6 }}>
+              <LifeIntake onDone={() => setShowIntake(false)} />
+            </div>
+          ) : (
+            <>
+              <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.5 }}>
+                Jalayu is the ground; you build the house. Answer a few questions about your life and it sets itself up around what actually matters to you — switch the rest off so your app isn&apos;t cluttered with things you don&apos;t use.
+              </p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => setShowIntake(true)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 9, border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <LayoutGrid size={14} /> Set up / redo my Jalayu
+                </button>
+                <button type="button" onClick={() => void resetPersonalization()}
+                  style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 9, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-2)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                  <RotateCcw size={14} /> Reset to show everything
+                </button>
+              </div>
+            </>
+          )}
+        </section>
         <ConnectAgent />
         <section className="card">
           <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>

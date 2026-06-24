@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react'
 import type { SidebarView } from '@/lib/types'
+import { alwaysOnModuleIds } from '@/lib/modules-registry'
 import {
   Home,
   CheckSquare,
@@ -58,3 +59,21 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
     ],
   },
 ]
+
+const ALWAYS_VISIBLE = new Set<SidebarView>(alwaysOnModuleIds())
+
+/**
+ * Filters the nav to a user's enabled modules. Fallback by design: if `enabled`
+ * is null (still loading) or empty (never personalized), the full nav shows —
+ * so no existing user's navigation can break. Always-on system modules and
+ * owner-only surfaces are kept regardless.
+ */
+export function visibleNavSections(enabled: Set<string> | null): typeof NAV_SECTIONS {
+  if (!enabled || enabled.size === 0) return NAV_SECTIONS
+  return NAV_SECTIONS
+    .map(({ section, items }) => ({
+      section,
+      items: items.filter((it) => it.ownerOnly || ALWAYS_VISIBLE.has(it.key) || enabled.has(it.key)),
+    }))
+    .filter((s) => s.items.length > 0)
+}
