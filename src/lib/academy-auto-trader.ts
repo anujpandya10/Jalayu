@@ -20,15 +20,15 @@ import {
 import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
 
 export const AUTO_SEED_CAPITAL = 1000
-// The active-scalper model: hold up to 5 names at once, jump into the cleanest
-// gaps as they set up, bank profit, rotate to the next. ~$160 a name puts
-// ~$800 of the $1000 to work (the rest is buffer), matching a "$500-800 at
-// risk" day. The day's profit is the SUM of many small scalps across the 5
-// slots cycling all session — not one or two big swings. Each trade still
-// banks half at the first target (the "take profit and move on") and lets the
-// back half run uncapped, so the occasional bigger winner rides on top.
-const MAX_SLOTS = 5
-const MAX_POSITION_PCT = 0.16
+// The "bigger winners" posture: concentrate the $1000 into a few meaningful
+// positions (~$300 a name, ~$900 at work) rather than sprinkling it thin. A
+// winner has to MOVE the account, not nudge it. The edge is asymmetry, not hit
+// rate — losers stay tiny (tight ~0.4% stop = ~$1 a loss even at this size),
+// each trade only trims a THIRD at the first target so two-thirds rides the
+// runner uncapped, and the few real movers dwarf the many small losses. Win
+// rate runs ~45-50% (more red trades) on purpose: wrong often, but right big.
+const MAX_SLOTS = 3
+const MAX_POSITION_PCT = 0.30
 const COOLDOWN_MINUTES = 8        // short leash — jump back into the same name once it resets up, don't sit out
 const PREP_START_MIN_ET = 9 * 60 + 15      // 9:15am ET — 15 min before the open
 const MARKET_OPEN_MIN_ET = 9 * 60 + 30
@@ -39,9 +39,9 @@ const ENTRY_WINDOW_END_MIN_ET = 15 * 60 + 50   // no new entries after 3:50pm ET
 const SESSION_FLATTEN_MIN_ET  = 15 * 60 + 55   // close anything still open at 3:55pm ET
 
 // Risk discipline (the part that actually keeps an account alive):
-const DAILY_LOSS_LIMIT_USD = 30   // down $30 on the day (−3%) → stop for the day, protect capital
-const DAILY_PROFIT_LOCK_USD = 55  // the daily goal (~$50-60): once hit, the day is won — tighten to top-conviction only so a greedy late trade can't give it back. "Take profit and walk away," at the day level.
-const MAX_TRADES_PER_DAY = 30     // active all-day rotation across the 5 slots — the daily loss limit (not the trade count) is the real backstop if a day goes bad
+const DAILY_LOSS_LIMIT_USD = 60   // down $60 on the day (−6%) → stop for the day. Higher tolerance is REQUIRED for asymmetry — you must survive the small-loss streak long enough for a runner to pay for it. Still a hard circuit-breaker, and ≤ the profit target so the day's R:R stays positive.
+const DAILY_PROFIT_LOCK_USD = 100 // up $100 (+10%) → a genuinely big day is won; tighten to top-conviction only so a greedy late trade can't give it back. Set high so a single runner doesn't choke the day off early.
+const MAX_TRADES_PER_DAY = 30     // active all-day rotation across the slots — the daily loss limit (not the trade count) is the real backstop if a day goes bad
 
 // Let winners run — the asymmetry that actually grows an account. The first
 // half comes off at T1 to bank a sure profit and pay for the trade; the BACK
@@ -50,14 +50,14 @@ const MAX_TRADES_PER_DAY = 30     // active all-day rotation across the 5 slots 
 // +10/20% intraday, the kind that was being clipped at +1.5% before), the back
 // half captures most of it — one of those pays for a long string of small
 // losses. This is the Livermore/PTJ lesson the curriculum teaches, in code.
-const RUNNER_TRAIL_PCT = 0.02     // back half trails 2% below its peak — wide enough to survive a normal pullback and stay in the move
+const RUNNER_TRAIL_PCT = 0.025    // the runner trails 2.5% below its peak — wide enough to survive a normal pullback and stay in a big move longer instead of being shaken out early
 
 // Wide net, but only swing at decent pitches. The scan universe is huge now
 // (every screener mover, penny to mega-cap), so the weakest marginal setups off
 // random choppy small-caps drag the win rate down. Demand real conviction —
-// but not SO high it sits idle: with 5 slots to keep working an active session,
-// the bar is set to stay busy on the genuinely-set-up bars, not every wiggle.
-const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier than the base floor, loose enough to keep ~5 names working
+// but not SO high it sits idle: with a few slots to keep working through the
+// session, the bar stays busy on the genuinely-set-up bars, not every wiggle.
+const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier than the base floor, loose enough to keep the slots working
 // Self-learning: judge each setup by its own realized record and adapt.
 const LEARN_MIN_SAMPLES = 6
 const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
@@ -288,24 +288,26 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     if (hitStop) { await closeAll('STOP_HIT', halfClosed ? 'the trailing stop locked the run in' : 'the stop-loss line was hit'); continue }
 
     if (hitT1 && !halfClosed && t1 != null) {
-      const half = Math.min(original / 2, shares)
-      if (half <= 0) continue
-      const remaining = r6(shares - half)
-      const pnl = r2(isLong ? (price - entry) * half : (entry - price) * half)
+      // "Bigger winners" posture: trim only a THIRD here to bank a sure profit,
+      // leaving two-thirds to ride the runner uncapped.
+      const trim = Math.min(original / 3, shares)
+      if (trim <= 0) continue
+      const remaining = r6(shares - trim)
+      const pnl = r2(isLong ? (price - entry) * trim : (entry - price) * trim)
       const newStop = isLong ? entry * (1 + BREAKEVEN_LOCK_PCT) : entry * (1 - BREAKEVEN_LOCK_PCT)
       await supabase.from('academy_auto_trades').insert({
         user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
-        shares: half, price, total: r2(price * half), pnl, setup_tag: pos.setup_tag, reason: 'Target 1 — sold half, stop moved to break-even',
+        shares: trim, price, total: r2(price * trim), pnl, setup_tag: pos.setup_tag, reason: 'Target 1 — trimmed a third, stop moved to break-even',
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
       })
       await supabase.from('academy_auto_positions').update({ shares: r6(remaining), half_closed: true, stop_price: r2(newStop) }).eq('id', pos.id)
-      cash = r2(cash + (isLong ? price * half : entry * half + pnl))
+      cash = r2(cash + (isLong ? price * trim : entry * trim + pnl))
       await log(supabase, userId, {
-        symbol: pos.symbol, kind: 'TAKE_HALF', price, shares: half, pnl,
+        symbol: pos.symbol, kind: 'TAKE_HALF', price, shares: trim, pnl,
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-        note: `${pos.symbol}: hit the first target, so I sold half (${half} shares) at ${fmt(price)} (+${fmt(pnl)}) and moved the stop on the other ${remaining} from ${pos.stop_price != null ? fmt(Number(pos.stop_price)) : '—'} up to ${fmt(newStop)} — break-even. The rest can't turn into a real loss from here; I'm just letting it run for free now.`,
+        note: `${pos.symbol}: hit the first target, so I sold a third (${trim} shares) at ${fmt(price)} (+${fmt(pnl)}) and moved the stop on the other ${remaining} from ${pos.stop_price != null ? fmt(Number(pos.stop_price)) : '—'} up to ${fmt(newStop)} — break-even. The remaining two-thirds can't turn into a real loss from here; now I let it run for the big move.`,
       })
-      events.push(`${pos.symbol}: took half at ${fmt(price)}, stop to break-even`)
+      events.push(`${pos.symbol}: trimmed a third at ${fmt(price)}, stop to break-even`)
     }
   }
 
@@ -442,7 +444,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'ENTRY', price, shares, pnl: 0,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll sell half at ${fmt(target1)} to bank a sure profit, then let the rest run on a trailing stop — no ceiling, so if it turns into a real mover I stay in for it.${legendNote}${learnNote}`,
+      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll trim a third at ${fmt(target1)} to bank a sure profit, then let the other two-thirds run on a trailing stop — no ceiling, so if it turns into a real mover I stay in for it.${legendNote}${learnNote}`,
     })
     events.push(`Entered ${sig.asset.symbol} (${sig.setupTag}) at ${fmt(price)}`)
     void trade // id not currently needed downstream; kept for clarity/future linking
