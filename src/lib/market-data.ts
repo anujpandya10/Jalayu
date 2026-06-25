@@ -229,6 +229,25 @@ export async function fetchStockPrice(symbol: string, fallbackName: string): Pro
 }
 
 // ── Yahoo Finance predefined screeners (gainers/losers/most-active/small-cap) ──
+// Screener results include warrants (...W/WS/WW), preferred shares (hyphenated,
+// e.g. AHT-PF), units (...U), and sub-$1 penny tickers — Yahoo's chart/quote API
+// frequently has no usable data for these, so a position opened in one gets stuck
+// forever (getQuote throws every tick, the management loop silently skips it).
+// Plain common stock only, with a price floor so the "biggest mover" rank isn't
+// dominated by illiquid noise.
+// Hyphen/period = preferred or special share class (e.g. AHT-PF). A 5-letter
+// symbol ending in Nasdaq's special-status suffix (W=warrant, U=units, R=rights)
+// on top of a 4-letter base is the warrant/unit, not the common stock (e.g.
+// WGSWW = WGS + WW warrant suffix). Plain common-stock tickers (1-4 letters,
+// or 5 without one of these trailing codes) pass through.
+const JUNK_SYMBOL_RE = /[-.]|^[A-Z]{4}(?:W|WS|U|R)$/
+const MIN_SCREENER_PRICE = 1
+
+function isTradeableStockSymbol(symbol: string, price: number): boolean {
+  if (!symbol || JUNK_SYMBOL_RE.test(symbol)) return false
+  return price >= MIN_SCREENER_PRICE
+}
+
 async function fetchScreener(scrId: string, count: number): Promise<AssetData[]> {
   try {
     const url = `https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=${scrId}&count=${count}&fields=symbol,regularMarketPrice,regularMarketChangePercent,regularMarketVolume,marketCap`
@@ -248,6 +267,7 @@ async function fetchScreener(scrId: string, count: number): Promise<AssetData[]>
     const quotes = json?.finance?.result?.[0]?.quotes ?? []
     return quotes
       .filter((q) => q.regularMarketPrice != null && q.regularMarketChangePercent != null)
+      .filter((q) => isTradeableStockSymbol(q.symbol ?? '', q.regularMarketPrice ?? 0))
       .map((q) => ({
         symbol: q.symbol ?? '',
         name: q.shortName ?? q.symbol ?? '',
@@ -257,7 +277,6 @@ async function fetchScreener(scrId: string, count: number): Promise<AssetData[]>
         assetType: 'stock' as const,
         isPumpCandidate: (q.regularMarketChangePercent ?? 0) > 15,
       }))
-      .filter((a) => a.symbol !== '')
   } catch { return [] }
 }
 

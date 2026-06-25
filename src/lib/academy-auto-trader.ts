@@ -227,6 +227,17 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
   if (!isUsMarketOpen()) return { ran: events.length > 0, reason: 'Market closed', events }
   if (!portfolio.enabled) return { ran: false, reason: 'Auto trader is off', events }
 
+  try {
+    return await runLiveTick(supabase, userId, portfolio, events)
+  } catch (err) {
+    const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ''}`.slice(0, 1500) : String(err)
+    await log(supabase, userId, { kind: 'ERROR', note: `Tick failed: ${msg}` })
+    return { ran: false, reason: 'error', events }
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: any, events: string[]): Promise<RunResult> {
   let cash = Number(portfolio.cash)
 
   const { data: openRaw } = await supabase.from('academy_auto_positions').select('*').eq('user_id', userId)
