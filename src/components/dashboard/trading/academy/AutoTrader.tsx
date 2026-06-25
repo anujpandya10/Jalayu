@@ -188,6 +188,7 @@ export default function AutoTrader() {
   const [history, setHistory] = useState<TradeRow[]>([])
   const [reviewSymbol, setReviewSymbol] = useState<string | null>(null)
   const [chartMode, setChartMode] = useState<'live' | 'review'>('live')
+  const [logExpanded, setLogExpanded] = useState(false)
   const [notes, setNotes] = useState('')
   const chartSectionRef = useRef<HTMLDivElement>(null)
 
@@ -377,12 +378,8 @@ export default function AutoTrader() {
           <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Auto Trader</h2>
           <span style={{ fontSize: 11, color: 'var(--text-3)' }}>US stocks · market hours only · its own $1,000</span>
         </div>
-        <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55, margin: '0 0 10px' }}>
-          This account trades itself, combining the curriculum's real setups (momentum, oversold bounce, VWAP, MACD cross,
-          Bollinger bounce, fading extremes) with the same break-even + trailing-stop discipline the main bot runs on.
-          Every morning at 9:15am ET it preps like a real session — scans, picks a short watchlist, explains why — then
-          trades the open. Small, defined losses are normal here; the discipline is letting winners run further than
-          losers cost. Watch what it does below, then try the same read yourself on the Practice desk.
+        <p style={{ fontSize: 12, color: 'var(--text-2)', lineHeight: 1.5, margin: '0 0 10px' }}>
+          Trades itself every morning at 9:15am ET — tight stops, runners left uncapped. Small losses are normal here.
         </p>
 
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginBottom: 12, fontSize: 11.5, color: 'var(--text-2)', cursor: 'pointer' }}>
@@ -461,9 +458,16 @@ export default function AutoTrader() {
           </div>
         )}
 
-        {/* Desktop: chart sits beside the scoreboard so seeing what it's doing never
-            requires scrolling past a stack of cards first. */}
+        {/* Desktop: chart sits beside open positions + scoreboard — what's actually in
+            flight right now lives right where you're already looking, not in a separate
+            section you have to scroll to find. */}
         {(() => {
+          const positions = portfolio.positions.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Open now ({portfolio.positions.length})</div>
+              {portfolio.positions.map((pos) => <OpenPositionMini key={pos.symbol} pos={pos} />)}
+            </div>
+          )
           const scoreboard = stats && (
             <>
               <StatTile label="Today's P&L" value={`${stats.realizedToday >= 0 ? '+' : ''}$${stats.realizedToday.toFixed(2)}`} color={stats.realizedToday >= 0 ? '#16A34A' : '#DC2626'} />
@@ -487,10 +491,11 @@ export default function AutoTrader() {
           return isDesktop ? (
             <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
               <div>{chart}</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{scoreboard}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{positions}{scoreboard}</div>
             </div>
           ) : (
             <>
+              {positions && <div style={{ marginBottom: 10 }}>{positions}</div>}
               {scoreboard && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>{scoreboard}</div>}
               <div>{chart}</div>
             </>
@@ -498,13 +503,11 @@ export default function AutoTrader() {
         })()}
       </div>
 
-      {/* Personal notes — your own read, kept separate from the bot's narration. Local to
-          this browser only (no account sync), so it's a scratchpad, not another data model. */}
+      {/* Personal notes — local to this browser only, your own read before checking the bot's. */}
       <div style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>My notes</h3>
-        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px' }}>Saved on this device only — jot down what you see before reading its reasoning, then check yourself against it.</p>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 6px' }}>My notes</h3>
         <textarea value={notes} onChange={(e) => updateNotes(e.target.value)} placeholder="e.g. VRNS — I'd have called the BB bounce too, RSI was at 34..."
-          style={{ width: '100%', minHeight: 80, padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text)', fontSize: 12.5, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+          style={{ width: '100%', minHeight: 60, padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text)', fontSize: 12.5, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
       </div>
 
       {/* Per-setup learning table */}
@@ -535,51 +538,19 @@ export default function AutoTrader() {
         </div>
       )}
 
-      {/* Open positions */}
-      {portfolio.positions.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 8px' }}>Open positions</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {portfolio.positions.map((pos) => {
-              const up = pos.pnl >= 0
-              return (
-                <div key={pos.symbol} style={{ padding: '12px 14px', borderRadius: 12, border: '1px solid var(--border)', background: 'var(--surface)' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontWeight: 700, fontSize: 14 }}>{pos.symbol}</span>
-                        {pos.setupTag && <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', background: 'var(--accent)', padding: '1px 6px', borderRadius: 99 }}>{pos.setupTag}</span>}
-                        {pos.halfClosed && <span style={{ fontSize: 9.5, fontWeight: 700, color: 'var(--text-2)', background: 'var(--morning)', padding: '1px 6px', borderRadius: 99 }}>HALF TAKEN</span>}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                        {pos.direction === 'SHORT' ? 'Short' : 'Long'} · {pos.shares} sh @ ${pos.avgEntryPrice.toFixed(2)} → ${pos.currentPrice.toFixed(2)}
-                      </div>
-                      <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 3, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                        {pos.stopPrice != null && <span>Stop ${pos.stopPrice.toFixed(2)}</span>}
-                        {pos.target1Price != null && <span>T1 ${pos.target1Price.toFixed(2)}{pos.halfClosed ? ' ✓' : ''}</span>}
-                        {pos.target2Price != null && <span>T2 ${pos.target2Price.toFixed(2)}</span>}
-                        {pos.entryEma9 != null && <span>Entry EMA9 ${pos.entryEma9.toFixed(2)} / EMA21 ${pos.entryEma21?.toFixed(2)}</span>}
-                        {pos.entryVwap != null && <span>Entry VWAP ${pos.entryVwap.toFixed(2)}</span>}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: up ? '#15803d' : '#b91c1c' }}>{up ? '+' : ''}{pos.pnlPct.toFixed(2)}%</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-3)' }}>${pos.value.toFixed(2)}</div>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* The narrated trade log — what it did and why, in plain English */}
+      {/* The narrated trade log — collapsed to the last 5 by default; this used to be the
+          whole page. Full history is one click away, not the default view. */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
-        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>What it's been doing</h3>
-        <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '0 0 12px' }}>
-          Every entry, half-take, stop move, and exit — with the exact EMA9/EMA21/VWAP/RSI it was reading at the time.
-        </p>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>What it&apos;s been doing</h3>
+          {log.length > 5 && (
+            <button type="button" onClick={() => setLogExpanded((v) => !v)}
+              style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
+              {logExpanded ? 'Show last 5' : `Show all ${log.length}`}
+            </button>
+          )}
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 12px' }}>Last 5 by default — every entry, trim, stop, and exit.</p>
 
         {log.length === 0 ? (
           <div style={{ padding: 20, textAlign: 'center', borderRadius: 10, border: '1px dashed var(--border)', fontSize: 12, color: 'var(--text-3)' }}>
@@ -603,7 +574,7 @@ export default function AutoTrader() {
                 </tr>
               </thead>
               <tbody>
-                {log.map((row) => {
+                {(logExpanded ? log : log.slice(0, 5)).map((row) => {
                   const meta = row.kind === 'ENTRY'
                     ? { label: entryVerb(row.note), color: entryVerb(row.note) === 'Bought' ? '#3B82F6' : '#7C3AED' }
                     : KIND_META[row.kind] ?? { label: row.kind, color: 'var(--text-2)' }
@@ -646,45 +617,94 @@ export default function AutoTrader() {
         )}
       </div>
 
-      {/* Homework — real candidates from the bot's own most recent scan, with the engine's
-          actual stop/target math (not invented per-symbol numbers) and the setup's real
-          win rate on this account where there's enough history to know it. The point isn't
-          the bot's pick — it's you pulling the symbol up on a real chart (Webull, etc.)
-          before the open and drawing the EMA9/EMA21/VWAP yourself to see if you'd call the
-          same setup cold. */}
+      {/* A guessing game using real candidates from the bot's actual last scan — see the
+          symbol + price only, guess the call yourself, then reveal what it actually read. */}
       {todayWatchlist.length > 0 && (
         <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Practice for next session</h3>
-          <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
-            From its last scan, not a guess. Pull each one up yourself before the open, plot EMA9/EMA21 + VWAP,
-            and see if you&apos;d have called it before checking this card.
-          </p>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>Test yourself: real stocks, no answer until you tap</h3>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Step n={1} text="Open the symbol on Webull/TradingView" />
+            <Step n={2} text="Draw EMA9, EMA21, VWAP — guess long or short" />
+            <Step n={3} text="Tap Reveal — check your read against its real call" />
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {todayWatchlist.map((w) => {
-              const odds = w.stat && w.stat.total >= 6
-                ? `${w.stat.winRatePct}% real odds (${w.stat.wins}/${w.stat.total} trades)`
-                : 'not enough trades yet to know its real odds — that’s exactly why this is practice, not a sure thing'
-              return (
-                <div key={w.row.id} style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--morning)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)' }}>{w.row.symbol}</span>
-                    <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', padding: '2px 7px', borderRadius: 99, background: w.direction === 'LONG' ? '#16A34A' : '#7C3AED' }}>
-                      {w.direction === 'LONG' ? 'LONG' : 'SHORT'} · {w.setupLabel}
-                    </span>
-                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>currently ${w.price.toFixed(2)}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11.5, marginBottom: 6 }}>
-                    <span>Entry <strong style={{ color: 'var(--text)' }}>${w.price.toFixed(2)}</strong></span>
-                    <span style={{ color: '#DC2626' }}>Stop <strong>${w.stop.toFixed(2)}</strong> (−0.4%)</span>
-                    <span style={{ color: '#16A34A' }}>Target <strong>${w.target.toFixed(2)}</strong> ({w.direction === 'LONG' ? '+1.0%' : '+0.9%'})</span>
-                  </div>
-                  <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>{odds}</div>
-                </div>
-              )
-            })}
+            {todayWatchlist.map((w) => <PracticeCard key={w.row.id} w={w} />)}
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function Step({ n, text }: { n: number; text: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10.5, color: 'var(--text-3)' }}>
+      <span style={{ width: 16, height: 16, borderRadius: 99, background: 'var(--accent)', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n}</span>
+      {text}
+    </div>
+  )
+}
+
+interface WatchlistCandidate {
+  row: LogRow; setupLabel: string; setupTag: string; score: number
+  direction: 'LONG' | 'SHORT'; price: number; stop: number; target: number
+  stat?: { setupTag: string; total: number; wins: number; winRatePct: number; pnl: number }
+}
+
+/** Shows symbol + price only — the actual call (direction, setup, stop, target, real odds)
+ * stays hidden until tapped, so reading the chart yourself happens BEFORE seeing the answer. */
+function PracticeCard({ w }: { w: WatchlistCandidate }) {
+  const [revealed, setRevealed] = useState(false)
+  const odds = w.stat && w.stat.total >= 6
+    ? `${w.stat.winRatePct}% real odds on this account (${w.stat.wins}/${w.stat.total} trades)`
+    : 'not enough trades yet to know its real odds'
+  return (
+    <div style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--morning)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--text)' }}>{w.row.symbol}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 8 }}>${w.price.toFixed(2)}</span>
+        </div>
+        {!revealed && (
+          <button type="button" onClick={() => setRevealed(true)}
+            style={{ padding: '6px 12px', fontSize: 11, fontWeight: 700, borderRadius: 7, border: 'none', background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+            Reveal the call
+          </button>
+        )}
+      </div>
+      {revealed && (
+        <div style={{ marginTop: 8 }}>
+          <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', padding: '2px 7px', borderRadius: 99, background: w.direction === 'LONG' ? '#16A34A' : '#7C3AED' }}>
+            {w.direction} · {w.setupLabel}
+          </span>
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11.5, margin: '8px 0 6px' }}>
+            <span>Entry <strong style={{ color: 'var(--text)' }}>${w.price.toFixed(2)}</strong></span>
+            <span style={{ color: '#DC2626' }}>Stop <strong>${w.stop.toFixed(2)}</strong></span>
+            <span style={{ color: '#16A34A' }}>Target <strong>${w.target.toFixed(2)}</strong></span>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>{odds}</div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Compact — lives in the chart's sidebar column now, not its own full-width section. */
+function OpenPositionMini({ pos }: { pos: AutoPosition }) {
+  const up = pos.pnl >= 0
+  return (
+    <div style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
+        <span style={{ fontWeight: 700, fontSize: 12.5 }}>{pos.symbol}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: up ? '#16A34A' : '#DC2626' }}>{up ? '+' : ''}{pos.pnlPct.toFixed(2)}%</span>
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2 }}>
+        {pos.direction === 'SHORT' ? 'Short' : 'Long'} {pos.shares} @ ${pos.avgEntryPrice.toFixed(2)} → ${pos.currentPrice.toFixed(2)}
+      </div>
+      <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 2, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {pos.stopPrice != null && <span>Stop ${pos.stopPrice.toFixed(2)}</span>}
+        {pos.target1Price != null && <span>T1 ${pos.target1Price.toFixed(2)}{pos.halfClosed ? ' ✓' : ''}</span>}
+      </div>
     </div>
   )
 }
