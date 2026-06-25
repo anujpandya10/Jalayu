@@ -34,12 +34,36 @@ interface AutoStats {
 
 const KIND_META: Record<string, { label: string; color: string }> = {
   ENTRY: { label: 'Bought/Shorted', color: '#3B82F6' },
-  TAKE_HALF: { label: 'Sold half', color: '#16A34A' },
+  TAKE_HALF: { label: 'Sold a third', color: '#16A34A' },
   EXIT_FULL: { label: 'Closed', color: '#15803d' },
   STOP_HIT: { label: 'Stopped out', color: '#DC2626' },
   STOP_MOVED: { label: 'Moved stop', color: '#D97706' },
   SCAN: { label: 'Watchlist', color: '#8B5CF6' },
   INFO: { label: 'Note', color: 'var(--text-3)' },
+}
+
+/** ENTRY rows cover both buys and shorts — the backend's note always leads with the real verb. */
+function entryVerb(note: string): 'Bought' | 'Shorted' {
+  return note.startsWith('Shorted') ? 'Shorted' : 'Bought'
+}
+
+/** A one-line, scannable fact: what happened, at what price, for what P&L — built from the
+ * clean structured columns (not parsed from prose), so it's always exact. The narrative note
+ * stays underneath it as the "why" — the bar-read that drove the call. */
+function actionSummary(row: LogRow): string {
+  const sym = row.symbol ?? ''
+  const shares = row.shares != null ? row.shares.toFixed(2) : null
+  const price = row.price != null ? `$${row.price.toFixed(2)}` : null
+  const pnl = row.pnl != null ? ` → ${row.pnl >= 0 ? '+' : ''}$${row.pnl.toFixed(2)}` : ''
+  switch (row.kind) {
+    case 'ENTRY': return `${entryVerb(row.note)} ${shares} ${sym} @ ${price}`
+    case 'TAKE_HALF': return `Sold a third of ${sym} @ ${price}${pnl}`
+    case 'EXIT_FULL': return `Closed ${shares} ${sym} @ ${price}${pnl}`
+    case 'STOP_HIT': return `Stopped out of ${sym} @ ${price}${pnl}`
+    case 'STOP_MOVED': return `Moved stop on ${sym} to ${price}`
+    case 'SCAN': return `Watching ${sym}`
+    default: return ''
+  }
 }
 
 const TICK_MS = 25_000
@@ -347,15 +371,18 @@ export default function AutoTrader() {
               </thead>
               <tbody>
                 {log.map((row) => {
-                  const meta = KIND_META[row.kind] ?? { label: row.kind, color: 'var(--text-2)' }
+                  const meta = row.kind === 'ENTRY'
+                    ? { label: entryVerb(row.note), color: entryVerb(row.note) === 'Bought' ? '#3B82F6' : '#7C3AED' }
+                    : KIND_META[row.kind] ?? { label: row.kind, color: 'var(--text-2)' }
+                  const summary = actionSummary(row)
                   return (
                     <tr key={row.id} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
-                        {new Date(row.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}
+                        {new Date(row.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })}
                       </td>
                       <td style={{ padding: '7px 8px 7px 0', fontWeight: 700, color: 'var(--text)' }}>{row.symbol ?? '—'}</td>
                       <td style={{ padding: '7px 8px 7px 0', fontWeight: 700, color: meta.color, whiteSpace: 'nowrap' }}>{meta.label}</td>
-                      <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-2)' }}>{row.shares != null ? row.shares : '—'}</td>
+                      <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-2)' }}>{row.shares != null ? row.shares.toFixed(2) : '—'}</td>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-2)' }}>{row.price != null ? `$${row.price.toFixed(2)}` : '—'}</td>
                       <td style={{ padding: '7px 8px 7px 0', fontWeight: 700, color: row.pnl == null ? 'var(--text-3)' : row.pnl >= 0 ? '#16A34A' : '#DC2626' }}>
                         {row.pnl != null ? `${row.pnl >= 0 ? '+' : ''}$${row.pnl.toFixed(2)}` : '—'}
@@ -363,7 +390,12 @@ export default function AutoTrader() {
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)' }}>{row.ema9 != null ? row.ema9.toFixed(2) : '—'}</td>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)' }}>{row.ema21 != null ? row.ema21.toFixed(2) : '—'}</td>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)' }}>{row.vwap != null ? row.vwap.toFixed(2) : '—'}</td>
-                      <td style={{ padding: '7px 0 7px 0', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 280 }}>{row.note}</td>
+                      <td style={{ padding: '7px 0 7px 0', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 300 }}>
+                        {summary && (
+                          <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 3, fontSize: 12 }}>{summary}</div>
+                        )}
+                        <div style={{ color: 'var(--text-3)', fontSize: 11 }}>{row.note}</div>
+                      </td>
                     </tr>
                   )
                 })}
