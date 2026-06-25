@@ -54,33 +54,101 @@ function entryVerb(note: string): 'Bought' | 'Shorted' {
 }
 
 const fmtExact = (iso: string) =>
-  new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })
 
-/** A one-line, scannable fact: what happened, at what price, for what P&L — built from the
- * clean structured columns (not parsed from prose), so it's always exact. The narrative note
- * stays underneath it as the "why" — the bar-read that drove the call.
- *
- * Exit-kind rows (TAKE_HALF/EXIT_FULL/STOP_HIT) only carry their OWN price/shares/pnl — on
- * their own they answer "sold for what" but not "bought for what, when, how many shares,"
- * which is the actual question. `entryRow` is the matched ENTRY this exit closed out (see
- * `entryForRow` below); when present, the line spells out the full round trip in one place. */
-function actionSummary(row: LogRow, entryRow?: LogRow): string {
+/** A one-line, scannable fact: what happened, at what price — built from the clean structured
+ * columns (not parsed from prose), so it's always exact. Used for rows with no paired entry
+ * to show as a round trip (a bare ENTRY, a SCAN, a stop-move). */
+function actionSummary(row: LogRow): string {
   const sym = row.symbol ?? ''
   const shares = row.shares != null ? `${row.shares.toFixed(2)} ` : ''
   const price = row.price != null ? `$${row.price.toFixed(2)}` : '—'
   const pnl = row.pnl != null ? ` → ${row.pnl >= 0 ? '+' : ''}$${row.pnl.toFixed(2)}` : ''
-  const entryLeg = entryRow
-    ? `${entryVerb(entryRow.note)} ${entryRow.shares != null ? entryRow.shares.toFixed(2) : '?'} ${sym} @ $${entryRow.price?.toFixed(2) ?? '?'} (${fmtExact(entryRow.created_at)}) → `
-    : ''
   switch (row.kind) {
     case 'ENTRY': return `${entryVerb(row.note)} ${shares}${sym} @ ${price}`
-    case 'TAKE_HALF': return `${entryLeg}Sold a third ${shares}@ ${price}${pnl}`
-    case 'EXIT_FULL': return `${entryLeg}Closed ${shares}@ ${price}${pnl}`
-    case 'STOP_HIT': return `${entryLeg}Stopped out @ ${price}${pnl}`
+    case 'TAKE_HALF': return `Sold a third ${shares}@ ${price}${pnl}`
+    case 'EXIT_FULL': return `Closed ${shares}@ ${price}${pnl}`
+    case 'STOP_HIT': return `Stopped out @ ${price}${pnl}`
     case 'STOP_MOVED': return `Moved stop on ${sym} to ${price}`
     case 'SCAN': return `Watching ${sym}`
     default: return ''
   }
+}
+
+/** Pull the clean teaching bits back out of the entry note's fixed template — the setup name,
+ * and the legendary trader + their one-line idea — instead of dumping the whole paragraph. */
+function parseEntryWhy(note: string): { setup: string | null; trader: string | null; idea: string | null } {
+  const setupMatch = note.match(/—\s*([a-z0-9 ]+?)\s+setup\s*\(score/i)
+  const legendMatch = note.match(/This is ([^']+)'s territory — ([^(]+?)(?:\s*\(My record)?\s*$/)
+  return {
+    setup: setupMatch ? setupMatch[1].trim() : null,
+    trader: legendMatch ? legendMatch[1].trim() : null,
+    idea: legendMatch ? legendMatch[2].trim().replace(/\.$/, '') : null,
+  }
+}
+
+/** Same idea for the close — the reason always sits after the last " — " in the note. */
+function parseCloseWhy(kind: string, note: string): string {
+  if (kind === 'TAKE_HALF') return 'Hit the first target — banked a third of the position, moved the stop to break-even, let the rest ride.'
+  const idx = note.lastIndexOf(' — ')
+  if (idx === -1) return note.replace(/\.$/, '')
+  return note.slice(idx + 3).replace(/\.$/, '').trim()
+}
+
+const EXIT_KIND_LABEL: Record<string, string> = { TAKE_HALF: 'Trimmed a third', EXIT_FULL: 'Closed', STOP_HIT: 'Stopped out' }
+
+/** The actual teaching unit: bought here because X, closed here because Y — as a small
+ * vertical timeline instead of one run-on paragraph, with exact-to-the-second timestamps
+ * on both legs and the held duration between them. */
+function RoundTrip({ entryRow, exitRow }: { entryRow: LogRow; exitRow: LogRow }) {
+  const why = parseEntryWhy(entryRow.note)
+  const closeWhy = parseCloseWhy(exitRow.kind, exitRow.note)
+  const heldMs = new Date(exitRow.created_at).getTime() - new Date(entryRow.created_at).getTime()
+  const heldMin = Math.max(0, Math.round(heldMs / 60000))
+  const held = heldMin < 60 ? `${heldMin}m` : heldMin < 1440 ? `${Math.floor(heldMin / 60)}h ${heldMin % 60}m` : `${Math.floor(heldMin / 1440)}d ${Math.floor((heldMin % 1440) / 60)}h`
+  const isLong = entryRow.note.startsWith('Bought')
+  const up = exitRow.pnl == null || exitRow.pnl >= 0
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 320 }}>
+      {/* Entry leg */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <span style={{ flexShrink: 0, marginTop: 1, width: 16, height: 16, borderRadius: 99, background: isLong ? '#16A34A' : '#7C3AED', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{isLong ? 'B' : 'S'}</span>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+            {entryVerb(entryRow.note)} {entryRow.shares?.toFixed(2)} @ ${entryRow.price?.toFixed(2)}
+            <span style={{ fontWeight: 500, color: 'var(--text-3)' }}> · {fmtExact(entryRow.created_at)}</span>
+          </div>
+          {(why.setup || why.idea) && (
+            <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1, lineHeight: 1.4 }}>
+              <strong style={{ color: 'var(--text-2)' }}>Why bought:</strong>{' '}
+              {why.setup && <span style={{ textTransform: 'capitalize' }}>{why.setup}</span>}
+              {why.idea && <> — {why.idea}{why.trader && ` (${why.trader})`}</>}
+            </div>
+          )}
+        </div>
+      </div>
+      {/* Connector */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 7, paddingLeft: 1 }}>
+        <div style={{ width: 1, height: 12, background: 'var(--border)' }} />
+        <span style={{ fontSize: 9.5, color: 'var(--text-3)' }}>held {held}</span>
+      </div>
+      {/* Exit leg */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <span style={{ flexShrink: 0, marginTop: 1, width: 16, height: 16, borderRadius: 99, background: up ? '#16A34A' : '#DC2626', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{up ? '✓' : '✕'}</span>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
+            {EXIT_KIND_LABEL[exitRow.kind] ?? 'Closed'} @ ${exitRow.price?.toFixed(2)}
+            {exitRow.pnl != null && <span style={{ color: exitRow.pnl >= 0 ? '#16A34A' : '#DC2626' }}> → {exitRow.pnl >= 0 ? '+' : ''}${exitRow.pnl.toFixed(2)}</span>}
+            <span style={{ fontWeight: 500, color: 'var(--text-3)' }}> · {fmtExact(exitRow.created_at)}</span>
+          </div>
+          <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1, lineHeight: 1.4 }}>
+            <strong style={{ color: 'var(--text-2)' }}>Why closed:</strong> {closeWhy}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 const TICK_MS = 25_000
@@ -482,7 +550,9 @@ export default function AutoTrader() {
                   const meta = row.kind === 'ENTRY'
                     ? { label: entryVerb(row.note), color: entryVerb(row.note) === 'Bought' ? '#3B82F6' : '#7C3AED' }
                     : KIND_META[row.kind] ?? { label: row.kind, color: 'var(--text-2)' }
-                  const summary = actionSummary(row, entryForRow.get(row.id))
+                  const pairedEntry = entryForRow.get(row.id)
+                  const isPairedExit = pairedEntry && (row.kind === 'TAKE_HALF' || row.kind === 'EXIT_FULL' || row.kind === 'STOP_HIT')
+                  const summary = actionSummary(row)
                   return (
                     <tr key={row.id} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
@@ -498,11 +568,17 @@ export default function AutoTrader() {
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)' }}>{row.ema9 != null ? row.ema9.toFixed(2) : '—'}</td>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)' }}>{row.ema21 != null ? row.ema21.toFixed(2) : '—'}</td>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)' }}>{row.vwap != null ? row.vwap.toFixed(2) : '—'}</td>
-                      <td style={{ padding: '7px 0 7px 0', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 300 }}>
-                        {summary && (
-                          <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 3, fontSize: 12 }}>{summary}</div>
+                      <td style={{ padding: '7px 0 7px 0', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 320 }}>
+                        {isPairedExit && pairedEntry ? (
+                          <RoundTrip entryRow={pairedEntry} exitRow={row} />
+                        ) : (
+                          <>
+                            {summary && (
+                              <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 3, fontSize: 12 }}>{summary}</div>
+                            )}
+                            <div style={{ color: 'var(--text-3)', fontSize: 11 }}>{row.note}</div>
+                          </>
                         )}
-                        <div style={{ color: 'var(--text-3)', fontSize: 11 }}>{row.note}</div>
                       </td>
                     </tr>
                   )
