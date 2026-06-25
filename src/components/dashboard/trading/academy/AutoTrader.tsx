@@ -53,19 +53,30 @@ function entryVerb(note: string): 'Bought' | 'Shorted' {
   return note.startsWith('Shorted') ? 'Shorted' : 'Bought'
 }
 
+const fmtExact = (iso: string) =>
+  new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+
 /** A one-line, scannable fact: what happened, at what price, for what P&L — built from the
  * clean structured columns (not parsed from prose), so it's always exact. The narrative note
- * stays underneath it as the "why" — the bar-read that drove the call. */
-function actionSummary(row: LogRow): string {
+ * stays underneath it as the "why" — the bar-read that drove the call.
+ *
+ * Exit-kind rows (TAKE_HALF/EXIT_FULL/STOP_HIT) only carry their OWN price/shares/pnl — on
+ * their own they answer "sold for what" but not "bought for what, when, how many shares,"
+ * which is the actual question. `entryRow` is the matched ENTRY this exit closed out (see
+ * `entryForRow` below); when present, the line spells out the full round trip in one place. */
+function actionSummary(row: LogRow, entryRow?: LogRow): string {
   const sym = row.symbol ?? ''
-  const shares = row.shares != null ? row.shares.toFixed(2) : null
-  const price = row.price != null ? `$${row.price.toFixed(2)}` : null
+  const shares = row.shares != null ? `${row.shares.toFixed(2)} ` : ''
+  const price = row.price != null ? `$${row.price.toFixed(2)}` : '—'
   const pnl = row.pnl != null ? ` → ${row.pnl >= 0 ? '+' : ''}$${row.pnl.toFixed(2)}` : ''
+  const entryLeg = entryRow
+    ? `${entryVerb(entryRow.note)} ${entryRow.shares != null ? entryRow.shares.toFixed(2) : '?'} ${sym} @ $${entryRow.price?.toFixed(2) ?? '?'} (${fmtExact(entryRow.created_at)}) → `
+    : ''
   switch (row.kind) {
-    case 'ENTRY': return `${entryVerb(row.note)} ${shares} ${sym} @ ${price}`
-    case 'TAKE_HALF': return `Sold a third of ${sym} @ ${price}${pnl}`
-    case 'EXIT_FULL': return `Closed ${shares} ${sym} @ ${price}${pnl}`
-    case 'STOP_HIT': return `Stopped out of ${sym} @ ${price}${pnl}`
+    case 'ENTRY': return `${entryVerb(row.note)} ${shares}${sym} @ ${price}`
+    case 'TAKE_HALF': return `${entryLeg}Sold a third ${shares}@ ${price}${pnl}`
+    case 'EXIT_FULL': return `${entryLeg}Closed ${shares}@ ${price}${pnl}`
+    case 'STOP_HIT': return `${entryLeg}Stopped out @ ${price}${pnl}`
     case 'STOP_MOVED': return `Moved stop on ${sym} to ${price}`
     case 'SCAN': return `Watching ${sym}`
     default: return ''
@@ -195,6 +206,25 @@ export default function AutoTrader() {
     currentPrice: heldPos.currentPrice, pnl: heldPos.pnl, pnlPct: heldPos.pnlPct,
     managed: true, stopPrice: heldPos.stopPrice, target1Price: heldPos.target1Price, target2Price: heldPos.target2Price,
   } : null
+
+  // Which ENTRY row each exit (TAKE_HALF/EXIT_FULL/STOP_HIT) actually closed out — only one
+  // position per symbol is ever open at a time, so walking the log forward in time and
+  // remembering "the last ENTRY seen for this symbol" reliably pairs them back up.
+  const entryForRow = new Map<string, LogRow>()
+  {
+    const bySymbol = new Map<string, LogRow>()
+    const asc = [...log].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+    for (const row of asc) {
+      if (!row.symbol) continue
+      if (row.kind === 'ENTRY') {
+        bySymbol.set(row.symbol, row)
+      } else if (row.kind === 'TAKE_HALF' || row.kind === 'EXIT_FULL' || row.kind === 'STOP_HIT') {
+        const entry = bySymbol.get(row.symbol)
+        if (entry) entryForRow.set(row.id, entry)
+        if (row.kind === 'EXIT_FULL' || row.kind === 'STOP_HIT') bySymbol.delete(row.symbol)
+      }
+    }
+  }
 
   // Every symbol it's ever traded, most-recent first, for the "review a past trade" picker.
   const tradedSymbols = Array.from(new Set(history.map((t) => t.symbol)))
@@ -452,7 +482,7 @@ export default function AutoTrader() {
                   const meta = row.kind === 'ENTRY'
                     ? { label: entryVerb(row.note), color: entryVerb(row.note) === 'Bought' ? '#3B82F6' : '#7C3AED' }
                     : KIND_META[row.kind] ?? { label: row.kind, color: 'var(--text-2)' }
-                  const summary = actionSummary(row)
+                  const summary = actionSummary(row, entryForRow.get(row.id))
                   return (
                     <tr key={row.id} style={{ borderTop: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
