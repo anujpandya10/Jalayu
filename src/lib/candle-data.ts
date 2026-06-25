@@ -99,10 +99,21 @@ export async function fetchBinanceCandles(
 /**
  * Fetch 1-minute bars for a US stock symbol via Yahoo Finance.
  */
+// Short-lived in-memory cache so a burst of scans (and overlapping cron ticks
+// on a warm instance) don't refetch the same symbol — cuts Yahoo load and the
+// 429 rate-limiting that comes with it. Only successful, non-empty results are
+// cached, so a rate-limited miss is retried on the next tick.
+const yahooCandleCache = new Map<string, { at: number; data: CandleInput[] }>()
+const YAHOO_CANDLE_TTL_MS = 45_000
+
 export async function fetchYahooCandles(
   symbol: string,
   interval: '1m' | '5m' | '15m' = '1m',
 ): Promise<CandleInput[]> {
+  const cacheKey = `${symbol}:${interval}`
+  const hit = yahooCandleCache.get(cacheKey)
+  if (hit && Date.now() - hit.at < YAHOO_CANDLE_TTL_MS) return hit.data
+
   const range = interval === '1m' ? '1d' : '5d'
   const url   = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval}&range=${range}`
 
@@ -145,7 +156,9 @@ export async function fetchYahooCandles(
       candles.push({ high: h, low: l, close: c, volume: v ?? 0 })
     }
 
-    return candles.slice(-50)  // keep last 50 bars
+    const result = candles.slice(-50)  // keep last 50 bars
+    if (result.length > 0) yahooCandleCache.set(cacheKey, { at: Date.now(), data: result })
+    return result
   } catch {
     return []
   }

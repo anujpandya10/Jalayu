@@ -58,6 +58,19 @@ const RUNNER_TRAIL_PCT = 0.025    // the runner trails 2.5% below its peak — w
 // but not SO high it sits idle: with a few slots to keep working through the
 // session, the bar stays busy on the genuinely-set-up bars, not every wiggle.
 const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier than the base floor, loose enough to keep the slots working
+
+// Two-stage scan. Candle-scoring every name in the (now wide) universe meant
+// ~100 live Yahoo calls a tick — which Yahoo rate-limited (429s), leaving the
+// bot blind and barely trading. So first rank the whole universe by who's
+// actually MOVING today (change %, already in hand from the screeners — zero
+// extra calls), then only pull candles + full-score this many. ~20 calls a
+// tick instead of ~100: the data actually comes back, so setups get found.
+const SCORE_TOP_N = 20
+
+/** The day's biggest movers first — the only names worth spending a candle call on. */
+function topMovers(assets: AssetData[], n: number): AssetData[] {
+  return [...assets].sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h)).slice(0, n)
+}
 // Self-learning: judge each setup by its own realized record and adapt.
 const LEARN_MIN_SAMPLES = 6
 const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
@@ -179,7 +192,7 @@ async function maybeRunMorningKickoff(supabase: SupabaseClient, userId: string, 
   events.push('Started morning prep')
 
   try {
-    const assets = await getStockScanUniverse()
+    const assets = topMovers(await getStockScanUniverse(), SCORE_TOP_N)
     const scored = await Promise.allSettled(assets.map((a) => scoreAssetFull(a)))
     const signals = scored.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<Signal>).value)
     const ranked = signals.filter((s) => s.setupTag !== 'UNTAGGED').sort((a, b) => Math.abs(b.score) - Math.abs(a.score)).slice(0, 5)
@@ -377,7 +390,8 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
 
   const learned = await learnSetupStats(supabase, userId)
 
-  const assets = (await getStockScanUniverse()).filter((a) => !heldSymbols.has(a.symbol) && !cooling.has(a.symbol))
+  const universe = (await getStockScanUniverse()).filter((a) => !heldSymbols.has(a.symbol) && !cooling.has(a.symbol))
+  const assets = topMovers(universe, SCORE_TOP_N)
   if (assets.length === 0) return { ran: true, events }
 
   const scored = await Promise.allSettled(assets.map((a) => scoreAssetFull(a)))
