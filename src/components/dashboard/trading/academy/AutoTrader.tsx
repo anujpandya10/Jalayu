@@ -97,10 +97,23 @@ function parseCloseWhy(kind: string, note: string): string {
 
 const EXIT_KIND_LABEL: Record<string, string> = { TAKE_HALF: 'Trimmed a third', EXIT_FULL: 'Closed', STOP_HIT: 'Stopped out' }
 
+/** Pull the setup name + score out of a SCAN row's fixed template, for "practice for
+ * tomorrow" — same parsing approach as parseEntryWhy, applied to the watchlist instead. */
+function parseScanRow(note: string): { setupLabel: string; setupTag: string; score: number } | null {
+  const m = note.match(/\(score ([-\d.]+),\s*([a-z0-9 ]+)\)/i)
+  if (!m) return null
+  return { score: parseFloat(m[1]), setupLabel: m[2].trim(), setupTag: m[2].trim().toUpperCase().replace(/ /g, '_') }
+}
+
+// The engine's real, fixed risk shape (trading-config.ts) — not invented per-symbol numbers.
+const REAL_STOP_PCT = 0.004      // -0.4% hard stop, every setup
+const REAL_T1_PCT_LONG = 0.010   // long T1 ≈ half of the 2.0% TP ceiling
+const REAL_T1_PCT_SHORT = 0.009  // short T1 ≈ half of the 1.8% TP ceiling
+
 /** The actual teaching unit: bought here because X, closed here because Y — as a small
  * vertical timeline instead of one run-on paragraph, with exact-to-the-second timestamps
  * on both legs and the held duration between them. */
-function RoundTrip({ entryRow, exitRow }: { entryRow: LogRow; exitRow: LogRow }) {
+function RoundTrip({ entryRow, exitRow, onView }: { entryRow: LogRow; exitRow: LogRow; onView?: () => void }) {
   const why = parseEntryWhy(entryRow.note)
   const closeWhy = parseCloseWhy(exitRow.kind, exitRow.note)
   const heldMs = new Date(exitRow.created_at).getTime() - new Date(entryRow.created_at).getTime()
@@ -145,6 +158,12 @@ function RoundTrip({ entryRow, exitRow }: { entryRow: LogRow; exitRow: LogRow })
           <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1, lineHeight: 1.4 }}>
             <strong style={{ color: 'var(--text-2)' }}>Why closed:</strong> {closeWhy}
           </div>
+          {onView && (
+            <button type="button" onClick={onView}
+              style={{ marginTop: 4, padding: 0, border: 'none', background: 'none', color: 'var(--accent)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
+              View on chart →
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -168,6 +187,20 @@ export default function AutoTrader() {
   const [stats, setStats] = useState<AutoStats | null>(null)
   const [history, setHistory] = useState<TradeRow[]>([])
   const [reviewSymbol, setReviewSymbol] = useState<string | null>(null)
+  const [chartMode, setChartMode] = useState<'live' | 'review'>('live')
+  const [notes, setNotes] = useState('')
+  const chartSectionRef = useRef<HTMLDivElement>(null)
+
+  // Personal notes, local to this browser only (no account sync) — jot down your own read
+  // while reviewing a trade, separate from the bot's own narration.
+  useEffect(() => { setNotes(localStorage.getItem('jalayu-auto-trader-notes') ?? '') }, [])
+  const updateNotes = (v: string) => { setNotes(v); localStorage.setItem('jalayu-auto-trader-notes', v) }
+
+  const openTradeOnChart = (symbol: string) => {
+    setChartMode('review')
+    setReviewSymbol(symbol)
+    chartSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
   const [resetting, setResetting] = useState(false)
@@ -294,6 +327,26 @@ export default function AutoTrader() {
     }
   }
 
+  // The most recent morning prep's watchlist — real candidates the bot actually flagged,
+  // with a real stop/target/odds attached, so "practice for tomorrow" isn't made-up tickers.
+  const latestScanDate = log.find((r) => r.kind === 'SCAN')?.created_at
+  const latestScanDay = latestScanDate ? new Date(latestScanDate).toDateString() : null
+  const todayWatchlist = log
+    .filter((r) => r.kind === 'SCAN' && r.symbol && r.price != null && new Date(r.created_at).toDateString() === latestScanDay)
+    .slice(0, 3)
+    .map((r) => {
+      const parsed = parseScanRow(r.note)
+      if (!parsed) return null
+      const direction: 'LONG' | 'SHORT' = parsed.score >= 0 ? 'LONG' : 'SHORT'
+      const price = r.price as number
+      const stop = direction === 'LONG' ? price * (1 - REAL_STOP_PCT) : price * (1 + REAL_STOP_PCT)
+      const t1pct = direction === 'LONG' ? REAL_T1_PCT_LONG : REAL_T1_PCT_SHORT
+      const target = direction === 'LONG' ? price * (1 + t1pct) : price * (1 - t1pct)
+      const stat = stats?.setupStats.find((s) => s.setupTag === parsed.setupTag)
+      return { row: r, ...parsed, direction, price, stop, target, stat }
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+
   // Every symbol it's ever traded, most-recent first, for the "review a past trade" picker.
   const tradedSymbols = Array.from(new Set(history.map((t) => t.symbol)))
 
@@ -372,49 +425,32 @@ export default function AutoTrader() {
         )}
       </div>
 
-      {/* Desktop: chart sits beside the scoreboard, so seeing what it's doing right now
-          never requires scrolling past a stack of cards first. Mobile keeps the original
-          stacked order (scoreboard, then chart) since there's no spare width to use. */}
-      {(() => {
-        const scoreboard = stats && (
-          <>
-            <StatTile label="Today's P&L" value={`${stats.realizedToday >= 0 ? '+' : ''}$${stats.realizedToday.toFixed(2)}`} color={stats.realizedToday >= 0 ? '#16A34A' : '#DC2626'} />
-            <StatTile label="Total P&L" value={`${stats.totalRealized >= 0 ? '+' : ''}$${stats.totalRealized.toFixed(2)}`} color={stats.totalRealized >= 0 ? '#16A34A' : '#DC2626'} />
-            <StatTile label="Win rate" value={`${stats.winRatePct}%`} sub={`${stats.wins}/${stats.totalClosed} trades`} />
-            <div style={{ gridColumn: isDesktop ? undefined : 'span 2', minWidth: 200, padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
-              <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Equity curve (realized)</div>
-              <EquityCurve points={stats.equityCurve} seed={stats.seedCapital} />
-            </div>
-          </>
-        )
-        const monitorChart = (
-          <ChartErrorBoundary label="The monitor chart">
-            <TradingChart symbol={chartSymbol} position={chartPosition} readOnly />
-          </ChartErrorBoundary>
-        )
-        return isDesktop ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, marginBottom: 16, alignItems: 'start' }}>
-            <div>{monitorChart}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{scoreboard}</div>
+      {/* One chart, two modes — Live (what it's holding/watching right now) and Review
+          (any past trade's real fills plotted on the actual bars). Used to be two separate
+          chart cards; clicking "View on chart" on any closed trade below jumps here and
+          switches to Review automatically, so there's one place to look, not two. */}
+      <div ref={chartSectionRef} style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 4, padding: 3, borderRadius: 9, background: 'var(--morning)', border: '1px solid var(--border)' }}>
+            <button type="button" onClick={() => setChartMode('live')}
+              style={{ padding: '6px 12px', fontSize: 11.5, fontWeight: 700, borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: chartMode === 'live' ? 'var(--surface)' : 'transparent', color: chartMode === 'live' ? 'var(--text)' : 'var(--text-3)' }}>
+              ● Live
+            </button>
+            <button type="button" onClick={() => setChartMode('review')} disabled={tradedSymbols.length === 0}
+              style={{ padding: '6px 12px', fontSize: 11.5, fontWeight: 700, borderRadius: 7, border: 'none', cursor: tradedSymbols.length === 0 ? 'not-allowed' : 'pointer', fontFamily: 'inherit', background: chartMode === 'review' ? 'var(--surface)' : 'transparent', color: chartMode === 'review' ? 'var(--text)' : 'var(--text-3)', opacity: tradedSymbols.length === 0 ? 0.5 : 1 }}>
+              Review a past trade
+            </button>
           </div>
-        ) : (
-          <>
-            {scoreboard && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>{scoreboard}</div>}
-            <div style={{ marginBottom: 16 }}>{monitorChart}</div>
-          </>
-        )
-      })()}
+          {chartMode === 'live' ? (
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>What it&apos;s holding or watching right now</span>
+          ) : (
+            <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+              <span style={{ color: '#16A34A', fontWeight: 700 }}>▲ green</span> = bought in · <span style={{ color: '#DC2626', fontWeight: 700 }}>▼ red</span> = sold out — hover an arrow for the exact fill
+            </span>
+          )}
+        </div>
 
-      {/* Review a past trade — every real buy/sell plotted on the actual bars, so you can
-          see exactly what the chart looked like at the moment it acted, not just read about it. */}
-      {tradedSymbols.length > 0 && (
-        <div style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Compare a trade against the bars</h3>
-          <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '0 0 10px', lineHeight: 1.5 }}>
-            Pick a symbol it&apos;s traded — every real fill shows up on the chart at its exact price and time:
-            {' '}<span style={{ color: '#16A34A', fontWeight: 700 }}>▲ green</span> = bought/shorted in,
-            {' '}<span style={{ color: '#DC2626', fontWeight: 700 }}>▼ red</span> = sold/closed out. Hover an arrow for the exact fill.
-          </p>
+        {chartMode === 'review' && (
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
             {tradedSymbols.map((s) => (
               <button key={s} type="button" onClick={() => setReviewSymbol(s)}
@@ -423,13 +459,53 @@ export default function AutoTrader() {
               </button>
             ))}
           </div>
-          {reviewSymbol && (
+        )}
+
+        {/* Desktop: chart sits beside the scoreboard so seeing what it's doing never
+            requires scrolling past a stack of cards first. */}
+        {(() => {
+          const scoreboard = stats && (
+            <>
+              <StatTile label="Today's P&L" value={`${stats.realizedToday >= 0 ? '+' : ''}$${stats.realizedToday.toFixed(2)}`} color={stats.realizedToday >= 0 ? '#16A34A' : '#DC2626'} />
+              <StatTile label="Total P&L" value={`${stats.totalRealized >= 0 ? '+' : ''}$${stats.totalRealized.toFixed(2)}`} color={stats.totalRealized >= 0 ? '#16A34A' : '#DC2626'} />
+              <StatTile label="Win rate" value={`${stats.winRatePct}%`} sub={`${stats.wins}/${stats.totalClosed} trades`} />
+              <div style={{ gridColumn: isDesktop ? undefined : 'span 2', minWidth: 200, padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Equity curve (realized)</div>
+                <EquityCurve points={stats.equityCurve} seed={stats.seedCapital} />
+              </div>
+            </>
+          )
+          const chart = chartMode === 'live' ? (
+            <ChartErrorBoundary label="The monitor chart">
+              <TradingChart symbol={chartSymbol} position={chartPosition} readOnly />
+            </ChartErrorBoundary>
+          ) : reviewSymbol ? (
             <ChartErrorBoundary label="The review chart">
               <TradingChart key={reviewSymbol} symbol={reviewSymbol} tradeMarkers={reviewMarkers} readOnly />
             </ChartErrorBoundary>
-          )}
-        </div>
-      )}
+          ) : null
+          return isDesktop ? (
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, alignItems: 'start' }}>
+              <div>{chart}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{scoreboard}</div>
+            </div>
+          ) : (
+            <>
+              {scoreboard && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>{scoreboard}</div>}
+              <div>{chart}</div>
+            </>
+          )
+        })()}
+      </div>
+
+      {/* Personal notes — your own read, kept separate from the bot's narration. Local to
+          this browser only (no account sync), so it's a scratchpad, not another data model. */}
+      <div style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
+        <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>My notes</h3>
+        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 8px' }}>Saved on this device only — jot down what you see before reading its reasoning, then check yourself against it.</p>
+        <textarea value={notes} onChange={(e) => updateNotes(e.target.value)} placeholder="e.g. VRNS — I'd have called the BB bounce too, RSI was at 34..."
+          style={{ width: '100%', minHeight: 80, padding: 10, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text)', fontSize: 12.5, fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+      </div>
 
       {/* Per-setup learning table */}
       {stats && stats.setupStats.length > 0 && (
@@ -498,25 +574,6 @@ export default function AutoTrader() {
         </div>
       )}
 
-      {/* Today's watchlist — the morning prep, grouped separately for a quick read */}
-      {(() => {
-        const today = log[0] ? new Date(log[0].created_at).toDateString() : null
-        const watchlist = log.filter((r) => r.kind === 'SCAN' && r.symbol && new Date(r.created_at).toDateString() === today)
-        if (watchlist.length === 0) return null
-        return (
-          <div style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>Today&apos;s watchlist — built at pre-market prep</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              {watchlist.map((row) => (
-                <div key={row.id} style={{ padding: '8px 10px', borderRadius: 8, background: 'var(--morning)', fontSize: 11.5, color: 'var(--text-2)', lineHeight: 1.5 }}>
-                  {row.note}
-                </div>
-              ))}
-            </div>
-          </div>
-        )
-      })()}
-
       {/* The narrated trade log — what it did and why, in plain English */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
         <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>What it's been doing</h3>
@@ -570,7 +627,7 @@ export default function AutoTrader() {
                       <td style={{ padding: '7px 8px 7px 0', color: 'var(--text-3)' }}>{row.vwap != null ? row.vwap.toFixed(2) : '—'}</td>
                       <td style={{ padding: '7px 0 7px 0', color: 'var(--text-2)', lineHeight: 1.5, minWidth: 320 }}>
                         {isPairedExit && pairedEntry ? (
-                          <RoundTrip entryRow={pairedEntry} exitRow={row} />
+                          <RoundTrip entryRow={pairedEntry} exitRow={row} onView={() => row.symbol && openTradeOnChart(row.symbol)} />
                         ) : (
                           <>
                             {summary && (
@@ -588,6 +645,46 @@ export default function AutoTrader() {
           </div>
         )}
       </div>
+
+      {/* Homework — real candidates from the bot's own most recent scan, with the engine's
+          actual stop/target math (not invented per-symbol numbers) and the setup's real
+          win rate on this account where there's enough history to know it. The point isn't
+          the bot's pick — it's you pulling the symbol up on a real chart (Webull, etc.)
+          before the open and drawing the EMA9/EMA21/VWAP yourself to see if you'd call the
+          same setup cold. */}
+      {todayWatchlist.length > 0 && (
+        <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Practice for next session</h3>
+          <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '0 0 12px', lineHeight: 1.5 }}>
+            From its last scan, not a guess. Pull each one up yourself before the open, plot EMA9/EMA21 + VWAP,
+            and see if you&apos;d have called it before checking this card.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {todayWatchlist.map((w) => {
+              const odds = w.stat && w.stat.total >= 6
+                ? `${w.stat.winRatePct}% real odds (${w.stat.wins}/${w.stat.total} trades)`
+                : 'not enough trades yet to know its real odds — that’s exactly why this is practice, not a sure thing'
+              return (
+                <div key={w.row.id} style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid var(--border)', background: 'var(--morning)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--text)' }}>{w.row.symbol}</span>
+                    <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', padding: '2px 7px', borderRadius: 99, background: w.direction === 'LONG' ? '#16A34A' : '#7C3AED' }}>
+                      {w.direction === 'LONG' ? 'LONG' : 'SHORT'} · {w.setupLabel}
+                    </span>
+                    <span style={{ fontSize: 11, color: 'var(--text-3)' }}>currently ${w.price.toFixed(2)}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11.5, marginBottom: 6 }}>
+                    <span>Entry <strong style={{ color: 'var(--text)' }}>${w.price.toFixed(2)}</strong></span>
+                    <span style={{ color: '#DC2626' }}>Stop <strong>${w.stop.toFixed(2)}</strong> (−0.4%)</span>
+                    <span style={{ color: '#16A34A' }}>Target <strong>${w.target.toFixed(2)}</strong> ({w.direction === 'LONG' ? '+1.0%' : '+0.9%'})</span>
+                  </div>
+                  <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>{odds}</div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
