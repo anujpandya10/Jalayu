@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Bot, Play, Pause, RotateCcw, Loader2 } from 'lucide-react'
 import { isUsMarketOpenNow } from '@/lib/market-hours'
+import { useIsDesktop } from '@/lib/useIsDesktop'
 import TradingChart from './TradingChart'
 import ChartErrorBoundary from './ChartErrorBoundary'
 
@@ -82,6 +83,7 @@ const REFRESH_MS = 20_000
  * yourself on the Practice desk.
  */
 export default function AutoTrader() {
+  const isDesktop = useIsDesktop()
   const [portfolio, setPortfolio] = useState<AutoPortfolio | null>(null)
   const [log, setLog] = useState<LogRow[]>([])
   const [stats, setStats] = useState<AutoStats | null>(null)
@@ -203,10 +205,11 @@ export default function AutoTrader() {
     .filter((t) => t.symbol === reviewSymbol)
     .map((t) => {
       const isEntry = t.pnl == null
-      const verb = isEntry ? (t.direction === 'LONG' ? 'Bought' : 'Shorted') : (t.pnl! >= 0 ? 'Sold +' : 'Sold ')
+      // Short on purpose — dense 5m candles leave little room before adjacent
+      // markers' text starts overlapping. Full price/P&L is still in the table above.
       const label = isEntry
-        ? `${verb} @ $${t.price.toFixed(2)}`
-        : `${verb}$${Math.abs(t.pnl!).toFixed(2)} @ $${t.price.toFixed(2)}`
+        ? `${t.direction === 'LONG' ? 'B' : 'Sh'} $${t.price.toFixed(2)}`
+        : `${t.pnl! >= 0 ? '+' : ''}$${t.pnl!.toFixed(2)}`
       return {
         time: Math.floor(new Date(t.created_at).getTime() / 1000),
         price: t.price,
@@ -271,25 +274,38 @@ export default function AutoTrader() {
         )}
       </div>
 
-      {/* Stat tiles + equity curve — the desk's scoreboard */}
-      {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>
-          <StatTile label="Today's P&L" value={`${stats.realizedToday >= 0 ? '+' : ''}$${stats.realizedToday.toFixed(2)}`} color={stats.realizedToday >= 0 ? '#16A34A' : '#DC2626'} />
-          <StatTile label="Total P&L" value={`${stats.totalRealized >= 0 ? '+' : ''}$${stats.totalRealized.toFixed(2)}`} color={stats.totalRealized >= 0 ? '#16A34A' : '#DC2626'} />
-          <StatTile label="Win rate" value={`${stats.winRatePct}%`} sub={`${stats.wins}/${stats.totalClosed} trades`} />
-          <div style={{ gridColumn: 'span 2', minWidth: 200, padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
-            <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Equity curve (realized)</div>
-            <EquityCurve points={stats.equityCurve} seed={stats.seedCapital} />
+      {/* Desktop: chart sits beside the scoreboard, so seeing what it's doing right now
+          never requires scrolling past a stack of cards first. Mobile keeps the original
+          stacked order (scoreboard, then chart) since there's no spare width to use. */}
+      {(() => {
+        const scoreboard = stats && (
+          <>
+            <StatTile label="Today's P&L" value={`${stats.realizedToday >= 0 ? '+' : ''}$${stats.realizedToday.toFixed(2)}`} color={stats.realizedToday >= 0 ? '#16A34A' : '#DC2626'} />
+            <StatTile label="Total P&L" value={`${stats.totalRealized >= 0 ? '+' : ''}$${stats.totalRealized.toFixed(2)}`} color={stats.totalRealized >= 0 ? '#16A34A' : '#DC2626'} />
+            <StatTile label="Win rate" value={`${stats.winRatePct}%`} sub={`${stats.wins}/${stats.totalClosed} trades`} />
+            <div style={{ gridColumn: isDesktop ? undefined : 'span 2', minWidth: 200, padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
+              <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Equity curve (realized)</div>
+              <EquityCurve points={stats.equityCurve} seed={stats.seedCapital} />
+            </div>
+          </>
+        )
+        const monitorChart = (
+          <ChartErrorBoundary label="The monitor chart">
+            <TradingChart symbol={chartSymbol} position={chartPosition} readOnly />
+          </ChartErrorBoundary>
+        )
+        return isDesktop ? (
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 300px', gap: 16, marginBottom: 16, alignItems: 'start' }}>
+            <div>{monitorChart}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>{scoreboard}</div>
           </div>
-        </div>
-      )}
-
-      {/* Live monitor chart — what it's watching/holding right now, read-only */}
-      <div style={{ marginBottom: 16 }}>
-        <ChartErrorBoundary label="The monitor chart">
-          <TradingChart symbol={chartSymbol} position={chartPosition} readOnly />
-        </ChartErrorBoundary>
-      </div>
+        ) : (
+          <>
+            {scoreboard && <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, marginBottom: 16 }}>{scoreboard}</div>}
+            <div style={{ marginBottom: 16 }}>{monitorChart}</div>
+          </>
+        )
+      })()}
 
       {/* Review a past trade — every real buy/sell plotted on the actual bars, so you can
           see exactly what the chart looked like at the moment it acted, not just read about it. */}

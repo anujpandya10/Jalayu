@@ -413,7 +413,7 @@ export default function DashboardPage() {
         return <TradingView />
       case 'academy':
         return (
-          <div style={{ maxWidth: 720, margin: '0 auto', padding: '20px 20px 64px' }}>
+          <div style={{ maxWidth: 'min(1600px, 97vw)', margin: '0 auto', padding: '20px 20px 64px' }}>
             <AcademyTab />
           </div>
         )

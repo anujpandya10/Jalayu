@@ -143,7 +143,10 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   const [chartQty, setChartQty] = useState(100)
   const [chartTradeBusy, setChartTradeBusy] = useState<'LONG' | 'SHORT' | null>(null)
   const [chartGateBlocked, setChartGateBlocked] = useState<{ direction: 'LONG' | 'SHORT'; gate: { verdict: 'GOOD' | 'WEAK' | 'BAD'; reason: string } } | null>(null)
-  const [showSignals, setShowSignals] = useState(true)
+  // When real fills are being plotted (trade review), the hypothetical "could've
+  // traded here" teaching arrows just bury them in clutter — off by default there,
+  // on by default everywhere else. Still toggleable either way.
+  const [showSignals, setShowSignals] = useState(!tradeMarkers || tradeMarkers.length === 0)
   const [dragPrice, setDragPrice] = useState<{ kind: DragKind; price: number; x: number; y: number } | null>(null)
   const priceLinesRef = useRef<Partial<Record<DragKind, DraggableLine>>>({})
   const draggingRef = useRef<DragKind | null>(null)

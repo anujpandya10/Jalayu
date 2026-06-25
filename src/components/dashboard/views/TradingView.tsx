@@ -513,14 +513,14 @@ export default function TradingView() {
 
   if (loading) {
     return (
-      <div style={{ maxWidth: 720, margin: '0 auto', padding: '48px 20px' }}>
+      <div style={{ maxWidth: 'min(1600px, 97vw)', margin: '0 auto', padding: '48px 20px' }}>
         <div style={{ fontSize: 14, color: 'var(--text-3)' }}>Loading…</div>
       </div>
     )
   }
 
   return (
-    <div style={{ maxWidth: 720, margin: '0 auto', padding: '20px 20px 64px' }}>
+    <div style={{ maxWidth: 'min(1600px, 97vw)', margin: '0 auto', padding: '20px 20px 64px' }}>
 
       {/* ── Calm header ── */}
       <header style={{ marginBottom: 24 }}>
