@@ -160,6 +160,13 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   // Guards the auto-expand-on-scroll-past-the-edge logic below: set the moment
   // we bump range/interval to fetch more history, cleared once that fetch lands.
   const autoExpandingRef = useRef(false)
+  // Right after a fresh range/interval loads, fitContent() + the container's own
+  // post-mount resize settling can briefly report a visible range that LOOKS like
+  // "scrolled into empty space" even though the user never touched anything —
+  // worst on thin datasets (e.g. 1D), which is why tapping 1D kept bouncing back
+  // to 5D on its own. Auto-expand is ignored until this settle window passes.
+  const settledRef = useRef(false)
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const fetchData = useCallback(async (sym: string, iv: string, rg: string) => {
     setLoading(true)
@@ -300,7 +307,21 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
           layout: { background: { color: '#0d1126' }, textColor: '#A8B0C8' },
           grid: { vertLines: { color: 'rgba(255,255,255,0.04)' }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
           rightPriceScale: { borderColor: 'rgba(255,255,255,0.1)' },
-          timeScale: { borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false },
+          timeScale: {
+            borderColor: 'rgba(255,255,255,0.1)', timeVisible: true, secondsVisible: false,
+            // Default labels show a bare number for both "hour:minute" and "day of
+            // month" ticks (e.g. "15:00" right next to a bare "25") with nothing to
+            // tell them apart. Spell each tick out in market time (ET) instead — a
+            // day boundary reads "Jun 25", a time-of-day tick reads "9:35 AM".
+            tickMarkFormatter: (time: number, tickMarkType: number) => {
+              const date = new Date(time * 1000)
+              const tz = 'America/New_York'
+              if (tickMarkType === 0) return new Intl.DateTimeFormat('en-US', { year: 'numeric', timeZone: tz }).format(date)
+              if (tickMarkType === 1) return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric', timeZone: tz }).format(date)
+              if (tickMarkType === 2) return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', timeZone: tz }).format(date)
+              return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz }).format(date)
+            },
+          },
           crosshair: {
             mode: 1,
             horzLine: { color: '#FBBF24', width: 1, style: 2, labelBackgroundColor: '#FBBF24' },
@@ -457,8 +478,11 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         // want (unlike "from <= 0", which is also true right after fitContent()
         // fits everything on screen and would fire on every load).
         const ts = c.timeScale() as { getVisibleLogicalRange: () => { from: number; to: number } | null; subscribeVisibleLogicalRangeChange: (cb: () => void) => void }
+        settledRef.current = false
+        if (settleTimerRef.current) clearTimeout(settleTimerRef.current)
+        settleTimerRef.current = setTimeout(() => { settledRef.current = true }, 500)
         const onVisibleRangeChange = () => {
-          if (autoExpandingRef.current) return
+          if (autoExpandingRef.current || !settledRef.current) return
           const lr = ts.getVisibleLogicalRange()
           if (!lr || lr.from > -2) return
           const curRange = data.range ?? range
@@ -495,6 +519,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
     return () => {
       disposed = true
       setHover(null)
+      if (settleTimerRef.current) { clearTimeout(settleTimerRef.current); settleTimerRef.current = null }
       if (chartRef.current) {
         try { (chartRef.current as { remove: () => void }).remove() } catch { /* ignore */ }
         chartRef.current = null
