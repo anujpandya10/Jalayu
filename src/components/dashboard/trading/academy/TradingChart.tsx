@@ -104,9 +104,12 @@ interface Props {
   onTraded?: (message: string) => void
   /** Monitor mode: show position lines + P&L but no on-chart trade box and no draggable lines (the bot is in control). */
   readOnly?: boolean
+  /** Real fills to plot on the bars — "where did it actually buy/sell, what did the bars look like there."
+   * `time` is the trade's real timestamp (unix seconds); it gets snapped to the nearest loaded candle to anchor. */
+  tradeMarkers?: { time: number; price: number; kind: 'BUY' | 'SELL'; label: string }[]
 }
 
-export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol, onSymbolChange, position, onTraded, readOnly = false }: Props) {
+export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlledSymbol, onSymbolChange, position, onTraded, readOnly = false, tradeMarkers }: Props) {
   const [symbolInput, setSymbolInput] = useState(controlledSymbol ?? defaultSymbol)
   const [symbol, setSymbol] = useState(controlledSymbol ?? defaultSymbol)
 
@@ -250,6 +253,29 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
   // real pattern logic (RSI/EMA/MACD/VWAP/Bollinger) on the loaded candles.
   const signalMarkers = useMemo(() => (data ? computeSignalMarkers(data.candles) : []), [data])
 
+  // Real fills, placed on the actual bar — a trade's exact timestamp rarely lands
+  // precisely on a candle boundary, so each one snaps to its nearest loaded candle.
+  const realTradeMarkers = useMemo(() => {
+    if (!data || !tradeMarkers || tradeMarkers.length === 0 || data.candles.length === 0) return []
+    const times = data.candles.map((c) => c.time)
+    return tradeMarkers.map((m) => {
+      let nearest = times[0]
+      let best = Infinity
+      for (const t of times) {
+        const d = Math.abs(t - m.time)
+        if (d < best) { best = d; nearest = t }
+      }
+      return {
+        time: nearest,
+        position: (m.kind === 'BUY' ? 'belowBar' : 'aboveBar') as 'belowBar' | 'aboveBar',
+        color: m.kind === 'BUY' ? '#16A34A' : '#DC2626',
+        shape: (m.kind === 'BUY' ? 'arrowUp' : 'arrowDown') as 'arrowUp' | 'arrowDown',
+        text: m.label,
+        size: 2,
+      }
+    })
+  }, [data, tradeMarkers])
+
   // Build the main candlestick chart + overlays
   useEffect(() => {
     if (!containerRef.current || !data || !series || data.candles.length === 0) return
@@ -288,9 +314,10 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         candleSeries.setData(data.candles)
         candleSeriesRef.current = candleSeries
         priceLineHandlesRef.current = []
-        if (showSignals && signalMarkers.length > 0) {
+        const allMarkers = [...(showSignals ? signalMarkers : []), ...realTradeMarkers]
+        if (allMarkers.length > 0) {
           const createSeriesMarkers = (lib as { createSeriesMarkers?: (s: unknown, m: unknown[]) => unknown }).createSeriesMarkers
-          createSeriesMarkers?.(candleSeries, signalMarkers)
+          createSeriesMarkers?.(candleSeries, allMarkers)
         }
 
         // Live price tag that follows the cursor — so you know exactly where a line will land.
@@ -470,7 +497,7 @@ export default function TradingChart({ defaultSymbol = 'AAPL', symbol: controlle
         chartRef.current = null
       }
     }
-  }, [data, series, overlays, drawings, position, showSignals, signalMarkers])
+  }, [data, series, overlays, drawings, position, showSignals, signalMarkers, realTradeMarkers])
 
   // Drag-to-adjust stop/target lines. Lives in its own effect (independent of the
   // heavy chart-rebuild effect) and reads chart/series/line refs lazily at call

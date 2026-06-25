@@ -25,6 +25,11 @@ interface LogRow {
   created_at: string
 }
 
+interface TradeRow {
+  id: string; symbol: string; direction: 'LONG' | 'SHORT'; shares: number; price: number
+  pnl: number | null; setup_tag: string | null; created_at: string
+}
+
 interface AutoStats {
   equityCurve: number[]; seedCapital: number
   totalClosed: number; wins: number; winRatePct: number
@@ -80,6 +85,8 @@ export default function AutoTrader() {
   const [portfolio, setPortfolio] = useState<AutoPortfolio | null>(null)
   const [log, setLog] = useState<LogRow[]>([])
   const [stats, setStats] = useState<AutoStats | null>(null)
+  const [history, setHistory] = useState<TradeRow[]>([])
+  const [reviewSymbol, setReviewSymbol] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [toggling, setToggling] = useState(false)
   const [resetting, setResetting] = useState(false)
@@ -98,15 +105,23 @@ export default function AutoTrader() {
     const res = await fetch('/api/academy/auto/stats', { cache: 'no-store' })
     if (res.ok) setStats(await res.json())
   }, [])
+  const loadHistory = useCallback(async () => {
+    const res = await fetch('/api/academy/auto/history', { cache: 'no-store' })
+    if (res.ok) {
+      const rows = await res.json() as TradeRow[]
+      setHistory(rows)
+      setReviewSymbol((cur) => cur ?? rows[0]?.symbol ?? null)
+    }
+  }, [])
 
   useEffect(() => {
-    void (async () => { await Promise.all([loadPortfolio(), loadLog(), loadStats()]); setLoading(false) })()
-  }, [loadPortfolio, loadLog, loadStats])
+    void (async () => { await Promise.all([loadPortfolio(), loadLog(), loadStats(), loadHistory()]); setLoading(false) })()
+  }, [loadPortfolio, loadLog, loadStats, loadHistory])
 
   useEffect(() => {
-    const id = setInterval(() => { void loadPortfolio(); void loadLog(); void loadStats() }, REFRESH_MS)
+    const id = setInterval(() => { void loadPortfolio(); void loadLog(); void loadStats(); void loadHistory() }, REFRESH_MS)
     return () => clearInterval(id)
-  }, [loadPortfolio, loadLog, loadStats])
+  }, [loadPortfolio, loadLog, loadStats, loadHistory])
 
   // Client-side tick while the tab is open, for an instant feel. The cron
   // covers it the rest of the time.
@@ -120,7 +135,7 @@ export default function AutoTrader() {
           const data = await res.json()
           if (data.events?.length > 0) {
             setLastEvent(data.events[data.events.length - 1])
-            await Promise.all([loadPortfolio(), loadLog()])
+            await Promise.all([loadPortfolio(), loadLog(), loadHistory()])
           }
         }
       } catch { /* best effort */ } finally { tickingRef.current = false }
@@ -128,7 +143,7 @@ export default function AutoTrader() {
     void tick()
     const id = setInterval(tick, TICK_MS)
     return () => clearInterval(id)
-  }, [portfolio?.enabled, loadPortfolio, loadLog])
+  }, [portfolio?.enabled, loadPortfolio, loadLog, loadHistory])
 
   const toggle = async () => {
     if (!portfolio) return
@@ -178,6 +193,27 @@ export default function AutoTrader() {
     currentPrice: heldPos.currentPrice, pnl: heldPos.pnl, pnlPct: heldPos.pnlPct,
     managed: true, stopPrice: heldPos.stopPrice, target1Price: heldPos.target1Price, target2Price: heldPos.target2Price,
   } : null
+
+  // Every symbol it's ever traded, most-recent first, for the "review a past trade" picker.
+  const tradedSymbols = Array.from(new Set(history.map((t) => t.symbol)))
+
+  // Every real fill on the symbol being reviewed, placed at its exact price + time —
+  // an entry is pnl == null, an exit (trim/stop/close) carries the realized pnl.
+  const reviewMarkers = history
+    .filter((t) => t.symbol === reviewSymbol)
+    .map((t) => {
+      const isEntry = t.pnl == null
+      const verb = isEntry ? (t.direction === 'LONG' ? 'Bought' : 'Shorted') : (t.pnl! >= 0 ? 'Sold +' : 'Sold ')
+      const label = isEntry
+        ? `${verb} @ $${t.price.toFixed(2)}`
+        : `${verb}$${Math.abs(t.pnl!).toFixed(2)} @ $${t.price.toFixed(2)}`
+      return {
+        time: Math.floor(new Date(t.created_at).getTime() / 1000),
+        price: t.price,
+        kind: isEntry ? ('BUY' as const) : ('SELL' as const),
+        label,
+      }
+    })
 
   return (
     <div>
@@ -254,6 +290,32 @@ export default function AutoTrader() {
           <TradingChart symbol={chartSymbol} position={chartPosition} readOnly />
         </ChartErrorBoundary>
       </div>
+
+      {/* Review a past trade — every real buy/sell plotted on the actual bars, so you can
+          see exactly what the chart looked like at the moment it acted, not just read about it. */}
+      {tradedSymbols.length > 0 && (
+        <div style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Compare a trade against the bars</h3>
+          <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '0 0 10px', lineHeight: 1.5 }}>
+            Pick a symbol it&apos;s traded — every real fill shows up on the chart at its exact price and time:
+            {' '}<span style={{ color: '#16A34A', fontWeight: 700 }}>▲ green</span> = bought/shorted in,
+            {' '}<span style={{ color: '#DC2626', fontWeight: 700 }}>▼ red</span> = sold/closed out. Hover an arrow for the exact fill.
+          </p>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 12 }}>
+            {tradedSymbols.map((s) => (
+              <button key={s} type="button" onClick={() => setReviewSymbol(s)}
+                style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, background: reviewSymbol === s ? 'var(--accent)' : 'var(--morning)', color: reviewSymbol === s ? '#fff' : 'var(--text-2)', border: '1px solid var(--border)', borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit' }}>
+                {s}
+              </button>
+            ))}
+          </div>
+          {reviewSymbol && (
+            <ChartErrorBoundary label="The review chart">
+              <TradingChart key={reviewSymbol} symbol={reviewSymbol} tradeMarkers={reviewMarkers} readOnly />
+            </ChartErrorBoundary>
+          )}
+        </div>
+      )}
 
       {/* Per-setup learning table */}
       {stats && stats.setupStats.length > 0 && (
