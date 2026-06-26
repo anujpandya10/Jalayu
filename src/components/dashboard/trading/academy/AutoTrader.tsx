@@ -31,6 +31,12 @@ interface TradeRow {
   pnl: number | null; setup_tag: string | null; created_at: string
 }
 
+interface PendingEntry {
+  id: string; symbol: string; direction: 'LONG' | 'SHORT'
+  planned_shares: number; planned_price: number; setup_tag: string | null
+  reason: string | null; planned_at: string
+}
+
 interface AutoStats {
   equityCurve: number[]; seedCapital: number
   totalClosed: number; wins: number; winRatePct: number
@@ -46,6 +52,7 @@ const KIND_META: Record<string, { label: string; color: string }> = {
   STOP_MOVED: { label: 'Moved stop', color: '#D97706' },
   SCAN: { label: 'Watchlist', color: '#8B5CF6' },
   INFO: { label: 'Note', color: 'var(--text-3)' },
+  PLANNED: { label: 'Heads up', color: '#D97706' },
 }
 
 /** ENTRY rows cover both buys and shorts — the backend's note always leads with the real verb. */
@@ -71,6 +78,7 @@ function actionSummary(row: LogRow): string {
     case 'STOP_HIT': return `Stopped out @ ${price}${pnl}`
     case 'STOP_MOVED': return `Moved stop on ${sym} to ${price}`
     case 'SCAN': return `Watching ${sym}`
+    case 'PLANNED': return `Called ${shares}${sym} @ ~${price}`
     default: return ''
   }
 }
@@ -172,6 +180,9 @@ function RoundTrip({ entryRow, exitRow, onView }: { entryRow: LogRow; exitRow: L
 
 const TICK_MS = 25_000
 const REFRESH_MS = 20_000
+// Mirrors PENDING_ANNOUNCE_DELAY_MS in academy-auto-trader.ts — purely cosmetic for the
+// countdown display; the real delay is enforced server-side regardless of this value.
+const PENDING_DELAY_SECS = 60
 
 /**
  * Auto Trader — a fully separate $1000 account that trades itself: US
@@ -186,6 +197,8 @@ export default function AutoTrader() {
   const [log, setLog] = useState<LogRow[]>([])
   const [stats, setStats] = useState<AutoStats | null>(null)
   const [history, setHistory] = useState<TradeRow[]>([])
+  const [pending, setPending] = useState<PendingEntry[]>([])
+  const [nowTick, setNowTick] = useState(() => Date.now())
   const [reviewSymbol, setReviewSymbol] = useState<string | null>(null)
   const [chartMode, setChartMode] = useState<'live' | 'review'>('live')
   const [logExpanded, setLogExpanded] = useState(false)
@@ -195,6 +208,13 @@ export default function AutoTrader() {
   // Personal notes, local to this browser only (no account sync) — jot down your own read
   // while reviewing a trade, separate from the bot's own narration.
   useEffect(() => { setNotes(localStorage.getItem('jalayu-auto-trader-notes') ?? '') }, [])
+
+  // Drives the "heads up" countdown below — ticks every second purely client-side so the
+  // banner counts down smoothly between the 20s server polls, not in visible jumps.
+  useEffect(() => {
+    const id = setInterval(() => setNowTick(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
   const updateNotes = (v: string) => { setNotes(v); localStorage.setItem('jalayu-auto-trader-notes', v) }
 
   const openTradeOnChart = (symbol: string) => {
@@ -228,13 +248,17 @@ export default function AutoTrader() {
       setReviewSymbol((cur) => cur ?? rows[0]?.symbol ?? null)
     }
   }, [])
+  const loadPending = useCallback(async () => {
+    const res = await fetch('/api/academy/auto/pending', { cache: 'no-store' })
+    if (res.ok) setPending(await res.json())
+  }, [])
 
   useEffect(() => {
-    void (async () => { await Promise.all([loadPortfolio(), loadLog(), loadStats(), loadHistory()]); setLoading(false) })()
-  }, [loadPortfolio, loadLog, loadStats, loadHistory])
+    void (async () => { await Promise.all([loadPortfolio(), loadLog(), loadStats(), loadHistory(), loadPending()]); setLoading(false) })()
+  }, [loadPortfolio, loadLog, loadStats, loadHistory, loadPending])
 
   useEffect(() => {
-    const id = setInterval(() => { void loadPortfolio(); void loadLog(); void loadStats(); void loadHistory() }, REFRESH_MS)
+    const id = setInterval(() => { void loadPortfolio(); void loadLog(); void loadStats(); void loadHistory(); void loadPending() }, REFRESH_MS)
     return () => clearInterval(id)
   }, [loadPortfolio, loadLog, loadStats, loadHistory])
 
@@ -372,6 +396,38 @@ export default function AutoTrader() {
 
   return (
     <div>
+      {/* "Heads up" — about to trade, real plan, ~60s before it actually fires. The whole
+          point: pull up the same symbol on another screen and place it yourself in that
+          window, so you're trading at the same pace instead of reading about it after. */}
+      {pending.length > 0 && (
+        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {pending.map((p) => {
+            const elapsedMs = nowTick - new Date(p.planned_at).getTime()
+            const secsLeft = Math.max(0, Math.ceil((PENDING_DELAY_SECS * 1000 - elapsedMs) / 1000))
+            const isLong = p.direction === 'LONG'
+            return (
+              <div key={p.id} style={{
+                padding: '14px 16px', borderRadius: 14, border: '2px solid #F59E0B',
+                background: 'rgba(245,158,11,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>⏳ Heads up — about to trade</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
+                    {isLong ? 'Buy' : 'Short'} {p.planned_shares.toFixed(2)} sh of {p.symbol} @ ~${p.planned_price.toFixed(2)}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                    {p.setup_tag?.replace(/_/g, ' ').toLowerCase()} setup — pull it up on your own screen now
+                  </div>
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: '#D97706', fontVariantNumeric: 'tabular-nums' }}>
+                  {secsLeft}s
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <div style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 16, background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <Bot size={16} color="var(--accent)" />

@@ -69,6 +69,13 @@ const RUNNER_TRAIL_PCT = 0.025    // the runner trails 2.5% below its peak — w
 // session, the bar stays busy on the genuinely-set-up bars, not every wiggle.
 const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier than the base floor, loose enough to keep the slots working
 
+// "Heads up" staging: a qualifying setup announces itself (symbol, price, shares, why)
+// and waits this long before actually buying — so someone watching live on another
+// screen has real time to place the same trade themselves before it executes. On
+// execution it re-checks the setup is still real on a fresh quote, rather than blindly
+// firing the stale plan — the announced price is a forecast, not a limit order.
+const PENDING_ANNOUNCE_DELAY_MS = 60_000
+
 // Two-stage scan. Candle-scoring every name in the (now wide) universe meant
 // ~100 live Yahoo calls a tick — which Yahoo rate-limited (429s), leaving the
 // bot blind and barely trading. So first rank the whole universe by who's
@@ -449,10 +456,81 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   if (entriesToday >= MAX_TRADES_PER_DAY) return { ran: true, events }      // don't overtrade
   const greenLockActive = realizedToday >= DAILY_PROFIT_LOCK_USD            // up enough → only top-conviction from here
 
+  // ── 3.5 Follow through on any "heads up" entries that are now due ──
+  const { data: pendingRaw } = await supabase.from('academy_auto_pending_entries').select('*').eq('user_id', userId)
+  const allPending = pendingRaw ?? []
+  const duePending = allPending.filter((p) => Date.now() - new Date(p.planned_at as string).getTime() >= PENDING_ANNOUNCE_DELAY_MS)
+  for (const p of duePending) {
+    try {
+      const quote = await getQuote(p.symbol as string)
+      const asset: AssetData = { symbol: p.symbol, name: quote.name ?? p.name ?? p.symbol, price: quote.price, change24h: quote.changePct, change7d: 0, assetType: 'stock' }
+      const sig = await scoreAssetFull(asset)
+      const direction = p.direction as 'LONG' | 'SHORT'
+      const stillQualifies = sig.indicators != null && sig.direction === direction && Math.abs(sig.score) >= AUTO_MIN_CONVICTION
+      if (!stillQualifies) {
+        await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id)
+        await log(supabase, userId, { symbol: p.symbol, kind: 'INFO', note: `Passed on ${p.symbol} — the setup faded in the minute since I called it, so I didn't chase it.` })
+        events.push(`Passed on ${p.symbol} (setup faded before it was due)`)
+        continue
+      }
+      const ind = sig.indicators!
+      const price = sig.asset.price
+      const isLong = direction === 'LONG'
+      const setupTag = (p.setup_tag as string) ?? sig.setupTag
+      const { tp, sl } = getTpSl(setupTag, direction, 'stock')
+      const stop = r2(isLong ? price * (1 - sl) : price * (1 + sl))
+      const target2 = r2(isLong ? price * (1 + tp) : price * (1 - tp))
+      const target1 = r2(isLong ? price + (target2 - price) / 2 : price - (price - target2) / 2)
+      const shares = Number(p.planned_shares)
+      const total = r2(price * shares)
+      if (total > cash || total < MIN_TRADE_USD) {
+        await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id)
+        await log(supabase, userId, { symbol: p.symbol, kind: 'INFO', note: `Couldn't follow through on ${p.symbol} — not enough cash left by the time it was due.` })
+        continue
+      }
+
+      const { error: posErr } = await supabase.from('academy_auto_positions').insert({
+        user_id: userId, symbol: p.symbol, name: p.name ?? p.symbol, direction,
+        shares, original_shares: shares, avg_entry_price: price,
+        stop_price: stop, target1_price: target1, target2_price: target2, half_closed: false,
+        setup_tag: setupTag, entry_ema9: ind.ema9, entry_ema21: ind.ema21, entry_vwap: ind.vwap, entry_rsi: ind.rsi,
+      })
+      if (posErr) { await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id); continue } // already holding it somehow
+
+      await supabase.from('academy_auto_trades').insert({
+        user_id: userId, symbol: p.symbol, name: p.name ?? p.symbol, action: 'BUY', direction,
+        shares, price, total, pnl: null, setup_tag: setupTag, reason: p.reason,
+        ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
+      })
+      await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id)
+
+      cash = r2(cash - total)
+      await supabase.from('academy_auto_portfolio').update({ cash, updated_at: new Date().toISOString() }).eq('user_id', userId)
+
+      const trendNote = ind.ema9 >= ind.ema21 ? `EMA9 (${ind.ema9.toFixed(2)}) above EMA21 (${ind.ema21.toFixed(2)}) — trend is up` : `EMA9 (${ind.ema9.toFixed(2)}) below EMA21 (${ind.ema21.toFixed(2)}) — trend is down`
+      const priceDrift = p.planned_price ? r2(price - Number(p.planned_price)) : 0
+      const driftNote = Math.abs(priceDrift) >= 0.01 ? ` (called at ${fmt(Number(p.planned_price))}, moved ${priceDrift >= 0 ? '+' : ''}${fmt(priceDrift)} by the time it filled — that gap is real slippage.)` : ''
+      const chapter = legendFor(setupTag)
+      const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
+      // Same shape as a direct entry's note (setup tag, score, legend) so the trade-log's
+      // "Why bought" parsing still works for trades that went through the heads-up stage —
+      // just with the called-ahead framing folded in instead of a separate sentence.
+      await log(supabase, userId, {
+        symbol: p.symbol, kind: 'ENTRY', price, shares, pnl: 0,
+        ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
+        note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${p.symbol} at ${fmt(price)} — ${setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}), exactly what I called about a minute ago.${driftNote} ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}`,
+      })
+      events.push(`Entered ${p.symbol} (followed through on the heads-up)`)
+    } catch { /* quote failed this tick — leave the pending row in place, retry next tick rather than silently dropping a plan I already announced */ }
+  }
+  const stillPendingSymbols = new Set(allPending.filter((p) => !duePending.some((d) => d.id === p.id)).map((p) => p.symbol))
+
   // ── 4. Scan for a new entry if a slot is free ──
   const { data: stillOpenRaw } = await supabase.from('academy_auto_positions').select('symbol, shares, avg_entry_price').eq('user_id', userId)
   const heldSymbols = new Set((stillOpenRaw ?? []).map((p) => p.symbol))
-  let slotsFree = MAX_SLOTS - heldSymbols.size
+  // A pending "heads up" entry will become a real position soon — count it against the
+  // slot budget now, not just once it executes, so the scan can't out-commit MAX_SLOTS.
+  let slotsFree = MAX_SLOTS - heldSymbols.size - stillPendingSymbols.size
   if (slotsFree <= 0) return { ran: true, events }
 
   // Size every new position off the WHOLE account's equity (cash + what's
@@ -469,7 +547,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
 
   const learned = await learnSetupStats(supabase, userId)
 
-  const universe = (await getStockScanUniverse()).filter((a) => !heldSymbols.has(a.symbol) && !cooling.has(a.symbol))
+  const universe = (await getStockScanUniverse()).filter((a) => !heldSymbols.has(a.symbol) && !cooling.has(a.symbol) && !stillPendingSymbols.has(a.symbol))
   const assets = topMovers(universe, SCORE_TOP_N)
   if (assets.length === 0) return { ran: true, events }
 
@@ -505,48 +583,29 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     const total = r2(price * shares)
     if (total > cash || total < MIN_TRADE_USD) continue
 
-    const { tp, sl } = getTpSl(sig.setupTag, direction, 'stock')
     const isLong = direction === 'LONG'
-    const stop = r2(isLong ? price * (1 - sl) : price * (1 + sl))
-    const target2 = r2(isLong ? price * (1 + tp) : price * (1 - tp))
-    const target1 = r2(isLong ? price + (target2 - price) / 2 : price - (price - target2) / 2)
 
-    // Position insert FIRST — its unique(user_id, symbol) constraint is what actually
-    // catches two near-simultaneous ticks (cron + the client's own poll) racing to enter
-    // the same symbol. Inserting the trade record before this used to leave an orphaned
-    // ENTRY row (cash never debited, no position to pair it to, but still counted toward
-    // MAX_TRADES_PER_DAY) every time that race fired. Nothing is written until the
-    // position itself is secured, so a lost race now leaves zero trace instead of a stray row.
-    const { error: posErr } = await supabase.from('academy_auto_positions').insert({
+    // Announce, don't execute yet — this is the "heads up" stage (see PENDING_ANNOUNCE_DELAY_MS):
+    // someone following along live gets a real plan (symbol, price, shares, why) and ~60s to
+    // place the same trade themselves before it actually fills. Resolved in step 3.5 above
+    // on a FRESH quote next tick, not blindly off this stale plan.
+    await supabase.from('academy_auto_pending_entries').insert({
       user_id: userId, symbol: sig.asset.symbol, name: sig.asset.name, direction,
-      shares, original_shares: shares, avg_entry_price: price,
-      stop_price: stop, target1_price: target1, target2_price: target2, half_closed: false,
-      setup_tag: sig.setupTag, entry_ema9: ind.ema9, entry_ema21: ind.ema21, entry_vwap: ind.vwap, entry_rsi: ind.rsi,
-    })
-    if (posErr) continue // symbol likely raced into a position already; skip — nothing written yet
-
-    const { data: trade } = await supabase.from('academy_auto_trades').insert({
-      user_id: userId, symbol: sig.asset.symbol, name: sig.asset.name, action: 'BUY', direction,
-      shares, price, total, pnl: null, setup_tag: sig.setupTag, reason: sig.reason,
+      planned_shares: shares, planned_price: price, setup_tag: sig.setupTag, reason: sig.reason,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-    }).select('id').single()
+    })
 
-    cash = r2(cash - total)
-    await supabase.from('academy_auto_portfolio').update({ cash, updated_at: new Date().toISOString() }).eq('user_id', userId)
-
-    const trendNote = ind.ema9 >= ind.ema21 ? `EMA9 (${ind.ema9.toFixed(2)}) above EMA21 (${ind.ema21.toFixed(2)}) — trend is up` : `EMA9 (${ind.ema9.toFixed(2)}) below EMA21 (${ind.ema21.toFixed(2)}) — trend is down`
     const chapter = legendFor(sig.setupTag)
     const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
     const learnNote = stat && stat.total >= LEARN_MIN_SAMPLES
       ? ` (My record on this setup so far: ${stat.wins}/${stat.total} = ${Math.round(stat.winRate * 100)}% — ${learnMult > 1 ? 'sizing it up' : learnMult < 1 ? 'sizing it down' : 'normal size'}.)`
       : ''
     await log(supabase, userId, {
-      symbol: sig.asset.symbol, kind: 'ENTRY', price, shares, pnl: 0,
+      symbol: sig.asset.symbol, kind: 'PLANNED', price, shares,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${sig.asset.symbol} at ${fmt(price)} — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}. Stop at ${fmt(stop)}, I'll trim a third at ${fmt(target1)} to bank a sure profit, then let the other two-thirds run on a trailing stop — no ceiling, so if it turns into a real mover I stay in for it.${legendNote}${learnNote}`,
+      note: `Heads up — about to ${isLong ? 'buy' : 'short'} ${shares} shares of ${sig.asset.symbol} around ${fmt(price)} in about a minute — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}${learnNote}`,
     })
-    events.push(`Entered ${sig.asset.symbol} (${sig.setupTag}) at ${fmt(price)}`)
-    void trade // id not currently needed downstream; kept for clarity/future linking
+    events.push(`Heads up: about to enter ${sig.asset.symbol} (${sig.setupTag})`)
     slotsFree--
   }
 
