@@ -30,6 +30,16 @@ export const AUTO_SEED_CAPITAL = 1000
 const MAX_SLOTS = 3
 const MAX_POSITION_PCT = 0.30
 const COOLDOWN_MINUTES = 8        // short leash — jump back into the same name once it resets up, don't sit out
+// Full-closure NYSE holidays — weekday-but-not-a-trading-day, which the Sat/Sun check alone
+// misses. Needs a one-line update every December for the following year (source: nyse.com
+// holiday calendar). Missing a date here just means one stray "good morning" log entry on
+// a closed day, not a money-affecting bug — isUsMarketOpen() still correctly blocks any
+// actual scanning/trading regardless.
+const NYSE_HOLIDAYS_2026 = new Set([
+  '2026-01-01', '2026-01-19', '2026-02-16', '2026-04-03', '2026-05-25',
+  '2026-06-19', '2026-07-03', '2026-09-07', '2026-11-26', '2026-12-25',
+])
+
 const PREP_START_MIN_ET = 9 * 60 + 15      // 9:15am ET — 15 min before the open
 const MARKET_OPEN_MIN_ET = 9 * 60 + 30
 // Full-day session: the open is the most volatile window but movers show up
@@ -155,7 +165,11 @@ async function log(
   supabase: SupabaseClient, userId: string,
   row: { symbol?: string; kind: string; note: string; price?: number; shares?: number; pnl?: number; ema9?: number | null; ema21?: number | null; vwap?: number | null; rsi?: number | null },
 ) {
-  await supabase.from('academy_auto_log').insert({ user_id: userId, ...row })
+  // A rejected insert (e.g. a kind the DB check constraint doesn't allow yet) used to
+  // fail completely silently — surface it to Vercel's function logs at minimum, since
+  // this function IS the narration the whole UI relies on.
+  const { error } = await supabase.from('academy_auto_log').insert({ user_id: userId, ...row })
+  if (error) console.error('[academy-auto-trader] log() insert failed:', error.message, row)
 }
 
 interface RunResult { ran: boolean; reason?: string; events: string[] }
@@ -173,6 +187,7 @@ async function maybeRunMorningKickoff(supabase: SupabaseClient, userId: string, 
   if (!portfolio.auto_start) return
   const { minutesOfDay, dateKey, weekday } = nowEt()
   if (weekday === 'Sat' || weekday === 'Sun') return
+  if (NYSE_HOLIDAYS_2026.has(dateKey)) return // weekday but market's actually closed — don't burn the once-a-day kickoff on a day with no real session
   if (minutesOfDay < PREP_START_MIN_ET) return
   if (portfolio.last_session_date === dateKey) return
 
@@ -227,12 +242,29 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
   if (!isUsMarketOpen()) return { ran: events.length > 0, reason: 'Market closed', events }
   if (!portfolio.enabled) return { ran: false, reason: 'Auto trader is off', events }
 
+  // The 1-minute cron and the client's own 25s poll both call this for the same user with
+  // zero coordination — cash is a plain read-then-write, so two overlapping ticks could
+  // clobber each other's debit/credit. A short, self-expiring TTL lock turns "overlapping
+  // tick" into a clean no-op instead of a race: only one tick can hold it at a time, and a
+  // crashed tick can't deadlock the account since the lock expires on its own.
+  const lockUntil = new Date(Date.now() + 50_000).toISOString()
+  const { data: lockRows } = await supabase.from('academy_auto_portfolio')
+    .update({ tick_lock_until: lockUntil })
+    .eq('user_id', userId)
+    .or(`tick_lock_until.is.null,tick_lock_until.lt.${new Date().toISOString()}`)
+    .select('user_id')
+  if (!lockRows || lockRows.length === 0) {
+    return { ran: false, reason: 'another tick is already in progress', events }
+  }
+
   try {
     return await runLiveTick(supabase, userId, portfolio, events)
   } catch (err) {
     const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ''}`.slice(0, 1500) : String(err)
     await log(supabase, userId, { kind: 'ERROR', note: `Tick failed: ${msg}` })
     return { ran: false, reason: 'error', events }
+  } finally {
+    await supabase.from('academy_auto_portfolio').update({ tick_lock_until: null }).eq('user_id', userId)
   }
 }
 
@@ -402,9 +434,13 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   // ── 3. Entry gates: morning-only window + daily risk discipline ──
   if (minsNow >= ENTRY_WINDOW_END_MIN_ET) return { ran: true, events } // past the entry window; just managing now
 
+  // 30h, not 16 — the etDateKeyOf filter below does the real narrowing to "today," this is
+  // only a query prefilter. 16h could clip trades from earlier in TODAY's ET session if the
+  // bot resumed unusually late after downtime (the loss/profit limits and MAX_TRADES_PER_DAY
+  // would then undercount what's actually been risked today).
   const { data: todayTradesRaw } = await supabase
     .from('academy_auto_trades').select('pnl, action, created_at').eq('user_id', userId)
-    .gte('created_at', new Date(Date.now() - 16 * 3600_000).toISOString())
+    .gte('created_at', new Date(Date.now() - 30 * 3600_000).toISOString())
   const todayTrades = (todayTradesRaw ?? []).filter((t) => etDateKeyOf(new Date(t.created_at as string)) === todayEt)
   const realizedToday = todayTrades.filter((t) => t.pnl != null).reduce((s, t) => s + Number(t.pnl), 0)
   const entriesToday = todayTrades.filter((t) => t.pnl == null).length
@@ -475,19 +511,25 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     const target2 = r2(isLong ? price * (1 + tp) : price * (1 - tp))
     const target1 = r2(isLong ? price + (target2 - price) / 2 : price - (price - target2) / 2)
 
-    const { data: trade } = await supabase.from('academy_auto_trades').insert({
-      user_id: userId, symbol: sig.asset.symbol, name: sig.asset.name, action: 'BUY', direction,
-      shares, price, total, pnl: null, setup_tag: sig.setupTag, reason: sig.reason,
-      ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-    }).select('id').single()
-
+    // Position insert FIRST — its unique(user_id, symbol) constraint is what actually
+    // catches two near-simultaneous ticks (cron + the client's own poll) racing to enter
+    // the same symbol. Inserting the trade record before this used to leave an orphaned
+    // ENTRY row (cash never debited, no position to pair it to, but still counted toward
+    // MAX_TRADES_PER_DAY) every time that race fired. Nothing is written until the
+    // position itself is secured, so a lost race now leaves zero trace instead of a stray row.
     const { error: posErr } = await supabase.from('academy_auto_positions').insert({
       user_id: userId, symbol: sig.asset.symbol, name: sig.asset.name, direction,
       shares, original_shares: shares, avg_entry_price: price,
       stop_price: stop, target1_price: target1, target2_price: target2, half_closed: false,
       setup_tag: sig.setupTag, entry_ema9: ind.ema9, entry_ema21: ind.ema21, entry_vwap: ind.vwap, entry_rsi: ind.rsi,
     })
-    if (posErr) continue // symbol likely raced into a position already; skip
+    if (posErr) continue // symbol likely raced into a position already; skip — nothing written yet
+
+    const { data: trade } = await supabase.from('academy_auto_trades').insert({
+      user_id: userId, symbol: sig.asset.symbol, name: sig.asset.name, action: 'BUY', direction,
+      shares, price, total, pnl: null, setup_tag: sig.setupTag, reason: sig.reason,
+      ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
+    }).select('id').single()
 
     cash = r2(cash - total)
     await supabase.from('academy_auto_portfolio').update({ cash, updated_at: new Date().toISOString() }).eq('user_id', userId)
