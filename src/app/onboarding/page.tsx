@@ -141,7 +141,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: 'var(--bg)' }}>
-      <Toaster position="top-center" toastOptions={{ style: { borderRadius: '12px', fontSize: '14px' } }} />
+      <Toaster position="top-center" containerStyle={{ top: 'max(20px, env(safe-area-inset-top))' }} toastOptions={{ style: { borderRadius: '12px', fontSize: '14px' } }} />
 
       {/* Progress bar — only during the question steps */}
       {step > 0 && step < 8 && (

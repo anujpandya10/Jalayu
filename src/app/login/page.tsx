@@ -57,7 +57,7 @@ export default function LoginPage() {
     <div style={{ minHeight: '100vh', background: '#020C16', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', position: 'relative', fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif' }}>
       <AuthBackground />
 
-      <Toaster position="top-center" toastOptions={{
+      <Toaster position="top-center" containerStyle={{ top: 'max(20px, env(safe-area-inset-top))' }} toastOptions={{
         style: { background: 'rgba(2,15,30,0.95)', color: '#fff', border: '1px solid rgba(0,201,167,0.3)', borderRadius: 10, fontSize: 13, backdropFilter: 'blur(12px)' },
       }} />
 

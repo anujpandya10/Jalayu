@@ -62,7 +62,7 @@ export default function RequestAccessPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#020C16', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px 16px', position: 'relative', fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif' }}>
       <AuthBackground />
-      <Toaster position="top-center" toastOptions={{ style: { background: 'rgba(2,15,30,0.95)', color: '#fff', border: '1px solid rgba(0,201,167,0.3)', borderRadius: 10, fontSize: 13, backdropFilter: 'blur(12px)' } }} />
+      <Toaster position="top-center" containerStyle={{ top: 'max(20px, env(safe-area-inset-top))' }} toastOptions={{ style: { background: 'rgba(2,15,30,0.95)', color: '#fff', border: '1px solid rgba(0,201,167,0.3)', borderRadius: 10, fontSize: 13, backdropFilter: 'blur(12px)' } }} />
       <style>{`::placeholder { color: rgba(255,255,255,0.28) !important; } @keyframes auth-card-in { from { opacity: 0; transform: translateY(24px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }`}</style>
 
       <div style={{ width: '100%', maxWidth: 460, position: 'relative', zIndex: 1, animation: 'auth-card-in 0.5s ease both' }}>
