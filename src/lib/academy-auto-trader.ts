@@ -241,7 +241,39 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   let cash = Number(portfolio.cash)
 
   const { data: openRaw } = await supabase.from('academy_auto_positions').select('*').eq('user_id', userId)
-  const open = openRaw ?? []
+  const allOpen = openRaw ?? []
+
+  // Safety net: a position still open from a PRIOR trading day means that day's
+  // end-of-session flatten missed it — a transient miss (e.g. a deploy mid-session,
+  // a flaky quote) leaves it stuck forever otherwise, silently eating one of only
+  // MAX_SLOTS positions for every day after. Sweep it the instant the bot wakes up
+  // today, before anything else, rather than waiting on its own stop/target to
+  // eventually (or never) resolve it.
+  const { dateKey: wakeDateEt } = nowEt()
+  const staleOvernight = allOpen.filter((p) => etDateKeyOf(new Date(p.created_at)) !== wakeDateEt)
+  for (const pos of staleOvernight) {
+    try {
+      const quote = await getQuote(pos.symbol)
+      const isLong = pos.direction === 'LONG'
+      const entry = Number(pos.avg_entry_price)
+      const shares = Number(pos.shares)
+      const price = quote.price
+      const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
+      await supabase.from('academy_auto_trades').insert({
+        user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
+        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag,
+        reason: "Carried past its own session — yesterday's flatten missed it, swept on wake",
+      })
+      await supabase.from('academy_auto_positions').delete().eq('id', pos.id)
+      cash = r2(cash + (isLong ? price * shares : entry * shares + pnl))
+      await log(supabase, userId, {
+        symbol: pos.symbol, kind: 'EXIT_FULL', price, shares, pnl,
+        note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)}) — this carried over from a prior session (yesterday's flatten missed it), so I closed it on wake instead of leaving it stuck.`,
+      })
+      events.push(`Swept stale ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)} (carried overnight)`)
+    } catch { /* quote failed this tick — retry next minute, don't lose the slot silently */ }
+  }
+  const open = allOpen.filter((p) => !staleOvernight.some((s) => s.id === p.id))
 
   // Price every open symbol once via a live quote, then run it through the
   // real engine read (gives indicators too). Works for any ticker, not just
