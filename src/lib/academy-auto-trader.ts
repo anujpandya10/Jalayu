@@ -18,6 +18,7 @@ import {
   getTpSl, MIN_TRADE_USD, BREAKEVEN_LOCK_PCT, TRAIL_TRIGGER_PCT,
 } from '@/lib/trading-config'
 import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
+import { sendPushToUser } from '@/lib/push'
 
 export const AUTO_SEED_CAPITAL = 1000
 // The "bigger winners" posture: concentrate the $1000 into a few meaningful
@@ -604,6 +605,12 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       symbol: sig.asset.symbol, kind: 'PLANNED', price, shares,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
       note: `Heads up — about to ${isLong ? 'buy' : 'short'} ${shares} shares of ${sig.asset.symbol} around ${fmt(price)} (≈${fmt(total)} going in) in about a minute — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}${learnNote}`,
+    })
+    // So nobody has to sit and stare at the tab to catch the ~60s shadow-trading window.
+    await sendPushToUser(supabase, userId, {
+      title: `Jalayu — about to ${isLong ? 'buy' : 'short'} ${sig.asset.symbol}`,
+      body: `${shares} sh @ ~${fmt(price)} (${fmt(total)}) in ~60s — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()}`,
+      url: '/dashboard',
     })
     events.push(`Heads up: about to enter ${sig.asset.symbol} (${sig.setupTag})`)
     slotsFree--
