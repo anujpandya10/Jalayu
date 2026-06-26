@@ -430,10 +430,10 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-view-root" style={{ minHeight: '100%', minWidth: 0 }}>
-      {/* Default top-center sits right under iOS's status bar/notch (no safe-area offset),
-          so error toasts were rendering half-hidden behind it on iPhone Safari — the exact
-          report was "there's an error but I can't read it, it's hiding." Push it down. */}
-      <Toaster position="top-center" containerStyle={{ top: 'max(20px, env(safe-area-inset-top))' }} toastOptions={{ style: { borderRadius: 10, fontSize: 13 } }} />
+      {/* First fix only cleared the iOS status bar — TopBar itself (56px + its own
+          safe-area padding, zIndex 10) was still sitting on top of/behind the toast at that
+          offset. Clear TopBar's full height AND force a z-index above it explicitly. */}
+      <Toaster position="top-center" containerStyle={{ top: 'calc(64px + env(safe-area-inset-top, 0px))', zIndex: 9999 }} toastOptions={{ style: { borderRadius: 10, fontSize: 13 } }} />
 
       <AnimatePresence mode="wait">
         <motion.div

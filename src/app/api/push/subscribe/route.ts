@@ -41,3 +41,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Bad request' }, { status: 400 })
   }
 }
+
+export async function DELETE(req: Request) {
+  try {
+    const body = await req.json().catch(() => ({}))
+    const endpoint = body?.endpoint as string | undefined
+
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    // Only remove THIS device's subscription, not every device the user has enabled.
+    let query = supabase.from('push_subscriptions').delete().eq('user_id', user.id)
+    if (endpoint) query = query.eq('endpoint', endpoint)
+    const { error } = await query
+
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ ok: true })
+  } catch (e) {
+    console.error(e)
+    return NextResponse.json({ error: 'Bad request' }, { status: 400 })
+  }
+}

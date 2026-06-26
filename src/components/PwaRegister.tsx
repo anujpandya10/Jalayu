@@ -24,6 +24,10 @@ export default function PwaRegister() {
   const [subscribing, setSubscribing] = useState(false)
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null)
   const [isInstalled, setIsInstalled] = useState(false)
+  // Whether THIS device already has a live push subscription — the button used to always
+  // say "Enable" even right after successfully subscribing, with no way to tell it had
+  // worked or to turn it back off.
+  const [isSubscribed, setIsSubscribed] = useState(false)
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
@@ -33,6 +37,16 @@ export default function PwaRegister() {
     if (window.matchMedia('(display-mode: standalone)').matches) {
       setIsInstalled(true)
     }
+
+    // Reflect actual state on load, not just right after a successful subscribe — covers
+    // returning on a later visit where the subscription already exists from before.
+    void (async () => {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration('/')
+        const sub = await reg?.pushManager.getSubscription()
+        setIsSubscribed(!!sub && Notification.permission === 'granted')
+      } catch { /* Notification API unavailable in this context (e.g. iOS non-standalone) */ }
+    })()
 
     // Capture the install prompt (only fires on mobile/desktop when app is installable)
     const handler = (e: Event) => {
@@ -89,11 +103,35 @@ export default function PwaRegister() {
         const err = await save.json().catch(() => ({}))
         toast.error(err.error || 'Could not save subscription')
       } else {
+        setIsSubscribed(true)
         toast.success('Reminders can reach you on this device ✦')
       }
     } catch (e) {
       console.error(e)
       toast.error('Could not enable push')
+    } finally {
+      setSubscribing(false)
+    }
+  }
+
+  const unsubscribe = async () => {
+    setSubscribing(true)
+    try {
+      const reg = await navigator.serviceWorker.getRegistration('/')
+      const sub = await reg?.pushManager.getSubscription()
+      if (sub) {
+        await fetch('/api/push/subscribe', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint: sub.endpoint }),
+        })
+        await sub.unsubscribe()
+      }
+      setIsSubscribed(false)
+      toast.success('Notifications turned off on this device')
+    } catch (e) {
+      console.error(e)
+      toast.error('Could not disable push')
     } finally {
       setSubscribing(false)
     }
@@ -114,24 +152,27 @@ export default function PwaRegister() {
 
   return (
     <div style={{ padding: '0 14px 10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {/* Notification toggle */}
+      {/* Notification toggle — reflects whether THIS device is actually subscribed right
+          now, not a static "Enable" label regardless of state. */}
       <button
         type="button"
-        onClick={subscribe}
+        onClick={isSubscribed ? unsubscribe : subscribe}
         disabled={subscribing}
         style={{
           width: '100%',
           padding: '10px 12px',
           borderRadius: 10,
           border: '0.5px solid var(--border-2)',
-          background: 'var(--surface)',
+          background: isSubscribed ? 'rgba(34,197,94,0.08)' : 'var(--surface)',
           fontSize: 12,
           fontWeight: 500,
-          color: 'var(--accent)',
+          color: isSubscribed ? '#16A34A' : 'var(--accent)',
           cursor: subscribing ? 'wait' : 'pointer',
         }}
       >
-        {subscribing ? 'Enabling…' : '🔔 Enable reminder notifications'}
+        {subscribing
+          ? (isSubscribed ? 'Disabling…' : 'Enabling…')
+          : (isSubscribed ? '✓ Notifications on — tap to disable' : '🔔 Enable reminder notifications')}
       </button>
 
       {/* Install prompt — only shown when browser has an installable PWA ready */}
