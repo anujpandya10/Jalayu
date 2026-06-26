@@ -63,6 +63,12 @@ const MAX_TRADES_PER_DAY = 30     // active all-day rotation across the slots �
 // losses. This is the Livermore/PTJ lesson the curriculum teaches, in code.
 const RUNNER_TRAIL_PCT = 0.025    // the runner trails 2.5% below its peak — wide enough to survive a normal pullback and stay in a big move longer instead of being shaken out early
 
+// "Getting close" exit warning — fires once per position per side when price is within
+// this % of actually crossing the stop or first target. Unlike the buy side's fixed 60s
+// countdown, exits are price-driven and can't be scheduled — this is the closest honest
+// equivalent: a heads-up that it's about to happen, not a forecast of exactly when.
+const NEAR_EXIT_PCT = 0.001
+
 // Wide net, but only swing at decent pitches. The scan universe is huge now
 // (every screener mover, penny to mega-cap), so the weakest marginal setups off
 // random choppy small-caps drag the win rate down. Demand real conviction —
@@ -364,6 +370,33 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     const hitStop = stop != null && (isLong ? price <= stop : price >= stop)
     const hitT1 = t1 != null && (isLong ? price >= t1 : price <= t1)
 
+    // "Getting close" — a one-shot heads-up before the line actually gets crossed. Unlike
+    // the buy side this isn't a fixed countdown (price-driven exits can't be scheduled),
+    // just an early signal that something's about to happen soon. NEAR_EXIT_PCT is how
+    // close (as a % of price) counts as "about to."
+    if (!hitStop && !pos.warned_near_stop && stop != null) {
+      const distToStop = isLong ? (price - stop) / price : (stop - price) / price
+      if (distToStop > 0 && distToStop <= NEAR_EXIT_PCT) {
+        await supabase.from('academy_auto_positions').update({ warned_near_stop: true }).eq('id', pos.id)
+        await sendPushToUser(supabase, userId, {
+          title: `Jalayu — ${pos.symbol} is closing in on its stop`,
+          body: `$${price.toFixed(2)}, stop at $${stop.toFixed(2)} — could close any moment.`,
+          url: '/dashboard',
+        })
+      }
+    }
+    if (!hitT1 && !halfClosed && !pos.warned_near_target && t1 != null) {
+      const distToT1 = isLong ? (t1 - price) / price : (price - t1) / price
+      if (distToT1 > 0 && distToT1 <= NEAR_EXIT_PCT) {
+        await supabase.from('academy_auto_positions').update({ warned_near_target: true }).eq('id', pos.id)
+        await sendPushToUser(supabase, userId, {
+          title: `Jalayu — ${pos.symbol} is closing in on its first target`,
+          body: `$${price.toFixed(2)}, target at $${t1.toFixed(2)} — might trim soon.`,
+          url: '/dashboard',
+        })
+      }
+    }
+
     const closeAll = async (kind: 'STOP_HIT' | 'EXIT_FULL', why: string) => {
       const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
       await supabase.from('academy_auto_trades').insert({
@@ -379,6 +412,12 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
         note: `${pos.symbol}: closed the remaining ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)}) — ${why}.`,
       })
       events.push(`Closed ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)}`)
+      // The instant "it happened" ping — no need to watch for this at all, just get told.
+      await sendPushToUser(supabase, userId, {
+        title: `Jalayu — closed ${pos.symbol}`,
+        body: `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} — ${why}`,
+        url: '/dashboard',
+      })
     }
 
     if (hitStop) { await closeAll('STOP_HIT', halfClosed ? 'the trailing stop locked the run in' : 'the stop-loss line was hit'); continue }
@@ -404,6 +443,11 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
         note: `${pos.symbol}: hit the first target, so I sold a third (${trim} shares) at ${fmt(price)} (+${fmt(pnl)}) and moved the stop on the other ${remaining} from ${pos.stop_price != null ? fmt(Number(pos.stop_price)) : '—'} up to ${fmt(newStop)} — break-even. The remaining two-thirds can't turn into a real loss from here; now I let it run for the big move.`,
       })
       events.push(`${pos.symbol}: trimmed a third at ${fmt(price)}, stop to break-even`)
+      await sendPushToUser(supabase, userId, {
+        title: `Jalayu — trimmed a third of ${pos.symbol}`,
+        body: `+$${pnl.toFixed(2)} banked at the first target, stop moved to break-even on the rest.`,
+        url: '/dashboard',
+      })
     }
   }
 

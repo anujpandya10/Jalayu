@@ -45,6 +45,16 @@ export default function PwaRegister() {
 
   const subscribe = async () => {
     if (!ready) return
+    // iOS only allows push inside an installed PWA — inside a plain Safari tab,
+    // Notification/Push don't exist at all and the attempt fails with no useful
+    // error. Catch this case up front with an actual instruction instead of a
+    // generic "could not enable push."
+    const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent)
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as { standalone?: boolean }).standalone === true
+    if (isIOS && !isStandalone) {
+      toast.error('On iPhone: tap Share → "Add to Home Screen" first, then open Jalayu from that icon and try again.', { duration: 6000 })
+      return
+    }
     setSubscribing(true)
     try {
       const res = await fetch('/api/push/subscribe')
