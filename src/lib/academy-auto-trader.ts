@@ -603,7 +603,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'PLANNED', price, shares,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `Heads up — about to ${isLong ? 'buy' : 'short'} ${shares} shares of ${sig.asset.symbol} around ${fmt(price)} in about a minute — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}${learnNote}`,
+      note: `Heads up — about to ${isLong ? 'buy' : 'short'} ${shares} shares of ${sig.asset.symbol} around ${fmt(price)} (≈${fmt(total)} going in) in about a minute — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}${learnNote}`,
     })
     events.push(`Heads up: about to enter ${sig.asset.symbol} (${sig.setupTag})`)
     slotsFree--

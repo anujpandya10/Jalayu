@@ -415,6 +415,9 @@ export default function AutoTrader() {
                   <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
                     {isLong ? 'Buy' : 'Short'} {p.planned_shares.toFixed(2)} sh of {p.symbol} @ ~${p.planned_price.toFixed(2)}
                   </div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#D97706', marginTop: 1 }}>
+                    ≈ ${(p.planned_shares * p.planned_price).toFixed(2)} going in
+                  </div>
                   <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
                     {p.setup_tag?.replace(/_/g, ' ').toLowerCase()} setup — pull it up on your own screen now
                   </div>
