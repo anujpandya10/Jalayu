@@ -129,7 +129,7 @@ function RoundTrip({ entryRow, exitRow, onView }: { entryRow: LogRow; exitRow: L
         <span style={{ flexShrink: 0, marginTop: 1, width: 16, height: 16, borderRadius: 99, background: isLong ? '#16A34A' : '#7C3AED', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{isLong ? 'B' : 'S'}</span>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-            {entryVerb(entryRow.note)} {entryRow.shares?.toFixed(2)} @ ${entryRow.price?.toFixed(2)}
+            {entryVerb(entryRow.note)} {entryRow.shares?.toFixed(2)} sh @ ${entryRow.price?.toFixed(2)}
             <span style={{ fontWeight: 500, color: 'var(--text-3)' }}> · {fmtExact(entryRow.created_at)}</span>
           </div>
           {(why.setup || why.idea) && (
@@ -151,7 +151,7 @@ function RoundTrip({ entryRow, exitRow, onView }: { entryRow: LogRow; exitRow: L
         <span style={{ flexShrink: 0, marginTop: 1, width: 16, height: 16, borderRadius: 99, background: up ? '#16A34A' : '#DC2626', color: '#fff', fontSize: 9, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{up ? '✓' : '✕'}</span>
         <div>
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
-            {EXIT_KIND_LABEL[exitRow.kind] ?? 'Closed'} @ ${exitRow.price?.toFixed(2)}
+            {EXIT_KIND_LABEL[exitRow.kind] ?? 'Closed'} {exitRow.shares != null ? `${exitRow.shares.toFixed(2)} sh ` : ''}@ ${exitRow.price?.toFixed(2)}
             {exitRow.pnl != null && <span style={{ color: exitRow.pnl >= 0 ? '#16A34A' : '#DC2626' }}> → {exitRow.pnl >= 0 ? '+' : ''}${exitRow.pnl.toFixed(2)}</span>}
             <span style={{ fontWeight: 500, color: 'var(--text-3)' }}> · {fmtExact(exitRow.created_at)}</span>
           </div>
