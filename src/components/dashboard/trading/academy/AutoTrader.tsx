@@ -37,6 +37,12 @@ interface PendingEntry {
   reason: string | null; planned_at: string
 }
 
+interface ShadowPrompt {
+  id: string; event_type: 'ENTRY' | 'EXIT'; symbol: string; detail: string; created_at: string
+}
+interface ShadowBucket { yes: number; no: number; missed: number; total: number; keptUpPct: number | null }
+interface ShadowStats { entry: ShadowBucket; exit: ShadowBucket }
+
 interface AutoStats {
   equityCurve: number[]; seedCapital: number
   totalClosed: number; wins: number; winRatePct: number
@@ -183,6 +189,10 @@ const REFRESH_MS = 20_000
 // Mirrors PENDING_ANNOUNCE_DELAY_MS in academy-auto-trader.ts — purely cosmetic for the
 // countdown display; the real delay is enforced server-side regardless of this value.
 const PENDING_DELAY_SECS = 60
+// Looser than the backend's push-notification threshold (0.1%) on purpose — this just
+// decides when the collapsed chart pops back open, so it's fine (better, even) to expand
+// a little earlier than the actual "about to fire" push.
+const NEAR_EXIT_UI_PCT = 0.003
 
 /**
  * Auto Trader — a fully separate $1000 account that trades itself: US
@@ -203,6 +213,13 @@ export default function AutoTrader() {
   const [chartMode, setChartMode] = useState<'live' | 'review'>('live')
   const [logExpanded, setLogExpanded] = useState(false)
   const [notes, setNotes] = useState('')
+  const [shadowPrompts, setShadowPrompts] = useState<ShadowPrompt[]>([])
+  const [shadowStats, setShadowStats] = useState<ShadowStats | null>(null)
+  const [answeringId, setAnsweringId] = useState<string | null>(null)
+  // Collapsed by default — most of the time there's nothing urgent, so the chart stays
+  // out of the way until there's an actual heads-up or a position closing in on its exit.
+  const [chartCollapsed, setChartCollapsed] = useState(true)
+  const autoExpandSigRef = useRef<string>('')
   const chartSectionRef = useRef<HTMLDivElement>(null)
 
   // Personal notes, local to this browser only (no account sync) — jot down your own read
@@ -252,15 +269,38 @@ export default function AutoTrader() {
     const res = await fetch('/api/academy/auto/pending', { cache: 'no-store' })
     if (res.ok) setPending(await res.json())
   }, [])
+  const loadShadowPrompts = useCallback(async () => {
+    const res = await fetch('/api/academy/auto/shadow-feedback', { cache: 'no-store' })
+    if (res.ok) setShadowPrompts(await res.json())
+  }, [])
+  const loadShadowStats = useCallback(async () => {
+    const res = await fetch('/api/academy/auto/shadow-stats', { cache: 'no-store' })
+    if (res.ok) setShadowStats(await res.json())
+  }, [])
 
   useEffect(() => {
-    void (async () => { await Promise.all([loadPortfolio(), loadLog(), loadStats(), loadHistory(), loadPending()]); setLoading(false) })()
-  }, [loadPortfolio, loadLog, loadStats, loadHistory, loadPending])
+    void (async () => { await Promise.all([loadPortfolio(), loadLog(), loadStats(), loadHistory(), loadPending(), loadShadowPrompts(), loadShadowStats()]); setLoading(false) })()
+  }, [loadPortfolio, loadLog, loadStats, loadHistory, loadPending, loadShadowPrompts, loadShadowStats])
 
   useEffect(() => {
-    const id = setInterval(() => { void loadPortfolio(); void loadLog(); void loadStats(); void loadHistory(); void loadPending() }, REFRESH_MS)
+    const id = setInterval(() => {
+      void loadPortfolio(); void loadLog(); void loadStats(); void loadHistory(); void loadPending(); void loadShadowPrompts(); void loadShadowStats()
+    }, REFRESH_MS)
     return () => clearInterval(id)
-  }, [loadPortfolio, loadLog, loadStats, loadHistory])
+  }, [loadPortfolio, loadLog, loadStats, loadHistory, loadPending, loadShadowPrompts, loadShadowStats])
+
+  const answerShadow = async (id: string, answer: 'YES' | 'NO') => {
+    setAnsweringId(id)
+    setShadowPrompts((cur) => cur.filter((p) => p.id !== id)) // optimistic
+    try {
+      await fetch('/api/academy/auto/shadow-feedback', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, answer }),
+      })
+      await loadShadowStats()
+    } finally {
+      setAnsweringId(null)
+    }
+  }
 
   // Client-side tick while the tab is open, for an instant feel. The cron
   // covers it the rest of the time.
@@ -314,6 +354,27 @@ export default function AutoTrader() {
     })
     await loadPortfolio()
   }
+
+  // Auto-expand the (default-collapsed) chart for a genuinely NEW heads-up or a position
+  // newly closing in on its exit — but only once per distinct event, via a signature, so
+  // it doesn't keep fighting a manual re-collapse every 20s poll while the same event is
+  // still active.
+  useEffect(() => {
+    if (!portfolio) return
+    const nearExit = portfolio.positions.filter((p) => {
+      if (p.stopPrice == null && p.target1Price == null) return false
+      const dStop = p.stopPrice != null ? (p.direction === 'LONG' ? (p.currentPrice - p.stopPrice) / p.currentPrice : (p.stopPrice - p.currentPrice) / p.currentPrice) : Infinity
+      const dT1 = !p.halfClosed && p.target1Price != null ? (p.direction === 'LONG' ? (p.target1Price - p.currentPrice) / p.currentPrice : (p.currentPrice - p.target1Price) / p.currentPrice) : Infinity
+      return (dStop > 0 && dStop <= NEAR_EXIT_UI_PCT) || (dT1 > 0 && dT1 <= NEAR_EXIT_UI_PCT)
+    })
+    const sig = [...pending.map((p) => `P:${p.id}`), ...nearExit.map((p) => `N:${p.symbol}`)].sort().join(',')
+    if (sig && sig !== autoExpandSigRef.current) {
+      autoExpandSigRef.current = sig
+      setChartCollapsed(false)
+    } else if (!sig) {
+      autoExpandSigRef.current = ''
+    }
+  }, [portfolio, pending])
 
   if (loading || !portfolio) {
     return <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '24px 0' }}>Loading the auto trader…</div>
@@ -431,6 +492,37 @@ export default function AutoTrader() {
         </div>
       )}
 
+      {/* "Did you do it too?" — one prompt per real entry/exit, so there's actual data on
+          where the pacing breaks down (e.g. keeping up with entries but missing exits)
+          instead of just a feeling about it. */}
+      {shadowPrompts.length > 0 && (
+        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {shadowPrompts.map((p) => (
+            <div key={p.id} style={{
+              padding: '12px 16px', borderRadius: 14, border: '1px solid #3B82F6',
+              background: 'rgba(59,130,246,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+            }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)' }}>
+                  {p.event_type === 'ENTRY' ? 'Did you also buy in' : 'Did you also sell'} {p.symbol}?
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 1 }}>{p.detail}</div>
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="button" disabled={answeringId === p.id} onClick={() => void answerShadow(p.id, 'YES')}
+                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: 'none', background: '#16A34A', color: '#fff', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  Yes
+                </button>
+                <button type="button" disabled={answeringId === p.id} onClick={() => void answerShadow(p.id, 'NO')}
+                  style={{ padding: '7px 14px', fontSize: 12, fontWeight: 700, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                  No
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div style={{ padding: '14px 16px', borderRadius: 14, marginBottom: 16, background: 'var(--surface)', border: '1px solid var(--border)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
           <Bot size={16} color="var(--accent)" />
@@ -486,7 +578,19 @@ export default function AutoTrader() {
           chart cards; clicking "View on chart" on any closed trade below jumps here and
           switches to Review automatically, so there's one place to look, not two. */}
       <div ref={chartSectionRef} style={{ marginBottom: 16, border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: chartCollapsed ? 0 : 10 }}>
+          <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>
+            Chart{chartCollapsed && <span style={{ fontWeight: 500, color: 'var(--text-3)' }}> — collapsed, pops open on a heads-up or a close call</span>}
+          </h3>
+          <button type="button" onClick={() => setChartCollapsed((v) => !v)}
+            style={{ padding: '5px 10px', fontSize: 11, fontWeight: 700, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 }}>
+            {chartCollapsed ? 'Show ▾' : 'Hide ▴'}
+          </button>
+        </div>
+
+        {!chartCollapsed && (
+        <>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginTop: 10, marginBottom: 10, flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', gap: 4, padding: 3, borderRadius: 9, background: 'var(--morning)', border: '1px solid var(--border)' }}>
             <button type="button" onClick={() => setChartMode('live')}
               style={{ padding: '6px 12px', fontSize: 11.5, fontWeight: 700, borderRadius: 7, border: 'none', cursor: 'pointer', fontFamily: 'inherit', background: chartMode === 'live' ? 'var(--surface)' : 'transparent', color: chartMode === 'live' ? 'var(--text)' : 'var(--text-3)' }}>
@@ -536,6 +640,26 @@ export default function AutoTrader() {
                 <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Equity curve (realized)</div>
                 <EquityCurve points={stats.equityCurve} seed={stats.seedCapital} />
               </div>
+              {shadowStats && (shadowStats.entry.total > 0 || shadowStats.exit.total > 0) && (
+                <div style={{ gridColumn: isDesktop ? undefined : 'span 2', minWidth: 200, padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                  <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>Keeping pace</div>
+                  <div style={{ display: 'flex', gap: 14 }}>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>{shadowStats.entry.keptUpPct ?? '—'}{shadowStats.entry.keptUpPct != null ? '%' : ''}</div>
+                      <div style={{ fontSize: 9.5, color: 'var(--text-3)' }}>entries ({shadowStats.entry.yes}/{shadowStats.entry.total})</div>
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text)' }}>{shadowStats.exit.keptUpPct ?? '—'}{shadowStats.exit.keptUpPct != null ? '%' : ''}</div>
+                      <div style={{ fontSize: 9.5, color: 'var(--text-3)' }}>exits ({shadowStats.exit.yes}/{shadowStats.exit.total})</div>
+                    </div>
+                  </div>
+                  {shadowStats.entry.keptUpPct != null && shadowStats.exit.keptUpPct != null && Math.abs(shadowStats.entry.keptUpPct - shadowStats.exit.keptUpPct) >= 15 && (
+                    <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 5, lineHeight: 1.4 }}>
+                      You&apos;re keeping up with {shadowStats.entry.keptUpPct > shadowStats.exit.keptUpPct ? 'entries' : 'exits'} a lot better than {shadowStats.entry.keptUpPct > shadowStats.exit.keptUpPct ? 'exits' : 'entries'}.
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )
           const chart = chartMode === 'live' ? (
@@ -560,6 +684,8 @@ export default function AutoTrader() {
             </>
           )
         })()}
+        </>
+        )}
       </div>
 
       {/* Personal notes — local to this browser only, your own read before checking the bot's. */}

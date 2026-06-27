@@ -186,6 +186,15 @@ async function log(
   if (error) console.error('[academy-auto-trader] log() insert failed:', error.message, row)
 }
 
+/** "Did you also place this trade?" — one prompt per real shadow-able moment (a followed-
+ * through entry, a full close, a partial trim). Not for flatten/sweep cleanups — those
+ * aren't moments anyone would realistically be mirroring live. */
+async function promptShadowFeedback(
+  supabase: SupabaseClient, userId: string, eventType: 'ENTRY' | 'EXIT', symbol: string, detail: string,
+) {
+  await supabase.from('academy_auto_shadow_feedback').insert({ user_id: userId, event_type: eventType, symbol, detail })
+}
+
 interface RunResult { ran: boolean; reason?: string; events: string[] }
 
 /**
@@ -418,6 +427,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
         body: `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} — ${why}`,
         url: '/dashboard',
       })
+      await promptShadowFeedback(supabase, userId, 'EXIT', pos.symbol, `Closed @ ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)})`)
     }
 
     if (hitStop) { await closeAll('STOP_HIT', halfClosed ? 'the trailing stop locked the run in' : 'the stop-loss line was hit'); continue }
@@ -448,6 +458,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
         body: `+$${pnl.toFixed(2)} banked at the first target, stop moved to break-even on the rest.`,
         url: '/dashboard',
       })
+      await promptShadowFeedback(supabase, userId, 'EXIT', pos.symbol, `Trimmed a third @ ${fmt(price)} (+${fmt(pnl)})`)
     }
   }
 
@@ -566,6 +577,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
         note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${p.symbol} at ${fmt(price)} — ${setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}), exactly what I called about a minute ago.${driftNote} ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}`,
       })
       events.push(`Entered ${p.symbol} (followed through on the heads-up)`)
+      await promptShadowFeedback(supabase, userId, 'ENTRY', p.symbol, `${isLong ? 'Bought' : 'Shorted'} ${shares} sh @ ${fmt(price)}`)
     } catch { /* quote failed this tick — leave the pending row in place, retry next tick rather than silently dropping a plan I already announced */ }
   }
   const stillPendingSymbols = new Set(allPending.filter((p) => !duePending.some((d) => d.id === p.id)).map((p) => p.symbol))
