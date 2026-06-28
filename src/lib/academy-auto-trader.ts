@@ -417,26 +417,28 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   const { dateKey: wakeDateEt } = nowEt()
   const staleOvernight = allOpen.filter((p) => etDateKeyOf(new Date(p.created_at)) !== wakeDateEt)
   for (const pos of staleOvernight) {
-    try {
-      const quote = await getQuote(pos.symbol)
-      const isLong = pos.direction === 'LONG'
-      const entry = Number(pos.avg_entry_price)
-      const shares = Number(pos.shares)
-      const price = quote.price
-      const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
-      await supabase.from('academy_auto_trades').insert({
-        user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
-        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, risk_per_share: pos.risk_per_share != null ? Number(pos.risk_per_share) : null,
-        reason: "Carried past its own session — yesterday's flatten missed it, swept on wake",
-      })
-      await supabase.from('academy_auto_positions').delete().eq('id', pos.id)
-      cash = r2(cash + (isLong ? price * shares : entry * shares + pnl))
-      await log(supabase, userId, {
-        symbol: pos.symbol, kind: 'EXIT_FULL', price, shares, pnl,
-        note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)}) — this carried over from a prior session (yesterday's flatten missed it), so I closed it on wake instead of leaving it stuck.`,
-      })
-      events.push(`Swept stale ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)} (carried overnight)`)
-    } catch { /* quote failed this tick — retry next minute, don't lose the slot silently */ }
+    const isLong = pos.direction === 'LONG'
+    const entry = Number(pos.avg_entry_price)
+    const shares = Number(pos.shares)
+    // A carried-over position MUST close — never skip it just because a quote call failed.
+    // Best-effort live price, but fall back to the entry price (a break-even close) rather
+    // than leave it stranded another day. This is the bug that left positions stuck for days.
+    let price = entry
+    let priceNote = ''
+    try { price = (await getQuote(pos.symbol)).price } catch { priceNote = ' (no live quote available — closed at entry to free the slot)' }
+    const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
+    await supabase.from('academy_auto_trades').insert({
+      user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
+      shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, risk_per_share: pos.risk_per_share != null ? Number(pos.risk_per_share) : null,
+      reason: "Carried past its own session — yesterday's flatten missed it, swept on wake",
+    })
+    await supabase.from('academy_auto_positions').delete().eq('id', pos.id)
+    cash = r2(cash + (isLong ? price * shares : entry * shares + pnl))
+    await log(supabase, userId, {
+      symbol: pos.symbol, kind: 'EXIT_FULL', price, shares, pnl,
+      note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)}) — carried over from a prior session (a flatten got missed), so I closed it on wake instead of leaving it stuck.${priceNote}`,
+    })
+    events.push(`Swept stale ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)} (carried overnight)`)
   }
   const open = allOpen.filter((p) => !staleOvernight.some((s) => s.id === p.id))
 
@@ -602,11 +604,15 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     const { data: leftoverRaw } = await supabase.from('academy_auto_positions').select('*').eq('user_id', userId)
     for (const pos of leftoverRaw ?? []) {
       const sig = signalBySymbol.get(pos.symbol)
-      let price = sig?.asset.price
-      if (price == null) { try { price = (await getQuote(pos.symbol)).price } catch { continue } }
       const isLong = pos.direction === 'LONG'
       const entry = Number(pos.avg_entry_price)
       const shares = Number(pos.shares)
+      // The flatten MUST flatten — never skip a position because the quote failed (that's the
+      // exact bug that left positions open for days). Best-effort live price, else fall back
+      // to the entry price (break-even close) so the position cannot survive the session.
+      let price = sig?.asset.price
+      let priceNote = ''
+      if (price == null) { try { price = (await getQuote(pos.symbol)).price } catch { price = entry; priceNote = ' (no live quote — closed at entry so it never carries over)' } }
       const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
       const fRps = pos.risk_per_share != null ? Number(pos.risk_per_share) : null
       const fR = rMultiple(isLong, entry, price, fRps)
@@ -620,7 +626,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       cash = r2(cash + (isLong ? price * shares : entry * shares + pnl))
       await log(supabase, userId, {
         symbol: pos.symbol, kind: 'EXIT_FULL', price, shares, pnl,
-        note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)})${fRNote} — end of the session. I don't hold overnight; flat into the close.`,
+        note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)})${fRNote} — end of the session. I don't hold overnight; flat into the close.${priceNote}`,
       })
       events.push(`Flattened ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)} (session end)`)
     }

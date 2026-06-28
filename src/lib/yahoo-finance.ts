@@ -29,12 +29,12 @@ async function fetchChart(symbol: string, range: string): Promise<unknown> {
 // don't each hammer Yahoo for the same ticker (which triggers 429s). On a
 // rate-limit / failure we serve the last good value rather than erroring.
 const QUOTE_TTL_MS = 15_000
-// The error-fallback path used to serve a cached quote with no age check at all — a
-// position-closing decision (flatten/sweep) could fire against a quote that was hours
-// stale during a Yahoo outage, with nothing in the trade record showing it wasn't live.
-// Past this age, a fallback isn't a "brief hiccup" anymore — better to throw and let the
-// caller retry next tick than close a real position on a price that's no longer real.
-const QUOTE_FALLBACK_MAX_AGE_MS = 5 * 60_000
+// On a Yahoo failure, serve the last good quote rather than throwing. An earlier version
+// threw past 5 minutes (to avoid closing on a stale price) — but that was far worse: during
+// a rate-limiting burst, position management / flatten / sweep all silently skip on a throw,
+// which stranded positions open for DAYS. A slightly stale paper price is infinitely better
+// than a position that never closes. Cap at 6h only so we never serve a PRIOR day's quote.
+const QUOTE_FALLBACK_MAX_AGE_MS = 6 * 3600_000
 const quoteCache = new Map<string, { at: number; quote: YahooQuote }>()
 
 export async function getQuote(symbol: string): Promise<YahooQuote> {
