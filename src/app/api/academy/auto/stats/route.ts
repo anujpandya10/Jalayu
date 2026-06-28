@@ -18,7 +18,7 @@ export async function GET() {
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: closedRaw } = await supabase
-    .from('academy_auto_trades').select('symbol, pnl, setup_tag, created_at')
+    .from('academy_auto_trades').select('symbol, pnl, setup_tag, shares, risk_per_share, created_at')
     .eq('user_id', user.id).not('pnl', 'is', null).order('created_at', { ascending: true }).limit(500)
   const closed = closedRaw ?? []
 
@@ -33,6 +33,16 @@ export async function GET() {
   const today = etDateKey(new Date())
   const realizedToday = closed.filter((t) => etDateKey(new Date(t.created_at as string)) === today).reduce((s, t) => s + Number(t.pnl), 0)
 
+  // R-multiple expectancy — the real professional scoreboard. Per closed trade,
+  // R = realized $ / (per-share risk fixed at entry × shares). Avg R is "expectancy":
+  // how many units of risk you net, on average, every time you take a trade. Positive
+  // avg R = a genuine edge; it's the number that actually matters, more than win rate.
+  const rTrades = closed.filter((t) => t.risk_per_share != null && Number(t.risk_per_share) > 0 && Number(t.shares) > 0)
+  const rValues = rTrades.map((t) => Number(t.pnl) / (Number(t.risk_per_share) * Number(t.shares)))
+  const totalR = rValues.reduce((s, r) => s + r, 0)
+  const avgR = rValues.length > 0 ? totalR / rValues.length : null
+  const bestR = rValues.length > 0 ? Math.max(...rValues) : null
+
   const bySetup = new Map<string, { wins: number; total: number; pnl: number }>()
   for (const t of closed) {
     const tag = t.setup_tag ?? 'UNTAGGED'
@@ -44,11 +54,13 @@ export async function GET() {
     .map(([setupTag, s]) => ({ setupTag, total: s.total, wins: s.wins, winRatePct: Math.round((s.wins / s.total) * 100), pnl: Math.round(s.pnl * 100) / 100 }))
     .sort((a, b) => b.total - a.total)
 
+  const round1 = (n: number | null) => (n == null ? null : Math.round(n * 10) / 10)
   return NextResponse.json({
     equityCurve, seedCapital: AUTO_SEED_CAPITAL,
     totalClosed, wins, winRatePct: totalClosed > 0 ? Math.round((wins / totalClosed) * 100) : 0,
     totalRealized: Math.round(totalRealized * 100) / 100,
     realizedToday: Math.round(realizedToday * 100) / 100,
+    avgR: round1(avgR), totalR: round1(totalR), bestR: round1(bestR), rSamples: rValues.length,
     setupStats,
   })
 }

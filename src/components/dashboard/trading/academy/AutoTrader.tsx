@@ -47,6 +47,7 @@ interface AutoStats {
   equityCurve: number[]; seedCapital: number
   totalClosed: number; wins: number; winRatePct: number
   totalRealized: number; realizedToday: number
+  avgR: number | null; totalR: number | null; bestR: number | null; rSamples: number
   setupStats: { setupTag: string; total: number; wins: number; winRatePct: number; pnl: number }[]
 }
 
@@ -59,6 +60,14 @@ const KIND_META: Record<string, { label: string; color: string }> = {
   SCAN: { label: 'Watchlist', color: '#8B5CF6' },
   INFO: { label: 'Note', color: 'var(--text-3)' },
   PLANNED: { label: 'Heads up', color: '#D97706' },
+  DEBRIEF: { label: 'Debrief', color: '#0EA5E9' },
+}
+
+/** The engine bakes the R-multiple into exit notes as "[+18.5R]" — pull it back out for a
+ * clean badge. R = how many units of initial risk the trade returned; the pro's scoreboard. */
+function parseRMultiple(note: string): number | null {
+  const m = note.match(/\[([+-]?\d+(?:\.\d+)?)R\]/)
+  return m ? parseFloat(m[1]) : null
 }
 
 /** ENTRY rows cover both buys and shorts — the backend's note always leads with the real verb. */
@@ -135,6 +144,7 @@ function RoundTrip({ entryRow, exitRow, onView }: { entryRow: LogRow; exitRow: L
   const held = heldMin < 60 ? `${heldMin}m` : heldMin < 1440 ? `${Math.floor(heldMin / 60)}h ${heldMin % 60}m` : `${Math.floor(heldMin / 1440)}d ${Math.floor((heldMin % 1440) / 60)}h`
   const isLong = entryRow.note.startsWith('Bought')
   const up = exitRow.pnl == null || exitRow.pnl >= 0
+  const rMult = parseRMultiple(exitRow.note)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 320 }}>
@@ -167,6 +177,11 @@ function RoundTrip({ entryRow, exitRow, onView }: { entryRow: LogRow; exitRow: L
           <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text)' }}>
             {EXIT_KIND_LABEL[exitRow.kind] ?? 'Closed'} {exitRow.shares != null ? `${exitRow.shares.toFixed(2)} sh ` : ''}@ ${exitRow.price?.toFixed(2)}
             {exitRow.pnl != null && <span style={{ color: exitRow.pnl >= 0 ? '#16A34A' : '#DC2626' }}> → {exitRow.pnl >= 0 ? '+' : ''}${exitRow.pnl.toFixed(2)}</span>}
+            {rMult != null && (
+              <span title="R-multiple: profit measured in units of the risk you took at entry" style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 800, padding: '1px 6px', borderRadius: 99, background: rMult >= 0 ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.13)', color: rMult >= 0 ? '#16A34A' : '#DC2626' }}>
+                {rMult >= 0 ? '+' : ''}{rMult.toFixed(1)}R
+              </span>
+            )}
             <span style={{ fontWeight: 500, color: 'var(--text-3)' }}> · {fmtExact(exitRow.created_at)}</span>
           </div>
           <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1, lineHeight: 1.4 }}>
@@ -636,6 +651,14 @@ export default function AutoTrader() {
               <StatTile label="Today's P&L" value={`${stats.realizedToday >= 0 ? '+' : ''}$${stats.realizedToday.toFixed(2)}`} color={stats.realizedToday >= 0 ? '#16A34A' : '#DC2626'} />
               <StatTile label="Total P&L" value={`${stats.totalRealized >= 0 ? '+' : ''}$${stats.totalRealized.toFixed(2)}`} color={stats.totalRealized >= 0 ? '#16A34A' : '#DC2626'} />
               <StatTile label="Win rate" value={`${stats.winRatePct}%`} sub={`${stats.wins}/${stats.totalClosed} trades`} />
+              {stats.avgR != null && (
+                <StatTile
+                  label="Expectancy (avg R)"
+                  value={`${stats.avgR >= 0 ? '+' : ''}${stats.avgR.toFixed(1)}R`}
+                  color={stats.avgR >= 0 ? '#16A34A' : '#DC2626'}
+                  sub={`${stats.totalR != null && stats.totalR >= 0 ? '+' : ''}${stats.totalR?.toFixed(1)}R total · best ${stats.bestR != null && stats.bestR >= 0 ? '+' : ''}${stats.bestR?.toFixed(1)}R`}
+                />
+              )}
               <div style={{ gridColumn: isDesktop ? undefined : 'span 2', minWidth: 200, padding: '10px 12px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10 }}>
                 <div style={{ fontSize: 9.5, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Equity curve (realized)</div>
                 <EquityCurve points={stats.equityCurve} seed={stats.seedCapital} />
@@ -723,15 +746,27 @@ export default function AutoTrader() {
         </div>
       )}
 
+      {/* End-of-day desk recap — the most recent session debrief, surfaced as its own card. */}
+      {(() => {
+        const debrief = log.find((r) => r.kind === 'DEBRIEF')
+        if (!debrief) return null
+        return (
+          <div style={{ marginBottom: 16, padding: '14px 16px', borderRadius: 14, border: '1px solid #0EA5E9', background: 'rgba(14,165,233,0.06)' }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: '#0284C7', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>Today&apos;s debrief</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.55 }}>{debrief.note.replace(/^📋\s*/, '')}</div>
+          </div>
+        )
+      })()}
+
       {/* The narrated trade log — collapsed to the last 5 by default; this used to be the
           whole page. Full history is one click away, not the default view. */}
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>What it&apos;s been doing</h3>
-          {log.length > 5 && (
+          {log.filter((r) => r.kind !== 'DEBRIEF').length > 5 && (
             <button type="button" onClick={() => setLogExpanded((v) => !v)}
               style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
-              {logExpanded ? 'Show last 5' : `Show all ${log.length}`}
+              {logExpanded ? 'Show last 5' : `Show all ${log.filter((r) => r.kind !== 'DEBRIEF').length}`}
             </button>
           )}
         </div>
@@ -759,7 +794,7 @@ export default function AutoTrader() {
                 </tr>
               </thead>
               <tbody>
-                {(logExpanded ? log : log.slice(0, 5)).map((row) => {
+                {(() => { const rows = log.filter((r) => r.kind !== 'DEBRIEF'); return logExpanded ? rows : rows.slice(0, 5) })().map((row) => {
                   const meta = row.kind === 'ENTRY'
                     ? { label: entryVerb(row.note), color: entryVerb(row.note) === 'Bought' ? '#3B82F6' : '#7C3AED' }
                     : KIND_META[row.kind] ?? { label: row.kind, color: 'var(--text-2)' }

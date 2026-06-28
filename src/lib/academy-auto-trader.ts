@@ -76,6 +76,64 @@ const NEAR_EXIT_PCT = 0.001
 // session, the bar stays busy on the genuinely-set-up bars, not every wiggle.
 const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier than the base floor, loose enough to keep the slots working
 
+// ── Pro-grade entry quality gates (the "edge" dial, not the "risk" dial) ──────────────
+// Relative volume: a setup with no volume behind it is a trap — the move has no
+// participation, so it stalls or reverses. Momentum/breakout setups demand real volume;
+// value-zone setups (buying a dip at support) legitimately fire on quieter tape, so they
+// keep a lower floor. volSpike = current vs average volume, already computed in indicators.
+const RVOL_FLOOR_MOMENTUM = 1.3   // momentum/breakout/pump-fade need ≥1.3× average volume
+const RVOL_FLOOR_VALUE = 0.6      // dip/bounce setups can fire quieter, just not dead
+const MOMENTUM_SETUPS = new Set(['MOMENTUM_LONG', 'MACD_CROSS_LONG', 'PUMP_SHORT', 'SUPERNOVA_SHORT', 'VWAP_SHORT'])
+
+// Market regime: don't fight the tape. If SPY (the market itself) is clearly trending one
+// way, taking trades against it is swimming upstream — the curriculum's Livermore lesson
+// ("trade with the trend, not against it") applied to the whole market, not just one name.
+const REGIME_TREND_PCT = 0.0015   // SPY EMA9 vs EMA21 gap (as % of price) that counts as a real trend, not noise
+
+// Time of day drives how choppy/clean the tape is. The open drive and the power hour are
+// where clean intraday moves happen; the lunch lull (≈11:30a–1:30p ET) is mostly noise —
+// every desk knows to size down or sit out midday. Encoded as an extra conviction bar.
+const LUNCH_START_MIN_ET = 11 * 60 + 30
+const LUNCH_END_MIN_ET = 13 * 60 + 30
+const POWER_HOUR_MIN_ET = 15 * 60
+const LUNCH_CONVICTION_BONUS = 2  // during the chop, demand |score| ≥ 6, not 4 — only the cleanest setups
+
+interface MarketRegime { regime: 'BULL' | 'BEAR' | 'NEUTRAL'; spyChangePct: number; note: string }
+
+/** Read the market itself (SPY) once per tick so entries can refuse to fight the tape. */
+async function getMarketRegime(): Promise<MarketRegime> {
+  try {
+    const quote = await getQuote('SPY')
+    const asset: AssetData = { symbol: 'SPY', name: 'S&P 500', price: quote.price, change24h: quote.changePct, change7d: 0, assetType: 'stock' }
+    const sig = await scoreAssetFull(asset)
+    const ind = sig.indicators
+    if (!ind) return { regime: 'NEUTRAL', spyChangePct: quote.changePct, note: 'market read unavailable' }
+    const gap = (ind.ema9 - ind.ema21) / ind.currentPrice
+    if (gap >= REGIME_TREND_PCT) return { regime: 'BULL', spyChangePct: quote.changePct, note: `market's trending up (SPY ${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%, EMA9>EMA21)` }
+    if (gap <= -REGIME_TREND_PCT) return { regime: 'BEAR', spyChangePct: quote.changePct, note: `market's trending down (SPY ${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%, EMA9<EMA21)` }
+    return { regime: 'NEUTRAL', spyChangePct: quote.changePct, note: `market's flat/chopping (SPY ${quote.changePct >= 0 ? '+' : ''}${quote.changePct.toFixed(2)}%)` }
+  } catch {
+    return { regime: 'NEUTRAL', spyChangePct: 0, note: 'market read unavailable' }
+  }
+}
+
+/** Which part of the session we're in, and how much extra conviction it should demand. */
+function sessionPhase(minsEt: number): { phase: string; convictionBonus: number } {
+  if (minsEt >= LUNCH_START_MIN_ET && minsEt < LUNCH_END_MIN_ET) return { phase: 'midday chop', convictionBonus: LUNCH_CONVICTION_BONUS }
+  if (minsEt < MARKET_OPEN_MIN_ET + 90) return { phase: 'opening drive', convictionBonus: 0 }
+  if (minsEt >= POWER_HOUR_MIN_ET) return { phase: 'power hour', convictionBonus: 0 }
+  return { phase: 'midday', convictionBonus: 0 }
+}
+
+/** The professional unit: how many multiples of the initial risk a move is worth.
+ * R = (move in your favor per share) / (risk per share fixed at entry). A fresh stop-out
+ * is ≈ −1R, break-even ≈ 0R, a real runner is +10R, +20R… This is the whole game. */
+function rMultiple(isLong: boolean, entry: number, price: number, riskPerShare: number | null): number | null {
+  if (riskPerShare == null || riskPerShare <= 0) return null
+  return r2((isLong ? price - entry : entry - price) / riskPerShare)
+}
+const fmtR = (r: number) => `${r >= 0 ? '+' : ''}${r.toFixed(1)}R`
+
 // "Heads up" staging: a qualifying setup announces itself (symbol, price, shares, why)
 // and waits this long before actually buying — so someone watching live on another
 // screen has real time to place the same trade themselves before it executes. On
@@ -193,6 +251,58 @@ async function promptShadowFeedback(
   supabase: SupabaseClient, userId: string, eventType: 'ENTRY' | 'EXIT', symbol: string, detail: string,
 ) {
   await supabase.from('academy_auto_shadow_feedback').insert({ user_id: userId, event_type: eventType, symbol, detail })
+}
+
+/** End-of-day desk recap — fires once, after the session flattens. The kind of review a
+ * real prop trader does every afternoon: what worked, what didn't, the day in R. */
+async function maybeWriteDailyDebrief(supabase: SupabaseClient, userId: string, todayEt: string, marketNote: string) {
+  // Once-per-day guard: bail if a debrief already exists for today.
+  const { data: existing } = await supabase
+    .from('academy_auto_log').select('id, created_at').eq('user_id', userId).eq('kind', 'DEBRIEF')
+    .gte('created_at', new Date(Date.now() - 16 * 3600_000).toISOString())
+  if ((existing ?? []).some((r) => etDateKeyOf(new Date(r.created_at as string)) === todayEt)) return
+
+  const { data: tradesRaw } = await supabase
+    .from('academy_auto_trades').select('symbol, pnl, shares, setup_tag, risk_per_share, created_at').eq('user_id', userId)
+    .gte('created_at', new Date(Date.now() - 16 * 3600_000).toISOString())
+  const closed = (tradesRaw ?? []).filter((t) => t.pnl != null && etDateKeyOf(new Date(t.created_at as string)) === todayEt)
+  if (closed.length === 0) {
+    await log(supabase, userId, { kind: 'DEBRIEF', note: `📋 Session done. No trades closed today — ${marketNote}. No setups cleared the bar worth risking money on, and not forcing trades on a day like that is itself the right call.` })
+    return
+  }
+
+  let net = 0, totalR = 0, wins = 0
+  let best: { sym: string; r: number } | null = null
+  let worst: { sym: string; r: number } | null = null
+  const bySetup = new Map<string, { pnl: number; n: number }>()
+  for (const t of closed) {
+    const pnl = Number(t.pnl)
+    net += pnl
+    if (pnl > 0) wins++
+    const rps = t.risk_per_share != null ? Number(t.risk_per_share) : null
+    const shares = Number(t.shares)
+    const R = rps != null && rps > 0 && shares > 0 ? pnl / (rps * shares) : null
+    if (R != null) {
+      totalR += R
+      if (!best || R > best.r) best = { sym: t.symbol as string, r: R }
+      if (!worst || R < worst.r) worst = { sym: t.symbol as string, r: R }
+    }
+    const tag = (t.setup_tag as string) ?? 'UNTAGGED'
+    const cur = bySetup.get(tag) ?? { pnl: 0, n: 0 }
+    cur.pnl += pnl; cur.n++; bySetup.set(tag, cur)
+  }
+  const winPct = Math.round((wins / closed.length) * 100)
+  const bestSetup = [...bySetup.entries()].sort((a, b) => b[1].pnl - a[1].pnl)[0]
+  const worstSetup = [...bySetup.entries()].sort((a, b) => a[1].pnl - b[1].pnl)[0]
+
+  const parts: string[] = []
+  parts.push(`📋 Session debrief — ${closed.length} trade${closed.length === 1 ? '' : 's'} closed, ${wins} green / ${closed.length - wins} red (${winPct}% win), net ${net >= 0 ? '+' : ''}${fmt(net)}${totalR !== 0 ? ` (${fmtR(totalR)})` : ''}.`)
+  if (best && best.r > 0) parts.push(`Best: ${best.sym} ${fmtR(best.r)} — that one runner is what the whole approach is built around.`)
+  if (worst && worst.r < -0.5) parts.push(`Worst: ${worst.sym} ${fmtR(worst.r)} — a defined, small loss, exactly as planned.`)
+  if (bestSetup && bestSetup[1].pnl > 0) parts.push(`${bestSetup[0].replace(/_/g, ' ').toLowerCase()} carried the day (${bestSetup[1].pnl >= 0 ? '+' : ''}${fmt(bestSetup[1].pnl)} across ${bestSetup[1].n}).`)
+  if (worstSetup && worstSetup[0] !== bestSetup?.[0] && worstSetup[1].pnl < 0) parts.push(`${worstSetup[0].replace(/_/g, ' ').toLowerCase()} didn't work today (${fmt(worstSetup[1].pnl)}).`)
+  parts.push(`The market: ${marketNote}.`)
+  await log(supabase, userId, { kind: 'DEBRIEF', note: parts.join(' ') })
 }
 
 interface RunResult { ran: boolean; reason?: string; events: string[] }
@@ -316,7 +426,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
       await supabase.from('academy_auto_trades').insert({
         user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
-        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag,
+        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, risk_per_share: pos.risk_per_share != null ? Number(pos.risk_per_share) : null,
         reason: "Carried past its own session — yesterday's flatten missed it, swept on wake",
       })
       await supabase.from('academy_auto_positions').delete().eq('id', pos.id)
@@ -406,11 +516,14 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       }
     }
 
+    const rps = pos.risk_per_share != null ? Number(pos.risk_per_share) : null
     const closeAll = async (kind: 'STOP_HIT' | 'EXIT_FULL', why: string) => {
       const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
+      const R = rMultiple(isLong, entry, price, rps)
+      const rNote = R != null ? ` [${fmtR(R)}]` : ''
       await supabase.from('academy_auto_trades').insert({
         user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
-        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, reason: why,
+        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, reason: why, risk_per_share: rps,
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
       })
       await supabase.from('academy_auto_positions').delete().eq('id', pos.id)
@@ -418,13 +531,13 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       await log(supabase, userId, {
         symbol: pos.symbol, kind, price, shares, pnl,
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-        note: `${pos.symbol}: closed the remaining ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)}) — ${why}.`,
+        note: `${pos.symbol}: closed the remaining ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)})${rNote} — ${why}.`,
       })
       events.push(`Closed ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)}`)
       // The instant "it happened" ping — no need to watch for this at all, just get told.
       await sendPushToUser(supabase, userId, {
         title: `Jalayu — closed ${pos.symbol}`,
-        body: `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)} — ${why}`,
+        body: `${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}${rNote} — ${why}`,
         url: '/dashboard',
       })
       await promptShadowFeedback(supabase, userId, 'EXIT', pos.symbol, `Closed @ ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)})`)
@@ -439,10 +552,12 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       if (trim <= 0) continue
       const remaining = r6(shares - trim)
       const pnl = r2(isLong ? (price - entry) * trim : (entry - price) * trim)
+      const R = rMultiple(isLong, entry, price, rps)
+      const rNote = R != null ? ` [${fmtR(R)}]` : ''
       const newStop = isLong ? entry * (1 + BREAKEVEN_LOCK_PCT) : entry * (1 - BREAKEVEN_LOCK_PCT)
       await supabase.from('academy_auto_trades').insert({
         user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
-        shares: trim, price, total: r2(price * trim), pnl, setup_tag: pos.setup_tag, reason: 'Target 1 — trimmed a third, stop moved to break-even',
+        shares: trim, price, total: r2(price * trim), pnl, setup_tag: pos.setup_tag, reason: 'Target 1 — trimmed a third, stop moved to break-even', risk_per_share: rps,
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
       })
       await supabase.from('academy_auto_positions').update({ shares: r6(remaining), half_closed: true, stop_price: r2(newStop) }).eq('id', pos.id)
@@ -450,7 +565,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       await log(supabase, userId, {
         symbol: pos.symbol, kind: 'TAKE_HALF', price, shares: trim, pnl,
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-        note: `${pos.symbol}: hit the first target, so I sold a third (${trim} shares) at ${fmt(price)} (+${fmt(pnl)}) and moved the stop on the other ${remaining} from ${pos.stop_price != null ? fmt(Number(pos.stop_price)) : '—'} up to ${fmt(newStop)} — break-even. The remaining two-thirds can't turn into a real loss from here; now I let it run for the big move.`,
+        note: `${pos.symbol}: hit the first target, so I sold a third (${trim} shares) at ${fmt(price)} (+${fmt(pnl)})${rNote} and moved the stop on the other ${remaining} from ${pos.stop_price != null ? fmt(Number(pos.stop_price)) : '—'} up to ${fmt(newStop)} — break-even. The remaining two-thirds can't turn into a real loss from here; now I let it run for the big move.`,
       })
       events.push(`${pos.symbol}: trimmed a third at ${fmt(price)}, stop to break-even`)
       await sendPushToUser(supabase, userId, {
@@ -466,6 +581,10 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
 
   const { minutesOfDay: minsNow, dateKey: todayEt } = nowEt()
 
+  // Read the market itself once — gates entries below (don't fight the tape) and colours
+  // the end-of-day debrief.
+  const market = await getMarketRegime()
+
   // ── 2. End-of-morning flatten: close everything still open once the window's over ──
   if (minsNow >= SESSION_FLATTEN_MIN_ET) {
     const { data: leftoverRaw } = await supabase.from('academy_auto_positions').select('*').eq('user_id', userId)
@@ -477,20 +596,24 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       const entry = Number(pos.avg_entry_price)
       const shares = Number(pos.shares)
       const pnl = r2(isLong ? (price - entry) * shares : (entry - price) * shares)
+      const fRps = pos.risk_per_share != null ? Number(pos.risk_per_share) : null
+      const fR = rMultiple(isLong, entry, price, fRps)
+      const fRNote = fR != null ? ` [${fmtR(fR)}]` : ''
       await supabase.from('academy_auto_trades').insert({
         user_id: userId, symbol: pos.symbol, name: pos.name, action: isLong ? 'SELL' : 'BUY', direction: pos.direction,
-        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, reason: 'End of morning session — flattened',
+        shares, price, total: r2(price * shares), pnl, setup_tag: pos.setup_tag, reason: 'End of session — flattened', risk_per_share: fRps,
         ema9: sig?.indicators?.ema9 ?? null, ema21: sig?.indicators?.ema21 ?? null, vwap: sig?.indicators?.vwap ?? null, rsi: sig?.indicators?.rsi ?? null,
       })
       await supabase.from('academy_auto_positions').delete().eq('id', pos.id)
       cash = r2(cash + (isLong ? price * shares : entry * shares + pnl))
       await log(supabase, userId, {
         symbol: pos.symbol, kind: 'EXIT_FULL', price, shares, pnl,
-        note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)}) — end of the morning session. I trade the active first few hours, not the slow afternoon chop, and I don't hold overnight.`,
+        note: `${pos.symbol}: closed ${shares} shares at ${fmt(price)} (${pnl >= 0 ? '+' : ''}${fmt(pnl)})${fRNote} — end of the session. I don't hold overnight; flat into the close.`,
       })
       events.push(`Flattened ${pos.symbol} ${pnl >= 0 ? '+' : ''}${fmt(pnl)} (session end)`)
     }
     await supabase.from('academy_auto_portfolio').update({ cash, updated_at: new Date().toISOString() }).eq('user_id', userId)
+    await maybeWriteDailyDebrief(supabase, userId, todayEt, market.note)
     return { ran: true, events }
   }
 
@@ -537,6 +660,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       const stop = r2(isLong ? price * (1 - sl) : price * (1 + sl))
       const target2 = r2(isLong ? price * (1 + tp) : price * (1 - tp))
       const target1 = r2(isLong ? price + (target2 - price) / 2 : price - (price - target2) / 2)
+      const riskPerShare = r2(Math.abs(price - stop)) // fixed at entry — every later R is measured against this
       const shares = Number(p.planned_shares)
       const total = r2(price * shares)
       if (total > cash || total < MIN_TRADE_USD) {
@@ -548,14 +672,14 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       const { error: posErr } = await supabase.from('academy_auto_positions').insert({
         user_id: userId, symbol: p.symbol, name: p.name ?? p.symbol, direction,
         shares, original_shares: shares, avg_entry_price: price,
-        stop_price: stop, target1_price: target1, target2_price: target2, half_closed: false,
+        stop_price: stop, target1_price: target1, target2_price: target2, half_closed: false, risk_per_share: riskPerShare,
         setup_tag: setupTag, entry_ema9: ind.ema9, entry_ema21: ind.ema21, entry_vwap: ind.vwap, entry_rsi: ind.rsi,
       })
       if (posErr) { await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id); continue } // already holding it somehow
 
       await supabase.from('academy_auto_trades').insert({
         user_id: userId, symbol: p.symbol, name: p.name ?? p.symbol, action: 'BUY', direction,
-        shares, price, total, pnl: null, setup_tag: setupTag, reason: p.reason,
+        shares, price, total, pnl: null, setup_tag: setupTag, reason: p.reason, risk_per_share: riskPerShare,
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
       })
       await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id)
@@ -612,8 +736,29 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   const signals = scored.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<Signal>).value)
   const longs = filterLongEntries(signals)
   const shorts = filterShortEntries(signals)
+
+  // Time-of-day: demand more conviction during the midday chop (the worst tape of the day),
+  // normal during the opening drive and power hour where clean moves actually happen.
+  const phase = sessionPhase(minsNow)
+  const convictionBar = AUTO_MIN_CONVICTION + phase.convictionBonus
+
   const candidates = [...longs, ...shorts]
-    .filter((s) => Math.abs(s.score) >= AUTO_MIN_CONVICTION)   // only the clearly-set-up bars, not every marginal one
+    .filter((s) => Math.abs(s.score) >= convictionBar)   // only the clearly-set-up bars, stricter in chop
+    // Relative volume: a move with no volume behind it is a trap. Breakout/momentum setups
+    // demand real participation; value-zone dips can fire quieter.
+    .filter((s) => {
+      const v = s.indicators?.volSpike ?? 0
+      return v >= (MOMENTUM_SETUPS.has(s.setupTag) ? RVOL_FLOOR_MOMENTUM : RVOL_FLOOR_VALUE)
+    })
+    // Don't fight the tape: skip longs when the market's clearly rolling over and shorts when
+    // it's clearly ripping — unless the individual setup is exceptional (|score| ≥ 7), which
+    // can override the market read.
+    .filter((s) => {
+      if (Math.abs(s.score) >= 7) return true
+      if (s.direction === 'LONG' && market.regime === 'BEAR') return false
+      if (s.direction === 'SHORT' && market.regime === 'BULL') return false
+      return true
+    })
     .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
 
   for (const sig of candidates) {
@@ -657,10 +802,19 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     const learnNote = stat && stat.total >= LEARN_MIN_SAMPLES
       ? ` (My record on this setup so far: ${stat.wins}/${stat.total} = ${Math.round(stat.winRate * 100)}% — ${learnMult > 1 ? 'sizing it up' : learnMult < 1 ? 'sizing it down' : 'normal size'}.)`
       : ''
+    // The pro reads, surfaced so they teach: relative volume (is the move real?), the market
+    // backdrop (are we with the tape?), and where in the session we are.
+    const aligned = (isLong && market.regime === 'BULL') || (!isLong && market.regime === 'BEAR')
+    const marketLine = market.regime === 'NEUTRAL'
+      ? `Market's flat — taking this on the setup's own merit.`
+      : aligned
+        ? `Market's on our side (${market.regime === 'BULL' ? 'SPY trending up' : 'SPY trending down'}) — trading with the tape.`
+        : `Against the broad tape, but the setup's strong enough (score ${Math.abs(sig.score).toFixed(1)}) to take anyway.`
+    const proLine = ` ${ind.volSpike.toFixed(1)}× relative volume. ${marketLine} (${phase.phase})`
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'PLANNED', price, shares,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `Heads up — about to ${isLong ? 'buy' : 'short'} ${shares} shares of ${sig.asset.symbol} around ${fmt(price)} (≈${fmt(total)} going in) in about a minute — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}${learnNote}`,
+      note: `Heads up — about to ${isLong ? 'buy' : 'short'} ${shares} shares of ${sig.asset.symbol} around ${fmt(price)} (≈${fmt(total)} going in) in about a minute — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${proLine}${legendNote}${learnNote}`,
     })
     // So nobody has to sit and stare at the tab to catch the ~60s shadow-trading window.
     await sendPushToUser(supabase, userId, {
