@@ -229,6 +229,8 @@ export interface IndicatorBundle {
 }
 
 export interface CandleInput {
+  open ?: number   // optional for back-compat; populated by the fetchers so price-action
+                   // pattern reading has real candle bodies (body = open→close).
   high  : number
   low   : number
   close : number

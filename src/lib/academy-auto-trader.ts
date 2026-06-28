@@ -545,6 +545,18 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
 
     if (hitStop) { await closeAll('STOP_HIT', halfClosed ? 'the trailing stop locked the run in' : 'the stop-loss line was hit'); continue }
 
+    // Read the bars for the EXIT, not just the stop: if we're in real profit and a strong
+    // reversal candle prints against us (a bearish engulfing / shooting star at the highs on
+    // a long), take the profit AT the turn instead of giving a chunk back waiting for the
+    // mechanical trailing stop to catch up. This is the price-action exit — exiting on what
+    // the candle says, the way a discretionary trader reads the top of a move.
+    const pa = sig.priceAction
+    if (!hitStop && pnlPct >= TRAIL_TRIGGER_PCT && pa && pa.reversalAgainst === pos.direction) {
+      const pat = pa.patterns.filter((p) => /engulf|star|hammer|resistance|support/.test(p)).join(', ') || 'a reversal candle'
+      await closeAll('EXIT_FULL', `the bars turned — ${pat} after a run in our favour, so I took the profit at the reversal instead of giving it back to the trailing stop`)
+      continue
+    }
+
     if (hitT1 && !halfClosed && t1 != null) {
       // "Bigger winners" posture: trim only a THIRD here to bank a sure profit,
       // leaving two-thirds to ride the runner uncapped.
@@ -692,13 +704,16 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       const driftNote = Math.abs(priceDrift) >= 0.01 ? ` (called at ${fmt(Number(p.planned_price))}, moved ${priceDrift >= 0 ? '+' : ''}${fmt(priceDrift)} by the time it filled — that gap is real slippage.)` : ''
       const chapter = legendFor(setupTag)
       const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
+      // "Bars: ..." is parsed back out on the frontend into its own line on the trade card,
+      // so the candle read is part of the permanent record, not just the live heads-up.
+      const barNote = sig.priceAction && sig.priceAction.patterns.length > 0 ? ` Bars: ${sig.priceAction.note}.` : ''
       // Same shape as a direct entry's note (setup tag, score, legend) so the trade-log's
       // "Why bought" parsing still works for trades that went through the heads-up stage —
       // just with the called-ahead framing folded in instead of a separate sentence.
       await log(supabase, userId, {
         symbol: p.symbol, kind: 'ENTRY', price, shares, pnl: 0,
         ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-        note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${p.symbol} at ${fmt(price)} — ${setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}), exactly what I called about a minute ago.${driftNote} ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${legendNote}`,
+        note: `${isLong ? 'Bought' : 'Shorted'} ${shares} shares of ${p.symbol} at ${fmt(price)} — ${setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}), exactly what I called about a minute ago.${driftNote} ${trendNote}, RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${barNote}${legendNote}`,
       })
       events.push(`Entered ${p.symbol} (followed through on the heads-up)`)
       await promptShadowFeedback(supabase, userId, 'ENTRY', p.symbol, `${isLong ? 'Bought' : 'Shorted'} ${shares} sh @ ${fmt(price)}`)
@@ -759,7 +774,16 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       if (s.direction === 'SHORT' && market.regime === 'BULL') return false
       return true
     })
-    .sort((a, b) => Math.abs(b.score) - Math.abs(a.score))
+    // Read the actual bars: don't buy right as a bearish reversal candle prints (or short
+    // right as a bullish one does) — the indicators say "go" but the last bar says "wait."
+    // Timing the entry to the candle, not just the threshold. Exceptional scores override.
+    .filter((s) => Math.abs(s.score) >= 7 || s.priceAction?.reversalAgainst !== s.direction)
+    // Among the survivors, prefer the ones whose bars CONFIRM the direction (bullish
+    // candle/structure for a long) — when slots are scarce, the candle agreeing is the edge.
+    .sort((a, b) => {
+      const confirm = (s: Signal) => ((s.direction === 'LONG' && s.priceAction?.bias === 'BULLISH') || (s.direction === 'SHORT' && s.priceAction?.bias === 'BEARISH')) ? 0.6 : 0
+      return (Math.abs(b.score) + confirm(b)) - (Math.abs(a.score) + confirm(a))
+    })
 
   for (const sig of candidates) {
     if (slotsFree <= 0) break
@@ -803,14 +827,15 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       ? ` (My record on this setup so far: ${stat.wins}/${stat.total} = ${Math.round(stat.winRate * 100)}% — ${learnMult > 1 ? 'sizing it up' : learnMult < 1 ? 'sizing it down' : 'normal size'}.)`
       : ''
     // The pro reads, surfaced so they teach: relative volume (is the move real?), the market
-    // backdrop (are we with the tape?), and where in the session we are.
+    // backdrop (are we with the tape?), the bar read (what the candles say), and the session.
     const aligned = (isLong && market.regime === 'BULL') || (!isLong && market.regime === 'BEAR')
     const marketLine = market.regime === 'NEUTRAL'
       ? `Market's flat — taking this on the setup's own merit.`
       : aligned
         ? `Market's on our side (${market.regime === 'BULL' ? 'SPY trending up' : 'SPY trending down'}) — trading with the tape.`
         : `Against the broad tape, but the setup's strong enough (score ${Math.abs(sig.score).toFixed(1)}) to take anyway.`
-    const proLine = ` ${ind.volSpike.toFixed(1)}× relative volume. ${marketLine} (${phase.phase})`
+    const barLine = sig.priceAction && sig.priceAction.patterns.length > 0 ? ` Bars: ${sig.priceAction.note}.` : ''
+    const proLine = ` ${ind.volSpike.toFixed(1)}× relative volume. ${marketLine} (${phase.phase})${barLine}`
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'PLANNED', price, shares,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,

@@ -24,6 +24,7 @@ import type { AssetData } from './market-data'
 import type { IndicatorBundle } from './indicators'
 import { computeIndicators } from './indicators'
 import { fetchCandles } from './candle-data'
+import { analyzePriceAction, type PriceActionRead } from './price-action'
 import { MIN_LONG_SCORE, MIN_SHORT_SCORE, getMinLongScore, ENRICH_TOP_N } from './trading-config'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ export interface Signal {
   urgency   : 'high' | 'medium' | 'low'
   setupTag  : string          // for trade_setups logging
   indicators: IndicatorBundle | null   // null if candles unavailable
+  priceAction: PriceActionRead | null  // raw-candle read (engulfing/pins/structure/S-R); null if no candles
 }
 
 // ── Stage 1: fast 24h-change pre-filter ───────────────────────────────────────
@@ -260,6 +262,7 @@ export async function scoreAssetFull(asset: AssetData): Promise<Signal> {
 
   const candles = await fetchCandles(asset.symbol, asset.assetType)
   let indicators: IndicatorBundle | null = null
+  const priceAction = candles.length >= 6 ? analyzePriceAction(candles) : null
   let score  = s1
   let reasons: string[] = []
   let setupTag = 'UNTAGGED'
@@ -308,6 +311,7 @@ export async function scoreAssetFull(asset: AssetData): Promise<Signal> {
     urgency,
     setupTag,
     indicators,
+    priceAction,
   }
 }
 
@@ -336,6 +340,7 @@ export function scoreAsset(asset: AssetData): Signal {
     urgency,
     setupTag  : tag,
     indicators: null,
+    priceAction: null,
   }
 }
 

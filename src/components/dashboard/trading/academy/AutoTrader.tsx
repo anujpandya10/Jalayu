@@ -99,14 +99,17 @@ function actionSummary(row: LogRow): string {
 }
 
 /** Pull the clean teaching bits back out of the entry note's fixed template — the setup name,
- * and the legendary trader + their one-line idea — instead of dumping the whole paragraph. */
-function parseEntryWhy(note: string): { setup: string | null; trader: string | null; idea: string | null } {
+ * the legendary trader + their one-line idea, and the raw-bar read ("Bars: …") — instead of
+ * dumping the whole paragraph. */
+function parseEntryWhy(note: string): { setup: string | null; trader: string | null; idea: string | null; bars: string | null } {
   const setupMatch = note.match(/—\s*([a-z0-9 ]+?)\s+setup\s*\(score/i)
   const legendMatch = note.match(/This is ([^']+)'s territory — ([^(]+?)(?:\s*\(My record)?\s*$/)
+  const barsMatch = note.match(/Bars:\s*([^.]+(?:\.[^.]*)?)\./)
   return {
     setup: setupMatch ? setupMatch[1].trim() : null,
     trader: legendMatch ? legendMatch[1].trim() : null,
     idea: legendMatch ? legendMatch[2].trim().replace(/\.$/, '') : null,
+    bars: barsMatch ? barsMatch[1].trim() : null,
   }
 }
 
@@ -161,6 +164,11 @@ function RoundTrip({ entryRow, exitRow, onView }: { entryRow: LogRow; exitRow: L
               <strong style={{ color: 'var(--text-2)' }}>Why bought:</strong>{' '}
               {why.setup && <span style={{ textTransform: 'capitalize' }}>{why.setup}</span>}
               {why.idea && <> — {why.idea}{why.trader && ` (${why.trader})`}</>}
+            </div>
+          )}
+          {why.bars && (
+            <div style={{ fontSize: 10.5, color: 'var(--text-3)', marginTop: 1, lineHeight: 1.4 }}>
+              <strong style={{ color: 'var(--text-2)' }}>The bars:</strong> {why.bars}
             </div>
           )}
         </div>

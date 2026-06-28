@@ -81,7 +81,8 @@ export async function fetchBinanceCandles(
       number, string, string, string, string, string, ...unknown[]
     ]>
 
-    return raw.map(([, , high, low, close, volume]) => ({
+    return raw.map(([, open, high, low, close, volume]) => ({
+      open  : parseFloat(open),
       high  : parseFloat(high),
       low   : parseFloat(low),
       close : parseFloat(close),
@@ -143,6 +144,7 @@ export async function fetchYahooCandles(
     const q = json?.chart?.result?.[0]?.indicators?.quote?.[0]
     if (!q?.close) return []
 
+    const opens   = q.open   ?? []
     const closes  = q.close  ?? []
     const highs   = q.high   ?? []
     const lows    = q.low    ?? []
@@ -153,7 +155,9 @@ export async function fetchYahooCandles(
       const c = closes[i];  const h = highs[i]
       const l = lows[i];    const v = volumes[i]
       if (c == null || h == null || l == null) continue
-      candles.push({ high: h, low: l, close: c, volume: v ?? 0 })
+      // open is what makes a candle a candle (body = open→close) — carry it so price-action
+      // pattern reading (engulfing, pin bars) has real bodies, not just a close-only line.
+      candles.push({ open: opens[i] ?? c, high: h, low: l, close: c, volume: v ?? 0 })
     }
 
     const result = candles.slice(-50)  // keep last 50 bars
@@ -195,6 +199,7 @@ export async function fetchForexDailyCandles(
       if (!rate) return []
       const priceUSD = 1 / rate
       return [{
+        open  : priceUSD,    // daily forex has no real open — close proxy keeps bodies tiny (correct: no intraday signal)
         high  : priceUSD * 1.001,
         low   : priceUSD * 0.999,
         close : priceUSD,
