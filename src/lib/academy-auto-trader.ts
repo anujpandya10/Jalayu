@@ -141,6 +141,12 @@ const fmtR = (r: number) => `${r >= 0 ? '+' : ''}${r.toFixed(1)}R`
 // firing the stale plan — the announced price is a forecast, not a limit order.
 const PENDING_ANNOUNCE_DELAY_MS = 60_000
 
+// Hard backstop on top of the announce delay: a heads-up gets several retries (a flaky
+// quote, the market closing mid-window) before this forces it closed. Without this a
+// pending row that never resolves sits forever — frozen at 0s on the UI, and stacking
+// with every later one — instead of clearing out with an honest "missed it" record.
+const PENDING_MAX_AGE_MS = 5 * 60_000
+
 // Two-stage scan. Candle-scoring every name in the (now wide) universe meant
 // ~100 live Yahoo calls a tick — which Yahoo rate-limited (429s), leaving the
 // bot blind and barely trading. So first rank the whole universe by who's
@@ -242,6 +248,28 @@ async function log(
   // this function IS the narration the whole UI relies on.
   const { error } = await supabase.from('academy_auto_log').insert({ user_id: userId, ...row })
   if (error) console.error('[academy-auto-trader] log() insert failed:', error.message, row)
+}
+
+const fmtEt = (iso: string) =>
+  new Date(iso).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', second: '2-digit' })
+
+/** Sweep anything that's been sitting in "heads up" for too long without resolving — a
+ * quote that kept failing, or the window closing mid-resolution. Runs ahead of the market-
+ * open/enabled gates below so a backlog from last session (or over a weekend) clears on the
+ * very next tick instead of staying frozen forever. Each one gets a real MISSED record with
+ * the actual time it was due, so "I missed it" is honest history, not a silent vanish. */
+async function expireStalePending(supabase: SupabaseClient, userId: string, events: string[]) {
+  const cutoff = new Date(Date.now() - PENDING_MAX_AGE_MS).toISOString()
+  const { data: staleRaw } = await supabase
+    .from('academy_auto_pending_entries').select('*').eq('user_id', userId).lt('planned_at', cutoff)
+  for (const p of staleRaw ?? []) {
+    await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id)
+    await log(supabase, userId, {
+      symbol: p.symbol, kind: 'MISSED',
+      note: `Missed the ${p.symbol} call — planned at ${fmtEt(p.planned_at as string)} ET but never got followed through in the window, so I let it go rather than chase a stale plan.`,
+    })
+    events.push(`Missed ${p.symbol} (heads-up window closed unconfirmed)`)
+  }
 }
 
 /** "Did you also place this trade?" — one prompt per real shadow-able moment (a followed-
@@ -371,6 +399,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
   if (!portfolio) return { ran: false, reason: 'no portfolio', events }
 
   await maybeRunMorningKickoff(supabase, userId, portfolio, events)
+  await expireStalePending(supabase, userId, events)
 
   if (!isUsMarketOpen()) return { ran: events.length > 0, reason: 'Market closed', events }
   if (!portfolio.enabled) return { ran: false, reason: 'Auto trader is off', events }
@@ -723,7 +752,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       })
       events.push(`Entered ${p.symbol} (followed through on the heads-up)`)
       await promptShadowFeedback(supabase, userId, 'ENTRY', p.symbol, `${isLong ? 'Bought' : 'Shorted'} ${shares} sh @ ${fmt(price)}`)
-    } catch { /* quote failed this tick — leave the pending row in place, retry next tick rather than silently dropping a plan I already announced */ }
+    } catch { /* quote failed this tick — leave the pending row in place, retry next tick rather than silently dropping a plan I already announced; expireStalePending forces it closed if this keeps failing past PENDING_MAX_AGE_MS */ }
   }
   const stillPendingSymbols = new Set(allPending.filter((p) => !duePending.some((d) => d.id === p.id)).map((p) => p.symbol))
 

@@ -61,6 +61,7 @@ const KIND_META: Record<string, { label: string; color: string }> = {
   INFO: { label: 'Note', color: 'var(--text-3)' },
   PLANNED: { label: 'Heads up', color: '#D97706' },
   DEBRIEF: { label: 'Debrief', color: '#0EA5E9' },
+  MISSED: { label: 'Missed', color: '#DC2626' },
 }
 
 /** The engine bakes the R-multiple into exit notes as "[+18.5R]" — pull it back out for a
@@ -78,6 +79,9 @@ function entryVerb(note: string): 'Bought' | 'Shorted' {
 const fmtExact = (iso: string) =>
   new Date(iso).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })
 
+const fmtClock = (d: number | string) =>
+  new Date(d).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' })
+
 /** A one-line, scannable fact: what happened, at what price — built from the clean structured
  * columns (not parsed from prose), so it's always exact. Used for rows with no paired entry
  * to show as a round trip (a bare ENTRY, a SCAN, a stop-move). */
@@ -94,6 +98,7 @@ function actionSummary(row: LogRow): string {
     case 'STOP_MOVED': return `Moved stop on ${sym} to ${price}`
     case 'SCAN': return `Watching ${sym}`
     case 'PLANNED': return `Called ${shares}${sym} @ ~${price}`
+    case 'MISSED': return `Missed ${sym} — window closed unconfirmed`
     default: return ''
   }
 }
@@ -482,36 +487,55 @@ export default function AutoTrader() {
     <div>
       {/* "Heads up" — about to trade, real plan, ~60s before it actually fires. The whole
           point: pull up the same symbol on another screen and place it yourself in that
-          window, so you're trading at the same pace instead of reading about it after. */}
+          window, so you're trading at the same pace instead of reading about it after.
+          Capped height + scroll so a run of several calls doesn't push the rest of the
+          page down — and each card shows the actual clock time it fires, not just a
+          countdown, so it still means something once the countdown bottoms out at 0s. */}
       {pending.length > 0 && (
-        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {pending.map((p) => {
-            const elapsedMs = nowTick - new Date(p.planned_at).getTime()
-            const secsLeft = Math.max(0, Math.ceil((PENDING_DELAY_SECS * 1000 - elapsedMs) / 1000))
-            const isLong = p.direction === 'LONG'
-            return (
-              <div key={p.id} style={{
-                padding: '14px 16px', borderRadius: 14, border: '2px solid #F59E0B',
-                background: 'rgba(245,158,11,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
-              }}>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 3 }}>⏳ Heads up — about to trade</div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
-                    {isLong ? 'Buy' : 'Short'} {p.planned_shares.toFixed(2)} sh of {p.symbol} @ ~${p.planned_price.toFixed(2)}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 800, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              ⏳ Heads up — about to trade{pending.length > 1 ? ` (${pending.length})` : ''}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
+              🕐 {fmtClock(nowTick)}
+            </span>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 280, overflowY: 'auto', paddingRight: 4 }}>
+            {pending.map((p) => {
+              const plannedMs = new Date(p.planned_at).getTime()
+              const elapsedMs = nowTick - plannedMs
+              const secsLeft = Math.max(0, Math.ceil((PENDING_DELAY_SECS * 1000 - elapsedMs) / 1000))
+              const fireAtMs = plannedMs + PENDING_DELAY_SECS * 1000
+              const isLong = p.direction === 'LONG'
+              return (
+                <div key={p.id} style={{
+                  padding: '14px 16px', borderRadius: 14, border: '2px solid #F59E0B',
+                  background: 'rgba(245,158,11,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
+                      {isLong ? 'Buy' : 'Short'} {p.planned_shares.toFixed(2)} sh of {p.symbol} @ ~${p.planned_price.toFixed(2)}
+                    </div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#D97706', marginTop: 1 }}>
+                      ≈ ${(p.planned_shares * p.planned_price).toFixed(2)} going in
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
+                      {p.setup_tag?.replace(/_/g, ' ').toLowerCase()} setup — pull it up on your own screen now
+                    </div>
                   </div>
-                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#D97706', marginTop: 1 }}>
-                    ≈ ${(p.planned_shares * p.planned_price).toFixed(2)} going in
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-                    {p.setup_tag?.replace(/_/g, ' ').toLowerCase()} setup — pull it up on your own screen now
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: '#D97706', fontVariantNumeric: 'tabular-nums' }}>
+                      {secsLeft}s
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
+                      fires {fmtClock(fireAtMs)}
+                    </div>
                   </div>
                 </div>
-                <div style={{ fontSize: 22, fontWeight: 800, color: '#D97706', fontVariantNumeric: 'tabular-nums' }}>
-                  {secsLeft}s
-                </div>
-              </div>
-            )
-          })}
+              )
+            })}
+          </div>
         </div>
       )}
 
