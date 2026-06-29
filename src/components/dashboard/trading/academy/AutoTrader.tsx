@@ -422,6 +422,35 @@ export default function AutoTrader() {
     managed: true, stopPrice: heldPos.stopPrice, target1Price: heldPos.target1Price, target2Price: heldPos.target2Price,
   } : null
 
+  // The sell side's "heads up" — the buy side gets a fixed ~60s countdown because it's a
+  // scheduling decision, but a stop/target exit is price-driven: there's no clock to count
+  // down, just "how close is it." Same NEAR_EXIT_UI_PCT band the chart auto-expand already
+  // watches — surfaced here too so it actually shows up as a card, not just an expanding
+  // chart (or a push notification you might not see).
+  const sellHeadsUps = portfolio.positions
+    .map((p) => {
+      if (p.stopPrice == null && p.target1Price == null) return null
+      const isLong = p.direction === 'LONG'
+      const dStop = p.stopPrice != null
+        ? (isLong ? (p.currentPrice - p.stopPrice) / p.currentPrice : (p.stopPrice - p.currentPrice) / p.currentPrice)
+        : Infinity
+      const dT1 = !p.halfClosed && p.target1Price != null
+        ? (isLong ? (p.target1Price - p.currentPrice) / p.currentPrice : (p.currentPrice - p.target1Price) / p.currentPrice)
+        : Infinity
+      const nearStop = dStop > 0 && dStop <= NEAR_EXIT_UI_PCT
+      const nearTarget = dT1 > 0 && dT1 <= NEAR_EXIT_UI_PCT
+      if (!nearStop && !nearTarget) return null
+      const which: 'STOP' | 'TARGET' = nearStop && (!nearTarget || dStop <= dT1) ? 'STOP' : 'TARGET'
+      const triggerPrice = which === 'STOP' ? p.stopPrice! : p.target1Price!
+      const verb = isLong ? 'Sell' : 'Buy to cover'
+      const action = which === 'STOP'
+        ? `${verb} all ${p.shares.toFixed(2)} sh of ${p.symbol}`
+        : `${verb} a third (~${(p.shares / 3).toFixed(2)} sh) of ${p.symbol}`
+      const distPct = (which === 'STOP' ? dStop : dT1) * 100
+      return { symbol: p.symbol, which, currentPrice: p.currentPrice, triggerPrice, action, distPct }
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null)
+
   // Which ENTRY row each exit (TAKE_HALF/EXIT_FULL/STOP_HIT) actually closed out — only one
   // position per symbol is ever open at a time, so walking the log forward in time and
   // remembering "the last ENTRY seen for this symbol" reliably pairs them back up.
@@ -485,17 +514,18 @@ export default function AutoTrader() {
 
   return (
     <div>
-      {/* "Heads up" — about to trade, real plan, ~60s before it actually fires. The whole
-          point: pull up the same symbol on another screen and place it yourself in that
-          window, so you're trading at the same pace instead of reading about it after.
-          Capped height + scroll so a run of several calls doesn't push the rest of the
-          page down — and each card shows the actual clock time it fires, not just a
-          countdown, so it still means something once the countdown bottoms out at 0s. */}
-      {pending.length > 0 && (
+      {/* "Heads up" — both directions. Buy/short calls get a fixed ~60s countdown (it's a
+          scheduling decision: pull the symbol up on another screen and place it yourself
+          in that window). Sell/cover exits are price-driven, not time-driven — there's no
+          clock to count down, so those cards show how close price is to the stop/target
+          instead. Capped height + scroll so a run of several calls doesn't push the rest
+          of the page down, and each buy card shows the real clock time it fires, not just
+          a bare countdown that means nothing once it bottoms out at 0s. */}
+      {(pending.length > 0 || sellHeadsUps.length > 0) && (
         <div style={{ marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-              ⏳ Heads up — about to trade{pending.length > 1 ? ` (${pending.length})` : ''}
+              ⏳ Heads up{pending.length + sellHeadsUps.length > 1 ? ` (${pending.length + sellHeadsUps.length})` : ''}
             </span>
             <span style={{ fontSize: 11, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
               🕐 {fmtClock(nowTick)}
@@ -514,6 +544,7 @@ export default function AutoTrader() {
                   background: 'rgba(245,158,11,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
                 }}>
                   <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: '#D97706', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 3 }}>About to buy/short</div>
                     <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
                       {isLong ? 'Buy' : 'Short'} {p.planned_shares.toFixed(2)} sh of {p.symbol} @ ~${p.planned_price.toFixed(2)}
                     </div>
@@ -531,6 +562,34 @@ export default function AutoTrader() {
                     <div style={{ fontSize: 10.5, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
                       fires {fmtClock(fireAtMs)}
                     </div>
+                  </div>
+                </div>
+              )
+            })}
+            {sellHeadsUps.map((s) => {
+              const isStop = s.which === 'STOP'
+              const color = isStop ? '#DC2626' : '#16A34A'
+              return (
+                <div key={`${s.symbol}-${s.which}`} style={{
+                  padding: '14px 16px', borderRadius: 14, border: `2px solid ${color}`,
+                  background: isStop ? 'rgba(220,38,38,0.06)' : 'rgba(22,163,74,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 800, color, textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: 3 }}>
+                      {isStop ? '⚠️ Closing in on its stop' : '🎯 Closing in on its target'}
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--text)' }}>
+                      {s.action}
+                    </div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color, marginTop: 1 }}>
+                      ${s.currentPrice.toFixed(2)} now, {isStop ? 'stop' : 'target'} at ${s.triggerPrice.toFixed(2)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontSize: 18, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>
+                      {s.distPct.toFixed(2)}%
+                    </div>
+                    <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>away</div>
                   </div>
                 </div>
               )
