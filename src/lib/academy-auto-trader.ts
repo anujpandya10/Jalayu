@@ -256,19 +256,15 @@ const fmtEt = (iso: string) =>
 /** Sweep anything that's been sitting in "heads up" for too long without resolving — a
  * quote that kept failing, or the window closing mid-resolution. Runs ahead of the market-
  * open/enabled gates below so a backlog from last session (or over a weekend) clears on the
- * very next tick instead of staying frozen forever. Each one gets a real MISSED record with
- * the actual time it was due, so "I missed it" is honest history, not a silent vanish. */
+ * very next tick instead of staying frozen forever. Silently discarded — the bot continues
+ * scanning normally and will re-announce if the setup is still valid. */
 async function expireStalePending(supabase: SupabaseClient, userId: string, events: string[]) {
   const cutoff = new Date(Date.now() - PENDING_MAX_AGE_MS).toISOString()
   const { data: staleRaw } = await supabase
-    .from('academy_auto_pending_entries').select('*').eq('user_id', userId).lt('planned_at', cutoff)
+    .from('academy_auto_pending_entries').select('id, symbol').eq('user_id', userId).lt('planned_at', cutoff)
   for (const p of staleRaw ?? []) {
     await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id)
-    await log(supabase, userId, {
-      symbol: p.symbol, kind: 'MISSED',
-      note: `Missed the ${p.symbol} call — planned at ${fmtEt(p.planned_at as string)} ET but never got followed through in the window, so I let it go rather than chase a stale plan.`,
-    })
-    events.push(`Missed ${p.symbol} (heads-up window closed unconfirmed)`)
+    events.push(`Heads-up for ${p.symbol} expired (quote window closed)`)
   }
 }
 
@@ -377,13 +373,11 @@ async function maybeRunMorningKickoff(supabase: SupabaseClient, userId: string, 
       await log(supabase, userId, { kind: 'SCAN', note: `Scanned ${assets.length} stocks — nothing with a confirmed setup yet. I'll keep watching as the open gets closer.` })
     } else {
       for (const sig of ranked) {
-        const chapter = legendFor(sig.setupTag)
         const ind = sig.indicators
-        const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
         await log(supabase, userId, {
           symbol: sig.asset.symbol, kind: 'SCAN', price: sig.asset.price,
           ema9: ind?.ema9 ?? null, ema21: ind?.ema21 ?? null, vwap: ind?.vwap ?? null, rsi: ind?.rsi ?? null,
-          note: `Watching ${sig.asset.symbol} for the open (score ${sig.score.toFixed(1)}, ${sig.setupTag.replace(/_/g, ' ').toLowerCase()}) — ${sig.reason}.${legendNote}`,
+          note: `Watching ${sig.asset.symbol} for the open (score ${sig.score.toFixed(1)}, ${sig.setupTag.replace(/_/g, ' ').toLowerCase()}) — ${sig.reason}.`,
         })
       }
       events.push(`Built today's watchlist: ${ranked.map((s) => s.asset.symbol).join(', ')}`)
@@ -856,25 +850,15 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
     })
 
-    const chapter = legendFor(sig.setupTag)
-    const legendNote = chapter ? ` This is ${chapter.trader}'s territory — ${chapter.coreIdea}` : ''
     const learnNote = stat && stat.total >= LEARN_MIN_SAMPLES
-      ? ` (My record on this setup so far: ${stat.wins}/${stat.total} = ${Math.round(stat.winRate * 100)}% — ${learnMult > 1 ? 'sizing it up' : learnMult < 1 ? 'sizing it down' : 'normal size'}.)`
+      ? ` · ${stat.wins}/${stat.total} (${Math.round(stat.winRate * 100)}%) on this setup`
       : ''
-    // The pro reads, surfaced so they teach: relative volume (is the move real?), the market
-    // backdrop (are we with the tape?), the bar read (what the candles say), and the session.
-    const aligned = (isLong && market.regime === 'BULL') || (!isLong && market.regime === 'BEAR')
-    const marketLine = market.regime === 'NEUTRAL'
-      ? `Market's flat — taking this on the setup's own merit.`
-      : aligned
-        ? `Market's on our side (${market.regime === 'BULL' ? 'SPY trending up' : 'SPY trending down'}) — trading with the tape.`
-        : `Against the broad tape, but the setup's strong enough (score ${Math.abs(sig.score).toFixed(1)}) to take anyway.`
-    const barLine = sig.priceAction && sig.priceAction.patterns.length > 0 ? ` Bars: ${sig.priceAction.note}.` : ''
-    const proLine = ` ${ind.volSpike.toFixed(1)}× relative volume. ${marketLine} (${phase.phase})${barLine}`
+    const barLine = sig.priceAction && sig.priceAction.patterns.length > 0 ? ` · ${sig.priceAction.note}` : ''
+    const marketShort = market.regime === 'NEUTRAL' ? 'market flat' : market.regime === 'BULL' ? 'market trending up' : 'market trending down'
     await log(supabase, userId, {
       symbol: sig.asset.symbol, kind: 'PLANNED', price, shares,
       ema9: ind.ema9, ema21: ind.ema21, vwap: ind.vwap, rsi: ind.rsi,
-      note: `Heads up — about to ${isLong ? 'buy' : 'short'} ${shares} shares of ${sig.asset.symbol} around ${fmt(price)} (≈${fmt(total)} going in) in about a minute — ${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}.${proLine}${legendNote}${learnNote}`,
+      note: `${sig.setupTag.replace(/_/g, ' ').toLowerCase()} setup (score ${sig.score.toFixed(1)}). RSI ${ind.rsi.toFixed(0)}, VWAP ${fmt(ind.vwap)}, ${ind.volSpike.toFixed(1)}× vol · ${marketShort}${barLine}${learnNote}.`,
     })
     // So nobody has to sit and stare at the tab to catch the ~60s shadow-trading window.
     await sendPushToUser(supabase, userId, {

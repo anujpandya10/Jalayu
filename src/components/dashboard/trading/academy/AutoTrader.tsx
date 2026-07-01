@@ -217,10 +217,10 @@ const REFRESH_MS = 20_000
 // Mirrors PENDING_ANNOUNCE_DELAY_MS in academy-auto-trader.ts — purely cosmetic for the
 // countdown display; the real delay is enforced server-side regardless of this value.
 const PENDING_DELAY_SECS = 60
-// Looser than the backend's push-notification threshold (0.1%) on purpose — this just
-// decides when the collapsed chart pops back open, so it's fine (better, even) to expand
-// a little earlier than the actual "about to fire" push.
-const NEAR_EXIT_UI_PCT = 0.003
+// Wide enough to give real advance notice on the page — 1.5% means a $160 stock triggers
+// a sell card when it's within ~$2.40 of its stop or target, which is several minutes of
+// normal movement and gives time to act before the bot fires.
+const NEAR_EXIT_UI_PCT = 0.015
 
 /**
  * Auto Trader — a fully separate $1000 account that trades itself: US
@@ -437,7 +437,9 @@ export default function AutoTrader() {
       const dT1 = !p.halfClosed && p.target1Price != null
         ? (isLong ? (p.target1Price - p.currentPrice) / p.currentPrice : (p.currentPrice - p.target1Price) / p.currentPrice)
         : Infinity
-      const nearStop = dStop > 0 && dStop <= NEAR_EXIT_UI_PCT
+      // dStop can go negative when price has just crossed the stop — still show the card so
+      // the user sees it regardless of which side of the line the quote landed on this tick.
+      const nearStop = p.stopPrice != null && dStop <= NEAR_EXIT_UI_PCT && dStop >= -NEAR_EXIT_UI_PCT
       const nearTarget = dT1 > 0 && dT1 <= NEAR_EXIT_UI_PCT
       if (!nearStop && !nearTarget) return null
       const which: 'STOP' | 'TARGET' = nearStop && (!nearTarget || dStop <= dT1) ? 'STOP' : 'TARGET'
@@ -446,7 +448,8 @@ export default function AutoTrader() {
       const action = which === 'STOP'
         ? `${verb} all ${p.shares.toFixed(2)} sh of ${p.symbol}`
         : `${verb} a third (~${(p.shares / 3).toFixed(2)} sh) of ${p.symbol}`
-      const distPct = (which === 'STOP' ? dStop : dT1) * 100
+      const rawDist = which === 'STOP' ? dStop : dT1
+      const distPct = rawDist * 100  // negative = already past the stop
       return { symbol: p.symbol, which, currentPrice: p.currentPrice, triggerPrice, action, distPct }
     })
     .filter((x): x is NonNullable<typeof x> => x !== null)
@@ -556,11 +559,11 @@ export default function AutoTrader() {
                     </div>
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: '#D97706', fontVariantNumeric: 'tabular-nums' }}>
-                      {secsLeft}s
+                    <div style={{ fontSize: secsLeft > 0 ? 22 : 14, fontWeight: 800, color: '#D97706', fontVariantNumeric: 'tabular-nums' }}>
+                      {secsLeft > 0 ? `${secsLeft}s` : '⚡ Now'}
                     </div>
                     <div style={{ fontSize: 10.5, color: 'var(--text-3)', fontVariantNumeric: 'tabular-nums' }}>
-                      fires {fmtClock(fireAtMs)}
+                      {secsLeft > 0 ? `fires ${fmtClock(fireAtMs)}` : 'executing…'}
                     </div>
                   </div>
                 </div>
@@ -587,9 +590,11 @@ export default function AutoTrader() {
                   </div>
                   <div style={{ textAlign: 'right' }}>
                     <div style={{ fontSize: 18, fontWeight: 800, color, fontVariantNumeric: 'tabular-nums' }}>
-                      {s.distPct.toFixed(2)}%
+                      {s.distPct <= 0 ? (s.which === 'STOP' ? 'HIT!' : 'HIT!') : `${s.distPct.toFixed(2)}%`}
                     </div>
-                    <div style={{ fontSize: 10.5, color: 'var(--text-3)' }}>away</div>
+                    <div style={{ fontSize: 10.5, color: s.distPct <= 0 ? color : 'var(--text-3)' }}>
+                      {s.distPct <= 0 ? 'stop reached' : 'away'}
+                    </div>
                   </div>
                 </div>
               )
@@ -854,14 +859,14 @@ export default function AutoTrader() {
       <div style={{ border: '1px solid var(--border)', borderRadius: 14, background: 'var(--surface)', padding: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', margin: 0 }}>What it&apos;s been doing</h3>
-          {log.filter((r) => r.kind !== 'DEBRIEF').length > 5 && (
+          {log.filter((r) => r.kind !== 'DEBRIEF' && r.kind !== 'MISSED').length > 5 && (
             <button type="button" onClick={() => setLogExpanded((v) => !v)}
               style={{ padding: '4px 10px', fontSize: 11, fontWeight: 700, borderRadius: 7, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text-2)', cursor: 'pointer', fontFamily: 'inherit' }}>
-              {logExpanded ? 'Show last 5' : `Show all ${log.filter((r) => r.kind !== 'DEBRIEF').length}`}
+              {logExpanded ? 'Show last 5' : `Show all ${log.filter((r) => r.kind !== 'DEBRIEF' && r.kind !== 'MISSED').length}`}
             </button>
           )}
         </div>
-        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 12px' }}>Last 5 by default — every entry, trim, stop, and exit.</p>
+        <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '0 0 12px' }}>Last 5 by default — every entry, trim, stop, and exit. Bot keeps trading regardless.</p>
 
         {log.length === 0 ? (
           <div style={{ padding: 20, textAlign: 'center', borderRadius: 10, border: '1px dashed var(--border)', fontSize: 12, color: 'var(--text-3)' }}>
@@ -885,7 +890,7 @@ export default function AutoTrader() {
                 </tr>
               </thead>
               <tbody>
-                {(() => { const rows = log.filter((r) => r.kind !== 'DEBRIEF'); return logExpanded ? rows : rows.slice(0, 5) })().map((row) => {
+                {(() => { const rows = log.filter((r) => r.kind !== 'DEBRIEF' && r.kind !== 'MISSED'); return logExpanded ? rows : rows.slice(0, 5) })().map((row) => {
                   const meta = row.kind === 'ENTRY'
                     ? { label: entryVerb(row.note), color: entryVerb(row.note) === 'Bought' ? '#3B82F6' : '#7C3AED' }
                     : KIND_META[row.kind] ?? { label: row.kind, color: 'var(--text-2)' }
