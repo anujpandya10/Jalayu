@@ -54,6 +54,19 @@ const DAILY_LOSS_LIMIT_USD = 60   // down $60 on the day (−6%) → stop for th
 const DAILY_PROFIT_LOCK_USD = 100 // up $100 (+10%) → a genuinely big day is won; tighten to top-conviction only so a greedy late trade can't give it back. Set high so a single runner doesn't choke the day off early.
 const MAX_TRADES_PER_DAY = 30     // active all-day rotation across the slots — the daily loss limit (not the trade count) is the real backstop if a day goes bad
 
+// Cross-day peak-equity ratchet: DAILY_LOSS_LIMIT_USD only protects a single session — it
+// says nothing about an account that was up $50 yesterday and is flat today. This defends
+// the all-time high-water mark instead of letting every day start the "how am I doing"
+// clock over from $1000: once a peak is set, giving back too much of ITS profit tightens
+// conviction (SOFT) or stops opening new risk (HARD) until equity claws back toward it.
+// Existing positions still exit on their own stops/trails either way — this only throttles
+// ADDING new risk while underwater relative to the peak, it can't force a position to hold.
+const PEAK_SOFT_GIVEBACK_PCT = 0.40  // give back >40% of peak profit → defense mode (tighter bar, half size)
+const PEAK_HARD_GIVEBACK_PCT = 0.75  // give back >75% of peak profit → no new entries until it recovers
+const PEAK_MIN_GIVEBACK_USD = 25     // floor so a trivial few-dollar peak doesn't hair-trigger defense mode
+const PEAK_DEFENSE_CONVICTION_BONUS = 3 // SOFT-defense: demand |score| this much higher, on top of the usual bar
+const PEAK_DEFENSE_SIZE_MULT = 0.5      // SOFT-defense: half the usual position size while proving it back out
+
 // Let winners run — the asymmetry that actually grows an account. The first
 // half comes off at T1 to bank a sure profit and pay for the trade; the BACK
 // half then rides a loose trailing stop with NO upper ceiling. Most trades
@@ -84,6 +97,13 @@ const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier th
 const RVOL_FLOOR_MOMENTUM = 1.3   // momentum/breakout/pump-fade need ≥1.3× average volume
 const RVOL_FLOOR_VALUE = 0.6      // dip/bounce setups can fire quieter, just not dead
 const MOMENTUM_SETUPS = new Set(['MOMENTUM_LONG', 'MACD_CROSS_LONG', 'PUMP_SHORT', 'SUPERNOVA_SHORT', 'VWAP_SHORT'])
+
+// Relative strength: on a broad red day, a technical signal can still fire on a stock that's
+// simply falling LESS than the index — that's beta, not a real long. Momentum/breakout
+// setups have to be outperforming SPY by a real margin (shorts: underperforming it) to count
+// as an actual leader/laggard — this is the mechanical answer to "find the stock that's
+// genuinely green while the market's red," not just the least-red one.
+const RS_MIN_EDGE_PCT = 0.5   // percentage points the candidate must beat SPY by, in its own direction
 
 // Market regime: don't fight the tape. If SPY (the market itself) is clearly trending one
 // way, taking trades against it is swimming upstream — the curriculum's Livermore lesson
@@ -765,6 +785,34 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   const heldValue = (stillOpenRaw ?? []).reduce((s, p) => s + Number(p.shares) * Number(p.avg_entry_price), 0)
   const accountEquity = cash + heldValue
 
+  // Peak-equity ratchet: update the all-time high-water mark, then measure how much of ITS
+  // profit has been given back. profitAtPeak == 0 means the account has never cleared seed
+  // capital, so there's nothing to defend yet — normal rules apply.
+  const priorPeak = Number(portfolio.peak_equity ?? AUTO_SEED_CAPITAL)
+  const peak = Math.max(priorPeak, accountEquity)
+  if (peak > priorPeak) await supabase.from('academy_auto_portfolio').update({ peak_equity: r2(peak) }).eq('user_id', userId)
+  const profitAtPeak = Math.max(0, peak - AUTO_SEED_CAPITAL)
+  const givenBack = Math.max(0, peak - accountEquity)
+  const softBudget = Math.max(profitAtPeak * PEAK_SOFT_GIVEBACK_PCT, PEAK_MIN_GIVEBACK_USD)
+  const hardBudget = Math.max(profitAtPeak * PEAK_HARD_GIVEBACK_PCT, PEAK_MIN_GIVEBACK_USD * 1.5)
+  const peakState: 'NONE' | 'SOFT' | 'HARD' = profitAtPeak <= 0 ? 'NONE' : givenBack >= hardBudget ? 'HARD' : givenBack >= softBudget ? 'SOFT' : 'NONE'
+  const priorPeakState = portfolio.profit_defense_state ?? 'NONE'
+  if (peakState !== priorPeakState) {
+    await supabase.from('academy_auto_portfolio').update({ profit_defense_state: peakState }).eq('user_id', userId)
+    portfolio.profit_defense_state = peakState
+    const note = peakState === 'HARD'
+      ? `Peak equity ${fmt(peak)}, now ${fmt(accountEquity)} — given back ${fmt(givenBack)} of that profit, past the line I defend. No new entries until this claws back toward the peak; open positions still manage normally.`
+      : peakState === 'SOFT'
+        ? `Peak equity ${fmt(peak)}, now ${fmt(accountEquity)} — given back ${fmt(givenBack)} of that profit. Tightening up: higher conviction bar, half size, until it recovers.`
+        : `Back above the profit-defense line (peak ${fmt(peak)}, now ${fmt(accountEquity)}) — normal size and conviction bar restored.`
+    await log(supabase, userId, { kind: 'INFO', note })
+    events.push(`Profit-defense: ${priorPeakState} → ${peakState}`)
+    if (peakState === 'HARD') {
+      await sendPushToUser(supabase, userId, { title: 'Jalayu — defending the peak', body: `Given back ${fmt(givenBack)} of the $${peak.toFixed(0)} peak — pausing new entries until it recovers.`, url: '/dashboard' })
+    }
+  }
+  if (peakState === 'HARD') return { ran: true, events }
+
   const { data: recentRaw } = await supabase
     .from('academy_auto_trades').select('symbol, created_at').eq('user_id', userId)
     .gte('created_at', new Date(Date.now() - COOLDOWN_MINUTES * 60_000).toISOString())
@@ -784,7 +832,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   // Time-of-day: demand more conviction during the midday chop (the worst tape of the day),
   // normal during the opening drive and power hour where clean moves actually happen.
   const phase = sessionPhase(minsNow)
-  const convictionBar = AUTO_MIN_CONVICTION + phase.convictionBonus
+  const convictionBar = AUTO_MIN_CONVICTION + phase.convictionBonus + (peakState === 'SOFT' ? PEAK_DEFENSE_CONVICTION_BONUS : 0)
 
   const candidates = [...longs, ...shorts]
     .filter((s) => Math.abs(s.score) >= convictionBar)   // only the clearly-set-up bars, stricter in chop
@@ -802,6 +850,15 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       if (s.direction === 'LONG' && market.regime === 'BEAR') return false
       if (s.direction === 'SHORT' && market.regime === 'BULL') return false
       return true
+    })
+    // Relative strength: for momentum/breakout setups, demand the stock is actually beating
+    // (or, for shorts, lagging) SPY by RS_MIN_EDGE_PCT — the real leader/laggard, not just a
+    // name riding the index's own move. Value-zone dip-buys are exempt: buying a pullback in
+    // a good name legitimately shows a flat/red 24h change even when the setup is sound.
+    .filter((s) => {
+      if (!MOMENTUM_SETUPS.has(s.setupTag)) return true
+      const edge = s.direction === 'LONG' ? s.asset.change24h - market.spyChangePct : market.spyChangePct - s.asset.change24h
+      return edge >= RS_MIN_EDGE_PCT
     })
     // Read the actual bars: don't buy right as a bearish reversal candle prints (or short
     // right as a bullish one does) — the indicators say "go" but the last bar says "wait."
@@ -831,8 +888,10 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       : 1.0
 
     // Target size is a fixed slice of total equity; cash is just the hard
-    // ceiling we can't spend past (no margin on this account).
-    const budget = Math.min(accountEquity * MAX_POSITION_PCT * learnMult, cash * 0.92)
+    // ceiling we can't spend past (no margin on this account). Half size while in
+    // profit-defense — prove the setup back out before betting full size again.
+    const sizeMult = peakState === 'SOFT' ? PEAK_DEFENSE_SIZE_MULT : 1.0
+    const budget = Math.min(accountEquity * MAX_POSITION_PCT * learnMult * sizeMult, cash * 0.92)
     if (budget < MIN_TRADE_USD) continue
     const shares = r6(budget / price)
     const total = r2(price * shares)
