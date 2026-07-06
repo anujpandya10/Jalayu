@@ -768,11 +768,19 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       await promptShadowFeedback(supabase, userId, 'ENTRY', p.symbol, `${isLong ? 'Bought' : 'Shorted'} ${shares} sh @ ${fmt(price)}`)
     } catch { /* quote failed this tick — leave the pending row in place, retry next tick rather than silently dropping a plan I already announced; expireStalePending forces it closed if this keeps failing past PENDING_MAX_AGE_MS */ }
   }
-  const stillPendingSymbols = new Set(allPending.filter((p) => !duePending.some((d) => d.id === p.id)).map((p) => p.symbol))
+  const stillPending = allPending.filter((p) => !duePending.some((d) => d.id === p.id))
+  const stillPendingSymbols = new Set(stillPending.map((p) => p.symbol))
 
   // ── 4. Scan for a new entry if a slot is free ──
-  const { data: stillOpenRaw } = await supabase.from('academy_auto_positions').select('symbol, shares, avg_entry_price').eq('user_id', userId)
+  const { data: stillOpenRaw } = await supabase.from('academy_auto_positions').select('symbol, shares, avg_entry_price, setup_tag').eq('user_id', userId)
   const heldSymbols = new Set((stillOpenRaw ?? []).map((p) => p.symbol))
+
+  // Same-setup concentration: how many slots (open + about-to-open) each setup tag already
+  // has. Two simultaneous bb-lower-bounce entries is one idea taken twice — if the pattern's
+  // read on the tape is wrong, both die together. Capped per-tag in the entry loop below.
+  const tagCounts = new Map<string, number>()
+  for (const p of stillOpenRaw ?? []) if (p.setup_tag) tagCounts.set(p.setup_tag, (tagCounts.get(p.setup_tag) ?? 0) + 1)
+  for (const p of stillPending) if (p.setup_tag) tagCounts.set(p.setup_tag, (tagCounts.get(p.setup_tag) ?? 0) + 1)
   // A pending "heads up" entry will become a real position soon — count it against the
   // slot budget now, not just once it executes, so the scan can't out-commit MAX_SLOTS.
   let slotsFree = MAX_SLOTS - heldSymbols.size - stillPendingSymbols.size
@@ -887,6 +895,12 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       ? (stat.winRate >= LEARN_GREAT_WINRATE ? 1.2 : stat.winRate < 0.45 ? 0.6 : 1.0)
       : 1.0
 
+    // Same-setup concentration cap: a below-average setup (the record the learning stats
+    // already size down) gets ONE slot at a time; even a proven one can't take every slot.
+    // Slots are for independent ideas, not the same pattern stamped across three tickers.
+    const tagCap = learnMult < 1 ? 1 : MAX_SLOTS - 1
+    if ((tagCounts.get(sig.setupTag) ?? 0) >= tagCap) continue
+
     // Target size is a fixed slice of total equity; cash is just the hard
     // ceiling we can't spend past (no margin on this account). Half size while in
     // profit-defense — prove the setup back out before betting full size again.
@@ -926,6 +940,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       url: '/dashboard',
     })
     events.push(`Heads up: about to enter ${sig.asset.symbol} (${sig.setupTag})`)
+    tagCounts.set(sig.setupTag, (tagCounts.get(sig.setupTag) ?? 0) + 1)
     slotsFree--
   }
 
