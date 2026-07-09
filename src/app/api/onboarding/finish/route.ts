@@ -12,6 +12,8 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { generateWelcomeLetter } from '@/lib/letter-generator'
+import { applyIntakeForNewUser } from '@/lib/user-modules'
+import type { IntakeAnswers } from '@/lib/life-intake'
 
 export const maxDuration = 60
 
@@ -22,6 +24,7 @@ interface FinishBody {
   biggest_goal?: string
   struggles_text?: string
   help_domains?: string[]
+  module_answers?: IntakeAnswers
   voice_prefs?: string[]
   boundaries?: string | null
 }
@@ -45,6 +48,12 @@ export async function POST(request: Request) {
   if (!nickname || !lifeStage || biggestGoal.length < 3) {
     return NextResponse.json({ error: 'Missing required fields (nickname, life stage, biggest goal)' }, { status: 400 })
   }
+
+  // This route is reachable any time a signed-in user POSTs to it, not just on the client's
+  // one intended visit — check the PRE-upsert state so a re-run (or a replayed request) never
+  // re-applies curated new-user module defaults over whatever the person has since set up.
+  const { data: existingProfile } = await supabase.from('profiles').select('onboarding_complete').eq('id', user.id).maybeSingle()
+  const isFirstCompletion = !existingProfile?.onboarding_complete
 
   // Compose the profile patch. Keep `struggles` as a single-element array
   // for back-compat with the old text[] column shape.
@@ -74,6 +83,14 @@ export async function POST(request: Request) {
       { error: profileErr?.message ?? 'profile save failed' },
       { status: 500 },
     )
+  }
+
+  // Curated defaults: only on genuine first completion. This writes an explicit user_modules
+  // row per registry module (premium force-disabled), which is what takes a new user off the
+  // fail-open "show everything" path — existing users never hit this branch.
+  if (isFirstCompletion) {
+    try { await applyIntakeForNewUser(supabase, user.id, body.module_answers ?? {}) }
+    catch (err) { console.warn('[onboarding/finish] module curation failed:', err instanceof Error ? err.message : err) }
   }
 
   // Generate the welcome letter from the freshly-saved profile. Failures

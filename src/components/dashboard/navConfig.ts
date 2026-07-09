@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react'
 import type { SidebarView } from '@/lib/types'
-import { alwaysOnModuleIds } from '@/lib/modules-registry'
+import { alwaysOnModuleIds, isPremiumModule } from '@/lib/modules-registry'
 import {
   Home,
   CheckSquare,
@@ -18,13 +18,14 @@ import {
   GraduationCap,
   Inbox,
   Settings,
+  MessageCircle,
 } from 'lucide-react'
 
 export interface NavItem {
   key: SidebarView
   icon: ComponentType<{ size?: number; color?: string }>
   label: string
-  badge?: 'dot-red' | 'dot-green' | 'new-pill'
+  badge?: 'dot-red' | 'dot-green' | 'new-pill' | 'premium-lock'
   /** Only visible to the project owner (e.g. admin surfaces). */
   ownerOnly?: boolean
 }
@@ -55,6 +56,7 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
       { key: 'academy', icon: GraduationCap, label: 'Academy', badge: 'new-pill' },
       { key: 'strategylab', icon: FlaskConical, label: 'Strategy Lab', badge: 'new-pill' },
       { key: 'signuprequests', icon: Inbox, label: 'Sign-up requests', badge: 'dot-green', ownerOnly: true },
+      { key: 'feedback', icon: MessageCircle, label: 'Feedback' },
       { key: 'settings', icon: Settings, label: 'Settings' },
     ],
   },
@@ -63,17 +65,29 @@ export const NAV_SECTIONS: { section: string; items: NavItem[] }[] = [
 const ALWAYS_VISIBLE = new Set<SidebarView>(alwaysOnModuleIds())
 
 /**
- * Filters the nav to a user's enabled modules. Fallback by design: if `enabled`
- * is null (still loading) or empty (never personalized), the full nav shows —
- * so no existing user's navigation can break. Always-on system modules and
- * owner-only surfaces are kept regardless.
+ * Filters the nav to a user's enabled modules, then applies premium-lock
+ * badging on top. Fallback by design: if `enabled` is null (still loading) or
+ * empty (never personalized), the full nav shows — so no existing user's
+ * navigation can break. Always-on system modules and owner-only surfaces are
+ * kept regardless.
+ *
+ * Premium gating runs even in the fallback branch — it's access control, not
+ * personalization, so it's orthogonal to "show everything if nothing's
+ * configured": a premium module without a grant is always badged, whether or
+ * not the user has personalized their nav.
  */
-export function visibleNavSections(enabled: Set<string> | null): typeof NAV_SECTIONS {
-  if (!enabled || enabled.size === 0) return NAV_SECTIONS
+export function visibleNavSections(enabled: Set<string> | null, grantedPremium?: Set<string> | null): typeof NAV_SECTIONS {
+  const applyPremiumBadge = (items: NavItem[]) => items.map((it) =>
+    isPremiumModule(it.key) && !grantedPremium?.has(it.key) ? { ...it, badge: 'premium-lock' as const } : it,
+  )
+
+  if (!enabled || enabled.size === 0) {
+    return NAV_SECTIONS.map(({ section, items }) => ({ section, items: applyPremiumBadge(items) }))
+  }
   return NAV_SECTIONS
     .map(({ section, items }) => ({
       section,
-      items: items.filter((it) => it.ownerOnly || ALWAYS_VISIBLE.has(it.key) || enabled.has(it.key)),
+      items: applyPremiumBadge(items.filter((it) => it.ownerOnly || ALWAYS_VISIBLE.has(it.key) || enabled.has(it.key))),
     }))
     .filter((s) => s.items.length > 0)
 }

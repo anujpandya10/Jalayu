@@ -1,33 +1,44 @@
 'use client'
 
 import { useEffect } from 'react'
-import { Search, LogOut } from 'lucide-react'
+import { Search, LogOut, Lock } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase'
 import { useStore } from '@/store/useStore'
 import { getDisplayName, getDayNumber } from '@/lib/utils'
 import { visibleNavSections } from '@/components/dashboard/navConfig'
 
 export default function Sidebar() {
-  const { profile, sidebarView, setSidebarView, setShowChatPanel, enabledModules, setEnabledModules } = useStore()
+  const {
+    profile, sidebarView, setSidebarView, setShowChatPanel,
+    enabledModules, setEnabledModules, grantedPremiumModules, setGrantedPremiumModules,
+  } = useStore()
   const name = getDisplayName(profile)
   const dayNumber = profile ? getDayNumber(profile.created_at) : 1
   const router = useRouter()
 
-  // Load the user's personalization once. Until it lands (and whenever a user
-  // has never personalized), enabledModules stays a "show everything" fallback,
-  // so the nav can never come up empty.
+  // Load the user's personalization + premium grants once. Until it lands (and
+  // whenever a user has never personalized), enabledModules stays a "show
+  // everything" fallback, so the nav can never come up empty.
   useEffect(() => {
     if (enabledModules !== null) return
     let cancelled = false
     fetch('/api/modules')
       .then((r) => r.json())
-      .then((d: { enabled?: string[] }) => { if (!cancelled) setEnabledModules(d.enabled ?? []) })
-      .catch(() => { if (!cancelled) setEnabledModules([]) })
+      .then((d: { enabled?: string[]; grantedPremium?: string[] }) => {
+        if (cancelled) return
+        setEnabledModules(d.enabled ?? [])
+        setGrantedPremiumModules(d.grantedPremium ?? [])
+      })
+      .catch(() => { if (!cancelled) { setEnabledModules([]); setGrantedPremiumModules([]) } })
     return () => { cancelled = true }
-  }, [enabledModules, setEnabledModules])
+  }, [enabledModules, setEnabledModules, setGrantedPremiumModules])
 
-  const navSections = visibleNavSections(enabledModules ? new Set(enabledModules) : null)
+  const navSections = visibleNavSections(
+    enabledModules ? new Set(enabledModules) : null,
+    grantedPremiumModules ? new Set(grantedPremiumModules) : null,
+  )
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -102,11 +113,18 @@ export default function Sidebar() {
             </div>
             {items.map(({ key, icon: Icon, label, badge }) => {
               const isActive = sidebarView === key
+              const isLocked = badge === 'premium-lock'
               return (
                 <button
                   key={key}
                   type="button"
-                  onClick={() => setSidebarView(key)}
+                  onClick={() => {
+                    if (isLocked) {
+                      toast(`${label} is a premium module — ask for access in the Feedback tab.`, { icon: '🔒' })
+                      return
+                    }
+                    setSidebarView(key)
+                  }}
                   className="sidebar-nav-item"
                   style={{
                     display: 'flex',
@@ -145,6 +163,23 @@ export default function Sidebar() {
                       }}
                     >
                       New
+                    </span>
+                  )}
+                  {badge === 'premium-lock' && (
+                    <span
+                      title="Premium — request access"
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 3,
+                        background: 'var(--morning)',
+                        color: 'var(--text-3)',
+                        fontSize: 9,
+                        padding: '1px 6px',
+                        borderRadius: 99,
+                        fontWeight: 500,
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Lock size={9} /> Premium
                     </span>
                   )}
                 </button>

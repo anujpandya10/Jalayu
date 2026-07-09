@@ -4,7 +4,7 @@
  * pattern. Reads/writes `user_modules` and `user_life_intake` (migration 037).
  */
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { MODULE_REGISTRY } from '@/lib/modules-registry'
+import { MODULE_REGISTRY, isPremiumModule } from '@/lib/modules-registry'
 import { assembleFromIntake, type IntakeAnswers } from '@/lib/life-intake'
 
 export interface UserModuleRow {
@@ -52,6 +52,28 @@ export async function applyIntake(supabase: SupabaseClient, userId: string, answ
   await supabase.from('user_modules').upsert(rows, { onConflict: 'user_id,module_id' })
 
   return enabled
+}
+
+/**
+ * Same as applyIntake, but for the moment a user first completes onboarding:
+ * premium modules (Trading, Academy, Vault, Health) are force-disabled
+ * regardless of what the intake mapping would have turned on — a new user
+ * starts on the free tier and requests premium access afterward (Settings).
+ * The chip they picked stays visibly selected (assembleFromIntake still ran),
+ * only the resulting module row is held back — matches the disclaimer shown
+ * in the onboarding UI, rather than silently hiding the option.
+ */
+export async function applyIntakeForNewUser(supabase: SupabaseClient, userId: string, answers: IntakeAnswers): Promise<string[]> {
+  const enabled = await applyIntake(supabase, userId, answers)
+  const premiumOn = enabled.filter((id) => isPremiumModule(id))
+  if (premiumOn.length === 0) return enabled
+
+  await supabase.from('user_modules')
+    .update({ enabled: false, updated_at: nowISO() })
+    .eq('user_id', userId)
+    .in('module_id', premiumOn)
+
+  return enabled.filter((id) => !isPremiumModule(id))
 }
 
 /** Toggle a single module on/off (the manual override on top of the intake). */

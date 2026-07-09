@@ -248,5 +248,7 @@ export type SidebarView =
   | 'strategylab'
   | 'signuprequests'
   | 'settings'
+  | 'intents'
+  | 'feedback'
 
 export type JourneyView = 'day1' | 'day2' | 'day7' | 'day30'

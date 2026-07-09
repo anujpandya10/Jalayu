@@ -25,6 +25,7 @@ import TradingView from '@/components/dashboard/views/TradingView'
 import AcademyTab from '@/components/dashboard/trading/academy/AcademyTab'
 import StrategyLabView from '@/components/dashboard/views/StrategyLabView'
 import SignupRequestsView from '@/components/dashboard/views/SignupRequestsView'
+import FeedbackView from '@/components/dashboard/views/FeedbackView'
 import SettingsView from '@/components/dashboard/views/SettingsView'
 import FloatingChatButton from '@/components/chat/FloatingChatButton'
 import type { Task, Mood, Note, Reflection, Reminder } from '@/lib/types'
@@ -421,6 +422,8 @@ export default function DashboardPage() {
         return <StrategyLabView />
       case 'signuprequests':
         return <SignupRequestsView />
+      case 'feedback':
+        return <FeedbackView />
       case 'settings':
         return <SettingsView />
       default:

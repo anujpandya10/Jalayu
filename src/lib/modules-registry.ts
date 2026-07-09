@@ -36,6 +36,9 @@ export interface ModuleManifest {
   icon: string
   /** System modules every user always has; never offered in the intake. */
   alwaysOn?: boolean
+  /** 'premium' modules are hidden/badged for users without an owner grant —
+   * see user-premium.ts. Defaults to 'free' when omitted. */
+  tier?: 'free' | 'premium'
 }
 
 export const LIFE_CATEGORIES: { id: LifeCategory; title: string; blurb: string }[] = [
@@ -48,7 +51,7 @@ export const LIFE_CATEGORIES: { id: LifeCategory; title: string; blurb: string }
 
 export const MODULE_REGISTRY: ModuleManifest[] = [
   // ── Body & Health ──
-  { id: 'health',     label: 'Health',       category: 'body',   kind: 'rich',      icon: 'stethoscope',  description: 'Medications, appointments, records, and coverage in one place.' },
+  { id: 'health',     label: 'Health',       category: 'body',   kind: 'rich',      icon: 'stethoscope',  description: 'Medications, appointments, records, and coverage in one place.', tier: 'premium' },
 
   // ── Mind & Feelings ──
   { id: 'wellness',   label: 'Wellness',     category: 'mind',   kind: 'primitive', icon: 'heart',        description: 'Track how you feel over time and see the rhythm, not the noise.' },
@@ -58,11 +61,11 @@ export const MODULE_REGISTRY: ModuleManifest[] = [
   { id: 'learning',   label: 'Learning',     category: 'mind',   kind: 'tool',      icon: 'graduation-cap', description: 'Pick up new skills with a guided, paced plan.' },
 
   // ── Work & Money ──
-  { id: 'trading',    label: 'Trading',      category: 'work',   kind: 'rich',      icon: 'line-chart',   description: 'A live signal engine and paper account to learn the markets.' },
-  { id: 'academy',    label: 'Academy',      category: 'work',   kind: 'rich',      icon: 'graduation-cap', description: 'A trading classroom with a practice desk and an auto-trader.' },
+  { id: 'trading',    label: 'Trading',      category: 'work',   kind: 'rich',      icon: 'line-chart',   description: 'A live signal engine and paper account to learn the markets.', tier: 'premium' },
+  { id: 'academy',    label: 'Academy',      category: 'work',   kind: 'rich',      icon: 'graduation-cap', description: 'A trading classroom with a practice desk and an auto-trader.', tier: 'premium' },
   { id: 'strategylab',label: 'Strategy Lab', category: 'work',   kind: 'rich',      icon: 'flask-conical', description: 'See which strategies actually work and tune the engine.' },
   { id: 'meetings',   label: 'Meetings',     category: 'work',   kind: 'tool',      icon: 'clipboard-list', description: 'Turn a transcript into a summary and real action items.' },
-  { id: 'vault',      label: 'Vault',        category: 'work',   kind: 'rich',      icon: 'lock',         description: 'A private, secure store for sensitive notes and accounts.' },
+  { id: 'vault',      label: 'Vault',        category: 'work',   kind: 'rich',      icon: 'lock',         description: 'A private, secure store for sensitive notes and accounts.', tier: 'premium' },
 
   // ── People & Love ──
   { id: 'people',     label: 'People',       category: 'people', kind: 'rich',      icon: 'users',        description: 'Keep the people who matter close — check-ins, dates, follow-ups.' },
@@ -71,11 +74,16 @@ export const MODULE_REGISTRY: ModuleManifest[] = [
   { id: 'calendar',   label: 'Calendar',     category: 'time',   kind: 'rich',      icon: 'calendar',     description: 'Your days at a glance, with events and what is coming up.' },
   { id: 'reminders',  label: 'Reminders',    category: 'time',   kind: 'primitive', icon: 'bell',         description: 'Simple nudges so nothing important slips.' },
   { id: 'notes',      label: 'Notes',        category: 'time',   kind: 'rich',      icon: 'file-text',    description: 'A real workspace for your thinking, with version history.' },
+  // alwaysOn (not a real toggle yet): already rendered unconditionally inside the
+  // dashboard/ShadowHome, no dedicated nav case exists for it today — a genuine
+  // independent toggle needs its own Tasks view first.
+  { id: 'intents',    label: 'Tasks',        category: 'time',   kind: 'primitive', icon: 'check-square', description: 'Fire off tasks and let Jalayu work them while you live your life.', alwaysOn: true },
 
   // ── System (always on, never offered in the intake) ──
   { id: 'dashboard',  label: 'Dashboard',    category: 'system', kind: 'system',    icon: 'home',         description: 'Your home base.', alwaysOn: true },
   { id: 'insights',   label: 'Intelligence', category: 'system', kind: 'system',    icon: 'brain',        description: 'The cross-module brain that ties your data into insight.', alwaysOn: true },
   { id: 'widgets',    label: 'Widgets',      category: 'system', kind: 'system',    icon: 'puzzle',       description: 'Shortcuts and embeds — the seed of the module library.', alwaysOn: true },
+  { id: 'feedback',   label: 'Feedback',     category: 'system', kind: 'system',    icon: 'message-circle', description: 'Send feedback or ask for support — and see the reply here.', alwaysOn: true },
   { id: 'settings',   label: 'Settings',     category: 'system', kind: 'system',    icon: 'settings',     description: 'Account and preferences.', alwaysOn: true },
 ]
 
@@ -88,4 +96,9 @@ export function getModule(id: string): ModuleManifest | undefined {
 /** System modules every user always gets, regardless of the intake. */
 export function alwaysOnModuleIds(): SidebarView[] {
   return MODULE_REGISTRY.filter((m) => m.alwaysOn).map((m) => m.id)
+}
+
+/** Premium modules require an owner grant (user-premium.ts) — see also isPremiumModule. */
+export function isPremiumModule(id: string): boolean {
+  return getModule(id)?.tier === 'premium'
 }

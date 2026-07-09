@@ -6,11 +6,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import toast, { Toaster } from 'react-hot-toast'
-import { Loader2, ChevronLeft, Plus, X } from 'lucide-react'
+import { Loader2, ChevronLeft, Plus, X, Sparkles } from 'lucide-react'
+import LifeIntakeQuestions from '@/components/dashboard/LifeIntakeQuestions'
+import { assembleFromIntake, type IntakeAnswers } from '@/lib/life-intake'
+import { getModule } from '@/lib/modules-registry'
 
-// 9 visible steps: 0 welcome, 1..7 questions, 8 welcome letter
-const TOTAL_STEPS = 9
-const PROGRESS_STEPS = 8 // welcome → boundaries; letter has no progress bar
+// 10 visible steps: 0 welcome, 1..8 questions (incl. module curation at 6), 9 welcome letter
+const TOTAL_STEPS = 10
+const PROGRESS_STEPS = 9 // welcome → boundaries; letter has no progress bar
 
 const LIFE_STAGE_CHIPS = [
   'student',
@@ -62,6 +65,7 @@ export default function OnboardingPage() {
   const [strugglesText, setStrugglesText] = useState('')
   const [helpDomains, setHelpDomains] = useState<string[]>([])
   const [helpAddInput, setHelpAddInput] = useState('')
+  const [moduleAnswers, setModuleAnswers] = useState<IntakeAnswers>({})
   const [voicePrefs, setVoicePrefs] = useState<string[]>([])
   const [boundaries, setBoundaries] = useState('')
   const [welcomeLetter, setWelcomeLetter] = useState<string | null>(null)
@@ -74,13 +78,25 @@ export default function OnboardingPage() {
     if (step === 3) return biggestGoal.trim().length >= 3
     if (step === 4) return strugglesText.trim().length >= 3
     if (step === 5) return helpDomains.length > 0
-    if (step === 6) return voicePrefs.length > 0
-    if (step === 7) return true // boundaries are optional
+    if (step === 6) return true // module curation is skippable, like the Settings intake
+    if (step === 7) return voicePrefs.length > 0
+    if (step === 8) return true // boundaries are optional
     return true
   }
 
   const toggleChip = (list: string[], setList: (v: string[]) => void, value: string) => {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value])
+  }
+
+  const toggleModuleAnswer = (questionId: string, optionId: string, multi: boolean) => {
+    setModuleAnswers((prev) => {
+      const current = prev[questionId] ?? []
+      if (multi) {
+        const next = current.includes(optionId) ? current.filter((x) => x !== optionId) : [...current, optionId]
+        return { ...prev, [questionId]: next }
+      }
+      return { ...prev, [questionId]: current.includes(optionId) ? [] : [optionId] }
+    })
   }
 
   const addHelpDomain = () => {
@@ -114,6 +130,7 @@ export default function OnboardingPage() {
           biggest_goal: biggestGoal.trim(),
           struggles_text: strugglesText.trim(),
           help_domains: helpDomains,
+          module_answers: moduleAnswers,
           voice_prefs: voicePrefs,
           boundaries: boundaries.trim() || null,
         }),
@@ -125,7 +142,7 @@ export default function OnboardingPage() {
         return
       }
       setWelcomeLetter(data.letter?.text_md || 'I heard you. I’m here.')
-      setStep(8)
+      setStep(9)
     } catch (err) {
       console.error(err)
       toast.error('Something went wrong saving your profile. Please try again.')
@@ -144,7 +161,7 @@ export default function OnboardingPage() {
       <Toaster position="top-center" containerStyle={{ top: 'max(20px, env(safe-area-inset-top))', zIndex: 9999 }} toastOptions={{ style: { borderRadius: '12px', fontSize: '14px' } }} />
 
       {/* Progress bar — only during the question steps */}
-      {step > 0 && step < 8 && (
+      {step > 0 && step < 9 && (
         <div className="fixed top-0 left-0 right-0 z-10 h-1" style={{ background: 'var(--border)' }}>
           <motion.div
             className="h-full"
@@ -156,7 +173,7 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      {step > 0 && step < 8 && (
+      {step > 0 && step < 9 && (
         <button
           onClick={prevStep}
           className="fixed top-4 left-4 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium"
@@ -368,8 +385,46 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* STEP 6 — Voice */}
+              {/* STEP 6 — Module curation (life-intake, reused from Settings) */}
               {step === 6 && (
+                <div>
+                  <AiBubble text="One more thing — which parts of Jalayu do you actually want? Pick anything that fits, or skip this and I'll start you with the basics." />
+                  <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
+                    Setting up your Jalayu
+                  </h2>
+                  <p className="text-sm mb-4" style={{ color: 'var(--text-2)' }}>
+                    No wrong answers — you can redo this anytime in Settings.
+                  </p>
+                  <LifeIntakeQuestions answers={moduleAnswers} onToggle={toggleModuleAnswer} />
+                  {(() => {
+                    const preview = assembleFromIntake(moduleAnswers)
+                      .map((id) => getModule(id))
+                      .filter((m) => m && m.kind !== 'system' && m.tier !== 'premium')
+                    return preview.length > 0 ? (
+                      <div style={{ marginBottom: 8 }}>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Sparkles size={13} color="var(--accent)" />
+                          <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text-2)' }}>Your Jalayu will include</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {preview.map((m) => (
+                            <span key={m!.id} style={{ fontSize: 11.5, fontWeight: 500, padding: '4px 9px', borderRadius: 99, background: 'var(--morning)', border: '1px solid var(--border)', color: 'var(--text)' }}>
+                              {m!.label}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null
+                  })()}
+                  <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 16px', lineHeight: 1.5 }}>
+                    Trading, Academy, Vault, and Health aren&apos;t included by default (even if you pick something above that touches them) — they&apos;re premium and need to be requested in Settings once you&apos;re in. AI-powered features run on your own connected key (also in Settings) — nothing is ever billed to a shared account.
+                  </p>
+                  <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
+                </div>
+              )}
+
+              {/* STEP 7 — Voice */}
+              {step === 7 && (
                 <div>
                   <AiBubble text="How do you want me to talk to you? This is the thing most apps get wrong — I'd rather get it right with you." />
                   <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
@@ -392,8 +447,8 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* STEP 7 — Boundaries */}
-              {step === 7 && (
+              {/* STEP 8 — Boundaries */}
+              {step === 8 && (
                 <div>
                   <AiBubble text="Anything you'd rather I never bring up? Topics to steer around? You can skip — but if there's something, name it now." />
                   <h2 className="text-xl font-bold mb-1 mt-4" style={{ color: 'var(--text)' }}>
@@ -433,7 +488,7 @@ export default function OnboardingPage() {
               )}
 
               {/* STEP 8 — Welcome letter */}
-              {step === 8 && welcomeLetter && (
+              {step === 9 && welcomeLetter && (
                 <div>
                   <div className="text-center mb-6">
                     <span
@@ -464,9 +519,12 @@ export default function OnboardingPage() {
                       </ReactMarkdown>
                     </div>
                   </div>
+                  <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '14px 2px 0', lineHeight: 1.5, textAlign: 'center' }}>
+                    One thing worth knowing: the Widgets tab has quick shortcuts to the rest of Jalayu, and anything I need Feedback for lives in its own tab too.
+                  </p>
                   <button
                     onClick={enterDashboard}
-                    className="w-full mt-6 py-4 rounded-2xl font-semibold text-base"
+                    className="w-full mt-4 py-4 rounded-2xl font-semibold text-base"
                     style={{ background: 'var(--accent)', color: 'var(--surface)' }}
                   >
                     I&apos;m here when you need me →
@@ -476,7 +534,7 @@ export default function OnboardingPage() {
             </motion.div>
           </AnimatePresence>
 
-          {step > 0 && step < 8 && (
+          {step > 0 && step < 9 && (
             <div className="flex justify-center gap-2 mt-8">
               {Array.from({ length: PROGRESS_STEPS - 1 }).map((_, i) => (
                 <div

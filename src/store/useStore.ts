@@ -59,6 +59,8 @@ interface JalayuStore {
   isLoading: boolean
   /** Enabled module ids from the user's personalization. null = not loaded, [] = never personalized (shell shows all). */
   enabledModules: string[] | null
+  /** Premium module ids the owner has granted this user. null = not loaded yet. */
+  grantedPremiumModules: string[] | null
 
   /**
    * What is the user currently looking at? Updated by views (e.g. NotesView)
@@ -114,6 +116,7 @@ interface JalayuStore {
   setLoading: (l: boolean) => void
   setChatContext: (ctx: Partial<ChatContextState>) => void
   setEnabledModules: (ids: string[] | null) => void
+  setGrantedPremiumModules: (ids: string[] | null) => void
 }
 
 export const useStore = create<JalayuStore>((set) => ({
@@ -134,6 +137,7 @@ export const useStore = create<JalayuStore>((set) => ({
   sidebarView: 'dashboard',
   showChatPanel: false,
   enabledModules: null,
+  grantedPremiumModules: null,
   chatContext: { view: 'dashboard' },
   chatMessages: [],
   journeyView: 'day1',
@@ -226,6 +230,7 @@ export const useStore = create<JalayuStore>((set) => ({
   })),
   setShowChatPanel: (showChatPanel) => set({ showChatPanel }),
   setEnabledModules: (enabledModules) => set({ enabledModules }),
+  setGrantedPremiumModules: (grantedPremiumModules) => set({ grantedPremiumModules }),
   setChatContext: (ctx) => set((s) => ({ chatContext: { ...s.chatContext, ...ctx } })),
   addChatMessage: (msg) =>
     set((s) => ({ chatMessages: [...s.chatMessages, msg] })),
