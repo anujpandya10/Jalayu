@@ -19,18 +19,18 @@ import {
 } from '@/lib/trading-config'
 import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
 import { sendPushToUser } from '@/lib/push'
+import { resolveRiskProfile, type RiskProfileBundle, type RiskTier } from '@/lib/risk-profiles'
 
 export const AUTO_SEED_CAPITAL = 1000
-// The "bigger winners" posture: concentrate the $1000 into a few meaningful
-// positions (~$300 a name, ~$900 at work) rather than sprinkling it thin. A
-// winner has to MOVE the account, not nudge it. The edge is asymmetry, not hit
-// rate — losers stay tiny (tight ~0.4% stop = ~$1 a loss even at this size),
-// each trade only trims a THIRD at the first target so two-thirds rides the
-// runner uncapped, and the few real movers dwarf the many small losses. Win
-// rate runs ~45-50% (more red trades) on purpose: wrong often, but right big.
-const MAX_SLOTS = 3
-const MAX_POSITION_PCT = 0.30
-const COOLDOWN_MINUTES = 8        // short leash — jump back into the same name once it resets up, don't sit out
+// The "bigger winners" posture (the BALANCED tier default — see risk-profiles.ts): concentrate
+// the $1000 into a few meaningful positions (~$300 a name, ~$900 at work) rather than
+// sprinkling it thin. A winner has to MOVE the account, not nudge it. The edge is asymmetry,
+// not hit rate — losers stay tiny (tight ~0.4% stop = ~$1 a loss even at this size), each
+// trade only trims a THIRD at the first target so two-thirds rides the runner uncapped, and
+// the few real movers dwarf the many small losses. Win rate runs ~45-50% (more red trades) on
+// purpose: wrong often, but right big. Cautious/Aggressive tiers scale this posture up or down
+// — every constant below that expresses risk (not account mechanics) now lives in cfg, resolved
+// once per tick from the user's own risk_profile.
 // Full-closure NYSE holidays — weekday-but-not-a-trading-day, which the Sat/Sun check alone
 // misses. Needs a one-line update every December for the following year (source: nyse.com
 // holiday calendar). Missing a date here just means one stray "good morning" log entry on
@@ -49,32 +49,11 @@ const MARKET_OPEN_MIN_ET = 9 * 60 + 30
 const ENTRY_WINDOW_END_MIN_ET = 15 * 60 + 50   // no new entries after 3:50pm ET
 const SESSION_FLATTEN_MIN_ET  = 15 * 60 + 55   // close anything still open at 3:55pm ET
 
-// Risk discipline (the part that actually keeps an account alive):
-const DAILY_LOSS_LIMIT_USD = 60   // down $60 on the day (−6%) → stop for the day. Higher tolerance is REQUIRED for asymmetry — you must survive the small-loss streak long enough for a runner to pay for it. Still a hard circuit-breaker, and ≤ the profit target so the day's R:R stays positive.
-const DAILY_PROFIT_LOCK_USD = 100 // up $100 (+10%) → a genuinely big day is won; tighten to top-conviction only so a greedy late trade can't give it back. Set high so a single runner doesn't choke the day off early.
-const MAX_TRADES_PER_DAY = 30     // active all-day rotation across the slots — the daily loss limit (not the trade count) is the real backstop if a day goes bad
-
-// Cross-day peak-equity ratchet: DAILY_LOSS_LIMIT_USD only protects a single session — it
-// says nothing about an account that was up $50 yesterday and is flat today. This defends
-// the all-time high-water mark instead of letting every day start the "how am I doing"
-// clock over from $1000: once a peak is set, giving back too much of ITS profit tightens
-// conviction (SOFT) or stops opening new risk (HARD) until equity claws back toward it.
-// Existing positions still exit on their own stops/trails either way — this only throttles
-// ADDING new risk while underwater relative to the peak, it can't force a position to hold.
-const PEAK_SOFT_GIVEBACK_PCT = 0.40  // give back >40% of peak profit → defense mode (tighter bar, half size)
-const PEAK_HARD_GIVEBACK_PCT = 0.75  // give back >75% of peak profit → no new entries until it recovers
-const PEAK_MIN_GIVEBACK_USD = 25     // floor so a trivial few-dollar peak doesn't hair-trigger defense mode
-const PEAK_DEFENSE_CONVICTION_BONUS = 3 // SOFT-defense: demand |score| this much higher, on top of the usual bar
-const PEAK_DEFENSE_SIZE_MULT = 0.5      // SOFT-defense: half the usual position size while proving it back out
-
-// Let winners run — the asymmetry that actually grows an account. The first
-// half comes off at T1 to bank a sure profit and pay for the trade; the BACK
-// half then rides a loose trailing stop with NO upper ceiling. Most trades
-// still finish as small wins, but when a real runner shows up (a name going
-// +10/20% intraday, the kind that was being clipped at +1.5% before), the back
-// half captures most of it — one of those pays for a long string of small
-// losses. This is the Livermore/PTJ lesson the curriculum teaches, in code.
-const RUNNER_TRAIL_PCT = 0.025    // the runner trails 2.5% below its peak — wide enough to survive a normal pullback and stay in a big move longer instead of being shaken out early
+// Risk discipline, peak-equity ratchet, runner trail, conviction bar, RVOL floors, relative-
+// strength edge, and the lunch-chop conviction bonus all now live in RiskProfileBundle
+// (src/lib/risk-profiles.ts) — resolved once per tick as `cfg` from the user's own
+// risk_profile, instead of being one hardcoded posture for every account. See that file for
+// the exact Cautious/Balanced/Aggressive numbers.
 
 // "Getting close" exit warning — fires once per position per side when price is within
 // this % of actually crossing the stop or first target. Unlike the buy side's fixed 60s
@@ -82,41 +61,21 @@ const RUNNER_TRAIL_PCT = 0.025    // the runner trails 2.5% below its peak — w
 // equivalent: a heads-up that it's about to happen, not a forecast of exactly when.
 const NEAR_EXIT_PCT = 0.001
 
-// Wide net, but only swing at decent pitches. The scan universe is huge now
-// (every screener mover, penny to mega-cap), so the weakest marginal setups off
-// random choppy small-caps drag the win rate down. Demand real conviction —
-// but not SO high it sits idle: with a few slots to keep working through the
-// session, the bar stays busy on the genuinely-set-up bars, not every wiggle.
-const AUTO_MIN_CONVICTION = 4     // |score| ≥ 4 of 10 to enter — pickier than the base floor, loose enough to keep the slots working
-
-// ── Pro-grade entry quality gates (the "edge" dial, not the "risk" dial) ──────────────
-// Relative volume: a setup with no volume behind it is a trap — the move has no
-// participation, so it stalls or reverses. Momentum/breakout setups demand real volume;
-// value-zone setups (buying a dip at support) legitimately fire on quieter tape, so they
-// keep a lower floor. volSpike = current vs average volume, already computed in indicators.
-const RVOL_FLOOR_MOMENTUM = 1.3   // momentum/breakout/pump-fade need ≥1.3× average volume
-const RVOL_FLOOR_VALUE = 0.6      // dip/bounce setups can fire quieter, just not dead
 const MOMENTUM_SETUPS = new Set(['MOMENTUM_LONG', 'MACD_CROSS_LONG', 'PUMP_SHORT', 'SUPERNOVA_SHORT', 'VWAP_SHORT'])
-
-// Relative strength: on a broad red day, a technical signal can still fire on a stock that's
-// simply falling LESS than the index — that's beta, not a real long. Momentum/breakout
-// setups have to be outperforming SPY by a real margin (shorts: underperforming it) to count
-// as an actual leader/laggard — this is the mechanical answer to "find the stock that's
-// genuinely green while the market's red," not just the least-red one.
-const RS_MIN_EDGE_PCT = 0.5   // percentage points the candidate must beat SPY by, in its own direction
 
 // Market regime: don't fight the tape. If SPY (the market itself) is clearly trending one
 // way, taking trades against it is swimming upstream — the curriculum's Livermore lesson
 // ("trade with the trend, not against it") applied to the whole market, not just one name.
+// This is market DETECTION, not a risk-posture choice, so it stays global across all tiers.
 const REGIME_TREND_PCT = 0.0015   // SPY EMA9 vs EMA21 gap (as % of price) that counts as a real trend, not noise
 
 // Time of day drives how choppy/clean the tape is. The open drive and the power hour are
 // where clean intraday moves happen; the lunch lull (≈11:30a–1:30p ET) is mostly noise —
-// every desk knows to size down or sit out midday. Encoded as an extra conviction bar.
+// every desk knows to size down or sit out midday. Encoded as an extra conviction bar
+// (cfg.lunchConvictionBonus — how MUCH extra is a risk-posture choice, tiered).
 const LUNCH_START_MIN_ET = 11 * 60 + 30
 const LUNCH_END_MIN_ET = 13 * 60 + 30
 const POWER_HOUR_MIN_ET = 15 * 60
-const LUNCH_CONVICTION_BONUS = 2  // during the chop, demand |score| ≥ 6, not 4 — only the cleanest setups
 
 interface MarketRegime { regime: 'BULL' | 'BEAR' | 'NEUTRAL'; spyChangePct: number; note: string }
 
@@ -138,8 +97,8 @@ async function getMarketRegime(): Promise<MarketRegime> {
 }
 
 /** Which part of the session we're in, and how much extra conviction it should demand. */
-function sessionPhase(minsEt: number): { phase: string; convictionBonus: number } {
-  if (minsEt >= LUNCH_START_MIN_ET && minsEt < LUNCH_END_MIN_ET) return { phase: 'midday chop', convictionBonus: LUNCH_CONVICTION_BONUS }
+function sessionPhase(minsEt: number, cfg: RiskProfileBundle): { phase: string; convictionBonus: number } {
+  if (minsEt >= LUNCH_START_MIN_ET && minsEt < LUNCH_END_MIN_ET) return { phase: 'midday chop', convictionBonus: cfg.lunchConvictionBonus }
   if (minsEt < MARKET_OPEN_MIN_ET + 90) return { phase: 'opening drive', convictionBonus: 0 }
   if (minsEt >= POWER_HOUR_MIN_ET) return { phase: 'power hour', convictionBonus: 0 }
   return { phase: 'midday', convictionBonus: 0 }
@@ -179,10 +138,11 @@ const SCORE_TOP_N = 20
 function topMovers(assets: AssetData[], n: number): AssetData[] {
   return [...assets].sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h)).slice(0, n)
 }
-// Self-learning: judge each setup by its own realized record and adapt.
+// Self-learning: judge each setup by its own realized record and adapt. The win-rate bars
+// (cfg.learnBadWinrate / cfg.learnGreatWinrate) are risk-posture — a Cautious tier benches an
+// underperforming setup sooner. Sample size before trusting a record isn't posture, so it stays
+// global.
 const LEARN_MIN_SAMPLES = 6
-const LEARN_BAD_WINRATE = 0.35    // <35% over enough tries → stop taking that setup
-const LEARN_GREAT_WINRATE = 0.60  // >60% → size it up
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 const r6 = (n: number) => Math.round(n * 1e6) / 1e6
@@ -418,6 +378,11 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
   if (!isUsMarketOpen()) return { ran: events.length > 0, reason: 'Market closed', events }
   if (!portfolio.enabled) return { ran: false, reason: 'Auto trader is off', events }
 
+  // Resolve the user's own risk posture once per tick — cheap single-row read, same pattern
+  // as the portfolio fetch above. Only needed once we know a live tick is actually happening.
+  const { data: profileRow } = await supabase.from('profiles').select('risk_profile').eq('id', userId).maybeSingle()
+  const cfg = resolveRiskProfile(profileRow?.risk_profile as RiskTier | undefined)
+
   // The 1-minute cron and the client's own 25s poll both call this for the same user with
   // zero coordination — cash is a plain read-then-write, so two overlapping ticks could
   // clobber each other's debit/credit. A short, self-expiring TTL lock turns "overlapping
@@ -434,7 +399,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
   }
 
   try {
-    return await runLiveTick(supabase, userId, portfolio, events)
+    return await runLiveTick(supabase, userId, portfolio, events, cfg)
   } catch (err) {
     const msg = err instanceof Error ? `${err.message}\n${err.stack ?? ''}`.slice(0, 1500) : String(err)
     await log(supabase, userId, { kind: 'ERROR', note: `Tick failed: ${msg}` })
@@ -445,7 +410,7 @@ export async function runAutoTraderTick(supabase: SupabaseClient, userId: string
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: any, events: string[]): Promise<RunResult> {
+async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: any, events: string[], cfg: RiskProfileBundle): Promise<RunResult> {
   let cash = Number(portfolio.cash)
 
   const { data: openRaw } = await supabase.from('academy_auto_positions').select('*').eq('user_id', userId)
@@ -516,7 +481,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     // so a genuine runner is captured instead of being sold at a fixed ceiling.
     const pnlPct = isLong ? (price - entry) / entry : (entry - price) / entry
     if (halfClosed && pnlPct >= TRAIL_TRIGGER_PCT) {
-      const trail = isLong ? price * (1 - RUNNER_TRAIL_PCT) : price * (1 + RUNNER_TRAIL_PCT)
+      const trail = isLong ? price * (1 - cfg.runnerTrailPct) : price * (1 + cfg.runnerTrailPct)
       const improved = stop == null || (isLong ? trail > stop : trail < stop)
       if (improved) {
         const old = stop
@@ -692,9 +657,9 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   const realizedToday = todayTrades.filter((t) => t.pnl != null).reduce((s, t) => s + Number(t.pnl), 0)
   const entriesToday = todayTrades.filter((t) => t.pnl == null).length
 
-  if (realizedToday <= -DAILY_LOSS_LIMIT_USD) return { ran: true, events } // hit the daily stop — capital protection, done for today
-  if (entriesToday >= MAX_TRADES_PER_DAY) return { ran: true, events }      // don't overtrade
-  const greenLockActive = realizedToday >= DAILY_PROFIT_LOCK_USD            // up enough → only top-conviction from here
+  if (realizedToday <= -cfg.dailyLossLimitUsd) return { ran: true, events } // hit the daily stop — capital protection, done for today
+  if (entriesToday >= cfg.maxTradesPerDay) return { ran: true, events }      // don't overtrade
+  const greenLockActive = realizedToday >= cfg.dailyProfitLockUsd           // up enough → only top-conviction from here
 
   // ── 3.5 Follow through on any "heads up" entries that are now due ──
   const { data: pendingRaw } = await supabase.from('academy_auto_pending_entries').select('*').eq('user_id', userId)
@@ -706,7 +671,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       const asset: AssetData = { symbol: p.symbol, name: quote.name ?? p.name ?? p.symbol, price: quote.price, change24h: quote.changePct, change7d: 0, assetType: 'stock' }
       const sig = await scoreAssetFull(asset)
       const direction = p.direction as 'LONG' | 'SHORT'
-      const stillQualifies = sig.indicators != null && sig.direction === direction && Math.abs(sig.score) >= AUTO_MIN_CONVICTION
+      const stillQualifies = sig.indicators != null && sig.direction === direction && Math.abs(sig.score) >= cfg.autoMinConviction
       if (!stillQualifies) {
         await supabase.from('academy_auto_pending_entries').delete().eq('id', p.id)
         await log(supabase, userId, { symbol: p.symbol, kind: 'INFO', note: `Passed on ${p.symbol} — the setup faded in the minute since I called it, so I didn't chase it.` })
@@ -717,7 +682,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
       const price = sig.asset.price
       const isLong = direction === 'LONG'
       const setupTag = (p.setup_tag as string) ?? sig.setupTag
-      const { tp, sl } = getTpSl(setupTag, direction, 'stock')
+      const { tp, sl } = getTpSl(setupTag, direction, 'stock', cfg)
       const stop = r2(isLong ? price * (1 - sl) : price * (1 + sl))
       const target2 = r2(isLong ? price * (1 + tp) : price * (1 - tp))
       const target1 = r2(isLong ? price + (target2 - price) / 2 : price - (price - target2) / 2)
@@ -783,7 +748,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   for (const p of stillPending) if (p.setup_tag) tagCounts.set(p.setup_tag, (tagCounts.get(p.setup_tag) ?? 0) + 1)
   // A pending "heads up" entry will become a real position soon — count it against the
   // slot budget now, not just once it executes, so the scan can't out-commit MAX_SLOTS.
-  let slotsFree = MAX_SLOTS - heldSymbols.size - stillPendingSymbols.size
+  let slotsFree = cfg.maxSlots - heldSymbols.size - stillPendingSymbols.size
   if (slotsFree <= 0) return { ran: true, events }
 
   // Size every new position off the WHOLE account's equity (cash + what's
@@ -801,8 +766,8 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
   if (peak > priorPeak) await supabase.from('academy_auto_portfolio').update({ peak_equity: r2(peak) }).eq('user_id', userId)
   const profitAtPeak = Math.max(0, peak - AUTO_SEED_CAPITAL)
   const givenBack = Math.max(0, peak - accountEquity)
-  const softBudget = Math.max(profitAtPeak * PEAK_SOFT_GIVEBACK_PCT, PEAK_MIN_GIVEBACK_USD)
-  const hardBudget = Math.max(profitAtPeak * PEAK_HARD_GIVEBACK_PCT, PEAK_MIN_GIVEBACK_USD * 1.5)
+  const softBudget = Math.max(profitAtPeak * cfg.peakSoftGivebackPct, cfg.peakMinGivebackUsd)
+  const hardBudget = Math.max(profitAtPeak * cfg.peakHardGivebackPct, cfg.peakMinGivebackUsd * 1.5)
   const peakState: 'NONE' | 'SOFT' | 'HARD' = profitAtPeak <= 0 ? 'NONE' : givenBack >= hardBudget ? 'HARD' : givenBack >= softBudget ? 'SOFT' : 'NONE'
   const priorPeakState = portfolio.profit_defense_state ?? 'NONE'
   if (peakState !== priorPeakState) {
@@ -823,7 +788,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
 
   const { data: recentRaw } = await supabase
     .from('academy_auto_trades').select('symbol, created_at').eq('user_id', userId)
-    .gte('created_at', new Date(Date.now() - COOLDOWN_MINUTES * 60_000).toISOString())
+    .gte('created_at', new Date(Date.now() - cfg.cooldownMinutes * 60_000).toISOString())
   const cooling = new Set((recentRaw ?? []).map((r) => r.symbol))
 
   const learned = await learnSetupStats(supabase, userId)
@@ -834,13 +799,13 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
 
   const scored = await Promise.allSettled(assets.map((a) => scoreAssetFull(a)))
   const signals = scored.filter((r) => r.status === 'fulfilled').map((r) => (r as PromiseFulfilledResult<Signal>).value)
-  const longs = filterLongEntries(signals)
-  const shorts = filterShortEntries(signals)
+  const longs = filterLongEntries(signals, cfg)
+  const shorts = filterShortEntries(signals, cfg)
 
   // Time-of-day: demand more conviction during the midday chop (the worst tape of the day),
   // normal during the opening drive and power hour where clean moves actually happen.
-  const phase = sessionPhase(minsNow)
-  const convictionBar = AUTO_MIN_CONVICTION + phase.convictionBonus + (peakState === 'SOFT' ? PEAK_DEFENSE_CONVICTION_BONUS : 0)
+  const phase = sessionPhase(minsNow, cfg)
+  const convictionBar = cfg.autoMinConviction + phase.convictionBonus + (peakState === 'SOFT' ? cfg.peakDefenseConvictionBonus : 0)
 
   const candidates = [...longs, ...shorts]
     .filter((s) => Math.abs(s.score) >= convictionBar)   // only the clearly-set-up bars, stricter in chop
@@ -848,7 +813,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     // demand real participation; value-zone dips can fire quieter.
     .filter((s) => {
       const v = s.indicators?.volSpike ?? 0
-      return v >= (MOMENTUM_SETUPS.has(s.setupTag) ? RVOL_FLOOR_MOMENTUM : RVOL_FLOOR_VALUE)
+      return v >= (MOMENTUM_SETUPS.has(s.setupTag) ? cfg.rvolFloorMomentum : cfg.rvolFloorValue)
     })
     // Don't fight the tape: skip longs when the market's clearly rolling over and shorts when
     // it's clearly ripping — unless the individual setup is exceptional (|score| ≥ 7), which
@@ -866,7 +831,7 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     .filter((s) => {
       if (!MOMENTUM_SETUPS.has(s.setupTag)) return true
       const edge = s.direction === 'LONG' ? s.asset.change24h - market.spyChangePct : market.spyChangePct - s.asset.change24h
-      return edge >= RS_MIN_EDGE_PCT
+      return edge >= cfg.rsMinEdgePct
     })
     // Read the actual bars: don't buy right as a bearish reversal candle prints (or short
     // right as a bullish one does) — the indicators say "go" but the last bar says "wait."
@@ -889,23 +854,23 @@ async function runLiveTick(supabase: SupabaseClient, userId: string, portfolio: 
     // Self-learning: a setup that's been losing for THIS account gets benched;
     // a proven one gets sized up. Green-lock day demands top conviction.
     const stat = learned.get(sig.setupTag)
-    if (stat && stat.total >= LEARN_MIN_SAMPLES && stat.winRate < LEARN_BAD_WINRATE) continue
+    if (stat && stat.total >= LEARN_MIN_SAMPLES && stat.winRate < cfg.learnBadWinrate) continue
     if (greenLockActive && Math.abs(sig.score) < 6) continue
     const learnMult = stat && stat.total >= LEARN_MIN_SAMPLES
-      ? (stat.winRate >= LEARN_GREAT_WINRATE ? 1.2 : stat.winRate < 0.45 ? 0.6 : 1.0)
+      ? (stat.winRate >= cfg.learnGreatWinrate ? 1.2 : stat.winRate < 0.45 ? 0.6 : 1.0)
       : 1.0
 
     // Same-setup concentration cap: a below-average setup (the record the learning stats
     // already size down) gets ONE slot at a time; even a proven one can't take every slot.
     // Slots are for independent ideas, not the same pattern stamped across three tickers.
-    const tagCap = learnMult < 1 ? 1 : MAX_SLOTS - 1
+    const tagCap = learnMult < 1 ? 1 : cfg.maxSlots - 1
     if ((tagCounts.get(sig.setupTag) ?? 0) >= tagCap) continue
 
     // Target size is a fixed slice of total equity; cash is just the hard
     // ceiling we can't spend past (no margin on this account). Half size while in
     // profit-defense — prove the setup back out before betting full size again.
-    const sizeMult = peakState === 'SOFT' ? PEAK_DEFENSE_SIZE_MULT : 1.0
-    const budget = Math.min(accountEquity * MAX_POSITION_PCT * learnMult * sizeMult, cash * 0.92)
+    const sizeMult = peakState === 'SOFT' ? cfg.peakDefenseSizeMult : 1.0
+    const budget = Math.min(accountEquity * cfg.maxPositionPct * learnMult * sizeMult, cash * 0.92)
     if (budget < MIN_TRADE_USD) continue
     const shares = r6(budget / price)
     const total = r2(price * shares)

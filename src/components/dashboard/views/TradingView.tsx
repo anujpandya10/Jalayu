@@ -15,6 +15,7 @@ import ApexTake from '@/components/dashboard/trading/ApexTake'
 import ApexHistory from '@/components/dashboard/trading/ApexHistory'
 import TradingQuietFeed from '@/components/dashboard/trading/TradingQuietFeed'
 import { useStore } from '@/store/useStore'
+import { useTradingGate } from '@/hooks/useTradingGate'
 import {
   deriveEngineInsight,
   daysSince,
@@ -310,6 +311,7 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
 export default function TradingView() {
   const profile = useStore((s) => s.profile)
   const name = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
+  const { guardFirstAction } = useTradingGate()
 
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null)
   const [trades, setTrades] = useState<Trade[]>([])
@@ -540,7 +542,11 @@ export default function TradingView() {
             <button
               type="button"
               disabled={settingsBusy}
-              onClick={() => patchSettings({ autoTradingEnabled: !autoTradingEnabled })}
+              onClick={() => {
+                // Only gate turning it ON — disabling should always be immediate.
+                if (!autoTradingEnabled) { guardFirstAction(() => { void patchSettings({ autoTradingEnabled: true }) }); return }
+                void patchSettings({ autoTradingEnabled: false })
+              }}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 6,
                 fontSize: 12, fontWeight: 600,

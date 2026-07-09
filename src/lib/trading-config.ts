@@ -27,6 +27,8 @@
  * ══════════════════════════════════════════════════════════════════════════
  */
 
+import type { RiskProfileBundle } from '@/lib/risk-profiles'
+
 /** Round-trip fee simulation (entry + exit, e.g. 0.1% × 2) */
 export const ROUND_TRIP_FEE_PCT = 0.002
 
@@ -95,24 +97,31 @@ export function computeEntryBudget(
   equity: number,
   slotsRemaining: number,
   setupTag: string,
+  cfg?: RiskProfileBundle,
 ): number {
   if (slotsRemaining <= 0 || cash < MIN_TRADE_USD || equity < MIN_TRADE_USD) return 0
 
-  const reserve = equity * CASH_RESERVE_PCT
+  const cashReservePct = cfg?.cashReservePct ?? CASH_RESERVE_PCT
+  const targetDeployPct = cfg?.targetDeployPct ?? TARGET_DEPLOY_PCT
+  const positionSizes = cfg?.positionSizes ?? POSITION_SIZES
+  const defaultPositionSizePct = cfg?.defaultPositionSizePct ?? DEFAULT_POSITION_SIZE_PCT
+  const maxSinglePositionPct = cfg?.maxSinglePositionPct ?? MAX_SINGLE_POSITION_PCT
+
+  const reserve = equity * cashReservePct
   const investableCash = Math.max(0, cash - reserve)
 
   const deployed = Math.max(0, equity - cash)
-  const deployTarget = equity * TARGET_DEPLOY_PCT
+  const deployTarget = equity * targetDeployPct
   const room = Math.max(0, deployTarget - deployed)
   const slotBase = room / slotsRemaining
 
-  const conviction = POSITION_SIZES[setupTag] ?? DEFAULT_POSITION_SIZE_PCT
+  const conviction = positionSizes[setupTag] ?? defaultPositionSizePct
   const mult = conviction / 1.0 // 1.0 = full slot for top setups
 
   const budget = Math.min(
     slotBase * mult,
     investableCash,
-    equity * MAX_SINGLE_POSITION_PCT,
+    equity * maxSinglePositionPct,
   )
 
   return parseFloat(Math.max(0, budget).toFixed(2))
@@ -211,7 +220,8 @@ export const SETUP_TP_SL: Record<string, { tp: number; sl: number }> = {
   MEAN_REVERT     : { tp: 0.010, sl: 0.004 },
 }
 
-export function getMinLongScore(setupTag: string): number {
+export function getMinLongScore(setupTag: string, cfg?: RiskProfileBundle): number {
+  if (cfg) return cfg.setupMinLongScore[setupTag] ?? cfg.minLongScore
   return SETUP_MIN_LONG_SCORE[setupTag] ?? MIN_LONG_SCORE
 }
 
@@ -219,9 +229,17 @@ export function getTpSl(
   setupTag: string,
   direction: 'LONG' | 'SHORT',
   assetType: 'crypto' | 'stock' | 'forex',
+  cfg?: RiskProfileBundle,
 ): { tp: number; sl: number } {
   if (assetType === 'forex') {
-    return { tp: FOREX_TP_PCT, sl: FOREX_SL_PCT }
+    return { tp: FOREX_TP_PCT, sl: FOREX_SL_PCT }  // forex stays global across tiers — see risk-profiles.ts
+  }
+  if (cfg) {
+    const custom = cfg.setupTpSl[setupTag]
+    if (custom) return custom
+    return direction === 'SHORT'
+      ? { tp: cfg.shortTpPct, sl: cfg.shortSlPct }
+      : { tp: cfg.longTpPct, sl: cfg.longSlPct }
   }
   const custom = SETUP_TP_SL[setupTag]
   if (custom) return custom

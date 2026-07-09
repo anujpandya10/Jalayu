@@ -1,8 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { ChevronDown, ChevronRight, BookOpen } from 'lucide-react'
-import { ACADEMY_CURRICULUM } from '@/lib/academy-curriculum'
+import { useState, useEffect, useCallback, useMemo } from 'react'
+import { ChevronDown, ChevronRight, BookOpen, Check, Loader2 } from 'lucide-react'
+import toast from 'react-hot-toast'
+import { ACADEMY_CURRICULUM, type CurriculumChapter, getChapter } from '@/lib/academy-curriculum'
+import { EXPERIENCE_LEVELS, LEVEL_CHAPTER_SEQUENCE, type ExperienceLevel } from '@/lib/academy-levels'
+import { useStore } from '@/store/useStore'
+import type { Profile } from '@/lib/types'
 import ChapterScenarioCheck from './ChapterScenarioCheck'
 import SetupStatsBadge from './SetupStatsBadge'
 
@@ -19,10 +23,42 @@ interface BotSetupStat {
   avgPnl: number
 }
 
+/** Level-ordered if the user has a stated level, else the curriculum's own authored order —
+ * defensive against a stale level-sequence id that no longer exists in ACADEMY_CURRICULUM. */
+function orderedChapters(level: ExperienceLevel | null | undefined): CurriculumChapter[] {
+  if (!level) return ACADEMY_CURRICULUM
+  const seq = LEVEL_CHAPTER_SEQUENCE[level]
+  const ordered = seq.map((id) => getChapter(id)).filter((c): c is CurriculumChapter => c != null)
+  return ordered.length > 0 ? ordered : ACADEMY_CURRICULUM
+}
+
 export default function CurriculumBrowser() {
-  const [openId, setOpenId] = useState<string | null>(ACADEMY_CURRICULUM[0]?.id ?? null)
+  const { profile, setProfile } = useStore()
+  const level = (profile?.academy_experience_level ?? null) as ExperienceLevel | null
+  const chapters = useMemo(() => orderedChapters(level), [level])
+
+  const [openId, setOpenId] = useState<string | null>(chapters[0]?.id ?? null)
   const [progress, setProgress] = useState<Map<string, ProgressRow>>(new Map())
   const [botStats, setBotStats] = useState<BotSetupStat[] | null>(null)
+  const [savingLevel, setSavingLevel] = useState(false)
+  const [skippedLevelPrompt, setSkippedLevelPrompt] = useState(false)
+  const [showLevelPicker, setShowLevelPicker] = useState(false)
+
+  const chooseLevel = async (id: ExperienceLevel) => {
+    setSavingLevel(true)
+    try {
+      const res = await fetch('/api/profile', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ academy_experience_level: id }),
+      })
+      const json = await res.json()
+      if (!res.ok) { toast.error(json.error ?? 'Could not save'); return }
+      if (json.profile) setProfile(json.profile as Profile)
+      toast.success('Curriculum reordered for you')
+    } finally {
+      setSavingLevel(false)
+    }
+  }
 
   const loadProgress = useCallback(async () => {
     try {
@@ -85,8 +121,47 @@ export default function CurriculumBrowser() {
         with that setup in mind.
       </p>
 
+      {level && !showLevelPicker ? (
+        <button type="button" onClick={() => setShowLevelPicker(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: 0, marginBottom: 14, fontSize: 11.5, color: 'var(--text-3)', cursor: 'pointer', fontFamily: 'inherit' }}>
+          Learning path: <strong style={{ color: 'var(--text-2)' }}>{EXPERIENCE_LEVELS.find((o) => o.id === level)?.label}</strong> · change
+        </button>
+      ) : (!level && skippedLevelPrompt) ? null : (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--morning)', padding: 14, marginBottom: 14 }}>
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)', margin: '0 0 10px' }}>
+            Where are you starting from? I&apos;ll order the chapters to match.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+            {EXPERIENCE_LEVELS.map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                disabled={savingLevel}
+                onClick={() => { void chooseLevel(opt.id); setShowLevelPicker(false) }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left',
+                  padding: '9px 11px', borderRadius: 9, cursor: savingLevel ? 'wait' : 'pointer', fontFamily: 'inherit',
+                  background: opt.id === level ? 'var(--surface)' : 'var(--surface)',
+                  border: `1px solid ${opt.id === level ? 'var(--accent)' : 'var(--border)'}`, width: '100%',
+                }}
+              >
+                {opt.id === level ? <Check size={13} color="var(--accent)" /> : savingLevel ? <Loader2 size={13} className="animate-spin" color="var(--text-3)" /> : <span style={{ width: 13 }} />}
+                <span>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{opt.label}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)' }}>{opt.blurb}</div>
+                </span>
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={() => { setSkippedLevelPrompt(true); setShowLevelPicker(false) }}
+            style={{ background: 'none', border: 'none', padding: 0, fontSize: 11, color: 'var(--text-3)', cursor: 'pointer', fontFamily: 'inherit', textDecoration: 'underline' }}>
+            {level ? 'Close' : 'Skip — use the default order'}
+          </button>
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {ACADEMY_CURRICULUM.map((chapter) => {
+        {chapters.map((chapter, i) => {
           const isOpen = openId === chapter.id
           const prog = progress.get(chapter.id)
           return (
@@ -106,7 +181,7 @@ export default function CurriculumBrowser() {
                 {isOpen ? <ChevronDown size={14} color="var(--text-3)" /> : <ChevronRight size={14} color="var(--text-3)" />}
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-                    {chapter.order}. {chapter.title}
+                    {i + 1}. {chapter.title}
                     {prog?.completed && (
                       <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, color: prog.scenario_correct ? '#16A34A' : 'var(--text-3)' }}>
                         ✓

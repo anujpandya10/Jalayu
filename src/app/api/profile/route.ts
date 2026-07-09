@@ -17,6 +17,8 @@ const PROFILE_FIELDS = [
   'peak_hours',
   'wake_time',
   'dashboard_layout',
+  'risk_profile',
+  'academy_experience_level',
 ] as const
 
 export async function GET() {

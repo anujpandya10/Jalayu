@@ -8,6 +8,7 @@ import { useStore } from '@/store/useStore'
 import ConnectAgent from '@/components/dashboard/views/ConnectAgent'
 import LifeIntake from '@/components/dashboard/LifeIntake'
 import PremiumGrantsAdmin from '@/components/dashboard/views/PremiumGrantsAdmin'
+import RiskProfileSettings from '@/components/dashboard/views/RiskProfileSettings'
 import { isOwnerEmail } from '@/lib/owner'
 
 const labelStyle: React.CSSProperties = {
@@ -183,6 +184,7 @@ export default function SettingsView() {
           )}
         </section>
         <ConnectAgent />
+        <RiskProfileSettings />
         {isOwnerEmail(authEmail) && <PremiumGrantsAdmin />}
         <section className="card">
           <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>

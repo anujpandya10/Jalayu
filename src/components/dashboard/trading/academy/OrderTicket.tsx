@@ -3,12 +3,14 @@
 import { useState } from 'react'
 import { Loader2, Search, TrendingUp, TrendingDown } from 'lucide-react'
 import { REAL_SETUP_TAGS } from '@/lib/academy-config'
+import { useTradingGate } from '@/hooks/useTradingGate'
 import SetupStatsBadge from './SetupStatsBadge'
 import type { ReviewTrade, ReviewVerdict } from './TradeReviewCard'
 
 interface QuoteResponse {
   quote: { symbol: string; name: string; price: number; change: number; changePct: number }
   signal: { score: number; direction: 'LONG' | 'SHORT'; action: string; setupTag: string; reason: string }
+  suggested?: { stopPrice: number; target1Price: number; target2Price: number }
 }
 
 interface BotSetupStat { setupTag: string; totalTrades: number; winRatePct: number; avgPnl: number }
@@ -21,6 +23,7 @@ interface Props {
 }
 
 export default function OrderTicket({ cash, openSymbols, botStats, onTraded }: Props) {
+  const { guardFirstAction } = useTradingGate()
   const [symbolInput, setSymbolInput] = useState('')
   const [quote, setQuote] = useState<QuoteResponse | null>(null)
   const [lookupError, setLookupError] = useState<string | null>(null)
@@ -52,6 +55,12 @@ export default function OrderTicket({ cash, openSymbols, botStats, onTraded }: P
       setQuote(json as QuoteResponse)
       setDeclaredSetupTag(json.signal?.setupTag && REAL_SETUP_TAGS.includes(json.signal.setupTag) ? json.signal.setupTag : '')
       setDirection(json.signal?.direction === 'SHORT' ? 'SHORT' : 'LONG')
+      // Suggested defaults from the user's own risk tier — a convenience pre-fill,
+      // never enforced (still a plain editable input, submit sends whatever's typed).
+      if (json.suggested) {
+        setDeclaredStopLoss(json.suggested.stopPrice.toFixed(2))
+        setDeclaredTakeProfit(json.suggested.target2Price.toFixed(2))
+      }
     } catch (err) {
       setLookupError(err instanceof Error ? err.message : 'Lookup failed')
     } finally {
@@ -59,7 +68,7 @@ export default function OrderTicket({ cash, openSymbols, botStats, onTraded }: P
     }
   }
 
-  const submit = async () => {
+  const doSubmit = async () => {
     if (!quote) return
     setSubmitting(true)
     setSubmitError(null)
@@ -260,6 +269,11 @@ export default function OrderTicket({ cash, openSymbols, botStats, onTraded }: P
                       style={{ flex: 1, padding: '8px 10px', fontSize: 12, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--morning)', color: 'var(--text)', fontFamily: 'inherit' }}
                     />
                   </div>
+                  {quote?.suggested && (
+                    <p style={{ fontSize: 10.5, color: 'var(--text-3)', margin: 0 }}>
+                      Pre-filled from your risk profile — change either number, it&apos;s your call.
+                    </p>
+                  )}
                   <textarea
                     placeholder="Why are you taking this trade?"
                     value={thesis}
@@ -277,7 +291,7 @@ export default function OrderTicket({ cash, openSymbols, botStats, onTraded }: P
 
               <button
                 type="button"
-                onClick={() => void submit()}
+                onClick={() => guardFirstAction(() => void doSubmit())}
                 disabled={submitting}
                 style={{
                   width: '100%', padding: '11px 0', borderRadius: 9, fontSize: 13, fontWeight: 700,

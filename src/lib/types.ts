@@ -33,6 +33,10 @@ export interface Profile {
   boundaries: string | null
   profile_notes: ProfileNote[] | null
   last_deepening_at: string | null
+  // Trading risk profile + legal gate (048) — see src/lib/risk-profiles.ts
+  risk_profile: 'cautious' | 'balanced' | 'aggressive' | null
+  trading_disclaimer_accepted_at: string | null
+  academy_experience_level: 'new' | 'basics' | 'experienced' | null
 }
 
 export interface ProfileNote {

@@ -18,6 +18,7 @@ import type { AssetData } from '@/lib/market-data'
 import { ACADEMY_SEED_CAPITAL, ACADEMY_MIN_TRADE_USD } from '@/lib/academy-config'
 import { computeAccount } from '@/lib/academy-account'
 import { scoreAssetFull, filterLongEntries, filterShortEntries } from '@/lib/trading-signals'
+import { resolveRiskProfile, type RiskProfileBundle, type RiskTier } from '@/lib/risk-profiles'
 
 export interface EntryGate {
   verdict: 'GOOD' | 'WEAK' | 'BAD'
@@ -36,13 +37,14 @@ export interface EntryGate {
 async function evaluateEntryGate(
   quote: { symbol: string; name: string; price: number; changePct: number },
   direction: 'LONG' | 'SHORT',
+  cfg: RiskProfileBundle,
 ): Promise<EntryGate> {
   const asset: AssetData = {
     symbol: quote.symbol, name: quote.name, price: quote.price,
     change24h: quote.changePct, change7d: 0, assetType: 'stock',
   }
   const sig = await scoreAssetFull(asset)
-  const passes = direction === 'LONG' ? filterLongEntries([sig]).length > 0 : filterShortEntries([sig]).length > 0
+  const passes = direction === 'LONG' ? filterLongEntries([sig], cfg).length > 0 : filterShortEntries([sig], cfg).length > 0
   const setupLabel = sig.setupTag.replace(/_/g, ' ').toLowerCase()
   if (passes) {
     return {
@@ -165,9 +167,15 @@ export async function placeOrder(
 
   const tif: Tif = p.tif === 'GTC' ? 'GTC' : 'DAY'
 
+  // Resolve the user's own risk posture once per order — same pattern as the bots. Brackets
+  // stay fully user-declared (this only affects the entry-gate verdict below): a Cautious
+  // user sees a stricter GOOD/WEAK/BAD bar at the same score than an Aggressive one.
+  const { data: profileRow } = await supabase.from('profiles').select('risk_profile').eq('id', userId).maybeSingle()
+  const cfg = resolveRiskProfile(profileRow?.risk_profile as RiskTier | undefined)
+
   // Same bar the bot holds its own entries to — block a no-edge order unless
   // explicitly overridden; let GOOD/WEAK through (WEAK still gets surfaced).
-  const gate = await evaluateEntryGate(quote, p.direction)
+  const gate = await evaluateEntryGate(quote, p.direction, cfg)
   if (gate.verdict === 'BAD' && !p.overrideGate) {
     return { ok: false, error: gate.reason, status: 422, gate, needsOverride: true }
   }

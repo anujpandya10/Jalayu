@@ -9,6 +9,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { getQuote } from '@/lib/yahoo-finance'
 import { scoreAssetFull } from '@/lib/trading-signals'
+import { getTpSl } from '@/lib/trading-config'
+import { resolveRiskProfile, type RiskTier } from '@/lib/risk-profiles'
 import type { AssetData } from '@/lib/market-data'
 
 export async function GET(req: NextRequest) {
@@ -34,6 +36,16 @@ export async function GET(req: NextRequest) {
       assetType: 'stock',
     }
     const signal = await scoreAssetFull(asset)
+
+    // Suggested-default stop/target from the user's own risk tier — a convenience pre-fill
+    // for the order ticket, never enforced (brackets stay fully user-declared at placeOrder).
+    const { data: profileRow } = await supabase.from('profiles').select('risk_profile').eq('id', user.id).maybeSingle()
+    const cfg = resolveRiskProfile(profileRow?.risk_profile as RiskTier | undefined)
+    const { tp, sl } = getTpSl(signal.setupTag, signal.direction, 'stock', cfg)
+    const suggested = signal.direction === 'LONG'
+      ? { stopPrice: quote.price * (1 - sl), target1Price: quote.price * (1 + tp / 2), target2Price: quote.price * (1 + tp) }
+      : { stopPrice: quote.price * (1 + sl), target1Price: quote.price * (1 - tp / 2), target2Price: quote.price * (1 - tp) }
+
     return NextResponse.json({
       quote,
       signal: {
@@ -44,6 +56,7 @@ export async function GET(req: NextRequest) {
         reason: signal.reason,
         indicators: signal.indicators,
       },
+      suggested,
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to fetch quote'

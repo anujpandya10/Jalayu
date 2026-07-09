@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { Bot, Play, Pause, RotateCcw, Loader2 } from 'lucide-react'
 import { isUsMarketOpenNow } from '@/lib/market-hours'
 import { useIsDesktop } from '@/lib/useIsDesktop'
+import { useTradingGate } from '@/hooks/useTradingGate'
 import TradingChart from './TradingChart'
 import ChartErrorBoundary from './ChartErrorBoundary'
 
@@ -231,6 +232,7 @@ const NEAR_EXIT_UI_PCT = 0.015
  */
 export default function AutoTrader() {
   const isDesktop = useIsDesktop()
+  const { guardFirstAction } = useTradingGate()
   const [portfolio, setPortfolio] = useState<AutoPortfolio | null>(null)
   const [log, setLog] = useState<LogRow[]>([])
   const [stats, setStats] = useState<AutoStats | null>(null)
@@ -352,7 +354,7 @@ export default function AutoTrader() {
     return () => clearInterval(id)
   }, [portfolio?.enabled, loadPortfolio, loadLog, loadHistory])
 
-  const toggle = async () => {
+  const doToggle = async () => {
     if (!portfolio) return
     setToggling(true)
     try {
@@ -361,6 +363,13 @@ export default function AutoTrader() {
       })
       if (res.ok) await loadPortfolio()
     } finally { setToggling(false) }
+  }
+
+  // Only gate turning it ON — disabling should always be immediate, never blocked on a dialog.
+  const toggle = async () => {
+    if (!portfolio) return
+    if (!portfolio.enabled) { guardFirstAction(() => void doToggle()); return }
+    await doToggle()
   }
 
   const reset = async () => {

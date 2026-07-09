@@ -67,6 +67,9 @@ interface JalayuStore {
   premiumLockPrompt: { key: SidebarView; label: string } | null
   /** Hand-off from the lock dialog to the Feedback view: pre-select a category + message. */
   feedbackPrefill: { category: string; message: string } | null
+  /** When set, the trading disclaimer + risk-tier gate is open; onAccept runs the action that
+   * was blocked (place order / enable auto-trading) once the user confirms. */
+  tradingGatePrompt: { onAccept: () => void } | null
 
   /**
    * What is the user currently looking at? Updated by views (e.g. NotesView)
@@ -126,6 +129,7 @@ interface JalayuStore {
   setPremiumTrial: (t: { active: boolean; daysLeft: number } | null) => void
   setPremiumLockPrompt: (p: { key: SidebarView; label: string } | null) => void
   setFeedbackPrefill: (p: { category: string; message: string } | null) => void
+  setTradingGatePrompt: (p: { onAccept: () => void } | null) => void
 }
 
 export const useStore = create<JalayuStore>((set) => ({
@@ -150,6 +154,7 @@ export const useStore = create<JalayuStore>((set) => ({
   premiumTrial: null,
   premiumLockPrompt: null,
   feedbackPrefill: null,
+  tradingGatePrompt: null,
   chatContext: { view: 'dashboard' },
   chatMessages: [],
   journeyView: 'day1',
@@ -246,6 +251,7 @@ export const useStore = create<JalayuStore>((set) => ({
   setPremiumTrial: (premiumTrial) => set({ premiumTrial }),
   setPremiumLockPrompt: (premiumLockPrompt) => set({ premiumLockPrompt }),
   setFeedbackPrefill: (feedbackPrefill) => set({ feedbackPrefill }),
+  setTradingGatePrompt: (tradingGatePrompt) => set({ tradingGatePrompt }),
   setChatContext: (ctx) => set((s) => ({ chatContext: { ...s.chatContext, ...ctx } })),
   addChatMessage: (msg) =>
     set((s) => ({ chatMessages: [...s.chatMessages, msg] })),

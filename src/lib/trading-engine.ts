@@ -37,17 +37,13 @@ const JIT_APEX_MAX_PER_TICK = 2  // cap cost / wallclock per tick
 import {
   ROUND_TRIP_FEE_PCT,
   computeEntryBudget,
-  DAILY_LOSS_LIMIT_PCT,
   CRYPTO_HOT_WINDOWS_UTC,
   STOCK_HOT_WINDOWS_UTC,
   MIN_TRADE_USD,
-  TIME_EXIT_SECS,
-  STALE_EXIT_SECS,
   STALE_MIN_LOSS_PCT,
   QUICK_WIN_MIN_PCT,
   QUICK_WIN_HOLD_SECS,
   TIME_EXIT_TP_FRACTION,
-  SYMBOL_COOLDOWN_SECS,
   SEED_CAPITAL,
   MIN_SHORT_SCORE,
   ENRICH_TOP_N,
@@ -65,6 +61,7 @@ import {
   TRAIL_TRIGGER_PCT,
   TRAIL_DISTANCE_PCT,
 } from '@/lib/trading-config'
+import { resolveRiskProfile, type RiskTier } from '@/lib/risk-profiles'
 
 export interface TickEvent {
   type: 'LONG_BUY' | 'LONG_SELL' | 'SHORT_OPEN' | 'SHORT_COVER' | 'SCAN' | 'HOLD'
@@ -239,6 +236,11 @@ export async function runTradingTick(
   let cash = Number(portfolio.cash)
   let tradesExecuted = 0
 
+  // Resolve the user's own risk posture once per tick — cheap single-row read, same pattern
+  // as the auto trader. Only reached once we know this tick is actually going to run.
+  const { data: profileRow } = await supabase.from('profiles').select('risk_profile').eq('id', userId).maybeSingle()
+  const cfg = resolveRiskProfile(profileRow?.risk_profile as RiskTier | undefined)
+
   const baseAssets = options.assets ?? await getAllAssets()
 
   // ── Merge user's personal watchlist (stocks only, during market/premarket) ──
@@ -339,7 +341,7 @@ export async function runTradingTick(
     const posAssetType = (pos.asset_type ?? assetTypeMap.get(pos.symbol) ?? 'crypto') as 'crypto' | 'stock' | 'forex'
     const openSig  = signalMap.get(pos.symbol)
     const setupTag = openSig?.setupTag ?? 'MEAN_REVERT'
-    const { tp: tpPct, sl: slPct } = getTpSl(setupTag, direction, posAssetType)
+    const { tp: tpPct, sl: slPct } = getTpSl(setupTag, direction, posAssetType, cfg)
 
     // ── Current P&L ────────────────────────────────────────────────────────
     const isLong   = direction === 'LONG'
@@ -359,10 +361,10 @@ export async function runTradingTick(
     // ── Break-even stop activation ─────────────────────────────────────────
     // Once we're up BREAKEVEN_TRIGGER_PCT, lock the stop at entry + BREAKEVEN_LOCK_PCT.
     // After this fires, the trade CANNOT end in a meaningful loss — worst case is fees.
-    if (pnlPct >= BREAKEVEN_TRIGGER_PCT) {
+    if (pnlPct >= cfg.breakevenTriggerPct) {
       const beSl = isLong
-        ? avgCost * (1 + BREAKEVEN_LOCK_PCT)   // just above entry
-        : avgCost * (1 - BREAKEVEN_LOCK_PCT)   // just below entry (short)
+        ? avgCost * (1 + cfg.breakevenLockPct)   // just above entry
+        : avgCost * (1 - cfg.breakevenLockPct)   // just below entry (short)
       if ((isLong && beSl > dynamicSl) || (!isLong && beSl < dynamicSl)) {
         dynamicSl = beSl
         // Persist to DB so subsequent ticks see the updated stop
@@ -376,10 +378,10 @@ export async function runTradingTick(
     // Once we're up TRAIL_TRIGGER_PCT, trail TRAIL_DISTANCE_PCT below price peak.
     // For longs: stop moves UP as price rises — never back down.
     // This lets big winners run while locking in most of the profit.
-    if (pnlPct >= TRAIL_TRIGGER_PCT) {
+    if (pnlPct >= cfg.trailTriggerPct) {
       const trailSl = isLong
-        ? current * (1 - TRAIL_DISTANCE_PCT)
-        : current * (1 + TRAIL_DISTANCE_PCT)
+        ? current * (1 - cfg.trailDistancePct)
+        : current * (1 + cfg.trailDistancePct)
       // Only move the stop if it improves (ratchet — never widen stop)
       if ((isLong && trailSl > dynamicSl) || (!isLong && trailSl < dynamicSl)) {
         dynamicSl = trailSl
@@ -426,13 +428,15 @@ export async function runTradingTick(
       shouldExit = true
       exitReason = `Quick win +${(pnlPct * 100).toFixed(2)}% secured after ${Math.round(heldSecs)}s`
     }
-    // 4. Time exit: held 12 min and at least 40% of the way to TP — take it
-    else if (!shouldExit && heldSecs >= TIME_EXIT_SECS && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
+    // 4. Time exit: held N min and at least 40% of the way to TP — take it (N = cfg.timeExitSecs,
+    //    tighter for Cautious, looser for Aggressive)
+    else if (!shouldExit && heldSecs >= cfg.timeExitSecs && pnlPct >= tpPct * TIME_EXIT_TP_FRACTION) {
       shouldExit = true
       exitReason = `Time exit — ${Math.round(heldSecs)}s, +${(pnlPct * 100).toFixed(2)}%`
     }
-    // 5. Stale cut: held 12 min and STILL losing — it's not working, exit now
-    else if (!shouldExit && heldSecs >= STALE_EXIT_SECS && pnlPct < -STALE_MIN_LOSS_PCT) {
+    // 5. Stale cut: held N min and STILL losing — it's not working, exit now (same N as time
+    //    exit — both express "how long to give a position before deciding," a risk posture)
+    else if (!shouldExit && heldSecs >= cfg.timeExitSecs && pnlPct < -STALE_MIN_LOSS_PCT) {
       shouldExit = true
       exitReason = `Stale cut — ${Math.round(heldSecs)}s with no recovery, ${(pnlPct * 100).toFixed(2)}%`
     }
@@ -494,7 +498,7 @@ export async function runTradingTick(
   // After a win: 60s cooldown (unchanged) — quick re-entry on new signals.
   const LOSS_COOLDOWN_SECS         = 1800   // 30 min after any losing exit
   const MULTI_LOSS_BLOCK_SECS      = 14400  // 4 hours if 2+ losses in 24h on same symbol
-  const WIN_COOLDOWN_SECS          = SYMBOL_COOLDOWN_SECS
+  const WIN_COOLDOWN_SECS          = cfg.symbolCooldownSecs
   const lossCutoff      = new Date(now - LOSS_COOLDOWN_SECS * 1000).toISOString()
   const winCutoff       = new Date(now - WIN_COOLDOWN_SECS * 1000).toISOString()
   const dayLookback     = new Date(now - 24 * 60 * 60 * 1000).toISOString()
@@ -561,7 +565,7 @@ export async function runTradingTick(
     .neq('pnl', null)
     .gte('created_at', todayStart.toISOString())
   const dailyRealizedPnl = (todayTrades ?? []).reduce((sum, t: { pnl: number | null }) => sum + (t.pnl ?? 0), 0)
-  const dailyLossLimit   = SEED_CAPITAL * DAILY_LOSS_LIMIT_PCT
+  const dailyLossLimit   = SEED_CAPITAL * cfg.dailyLossLimitPct
   const circuitBreakerOn = dailyRealizedPnl <= -dailyLossLimit
 
   if (circuitBreakerOn) {
@@ -635,7 +639,7 @@ export async function runTradingTick(
     ts: now,
   })
 
-  let longSignals = filterLongEntries(allSignals)
+  let longSignals = filterLongEntries(allSignals, cfg)
     .filter((s) => !heldSet.has(s.asset.symbol))
     .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
@@ -676,7 +680,7 @@ export async function runTradingTick(
     }
   }
 
-  let shortSignals = filterShortEntries(allSignals)
+  let shortSignals = filterShortEntries(allSignals, cfg)
     .filter((s) => !heldSet.has(s.asset.symbol))
     .filter((s) => !cooldownSet.has(s.asset.symbol))
     .filter(filterByPhase)
@@ -758,7 +762,7 @@ export async function runTradingTick(
     if (marketRegime !== 'BEAR') {
       shortSignals = []
     } else {
-      shortSignals = shortSignals.filter((s) => s.score <= MIN_SHORT_SCORE)
+      shortSignals = shortSignals.filter((s) => s.score <= cfg.minShortScore)
     }
     events.push({
       type: 'HOLD', symbol: '', name: '', price: 0, direction: 'LONG',
@@ -1010,7 +1014,7 @@ export async function runTradingTick(
     // (longs+shorts) under-sizes longs. Long-side capital is what matters here.
     const longSlotsRemaining = Math.max(1, limits.maxLongs - currentLongs)
     const equity = computePortfolioEquity(cash, positions, priceMap)
-    let budget = computeEntryBudget(cash, equity, longSlotsRemaining, sig.setupTag)
+    let budget = computeEntryBudget(cash, equity, longSlotsRemaining, sig.setupTag, cfg)
     // Apply drawdown-mode position scaling (0.33× in recovery, 0.5× in cautious)
     if (drawdownPositionMultiplier < 1.0) {
       budget = parseFloat((budget * drawdownPositionMultiplier).toFixed(2))
@@ -1095,7 +1099,7 @@ export async function runTradingTick(
       })
     }
 
-    const { sl: longSlPct, tp: longTpPct } = getTpSl(sig.setupTag, 'LONG', sig.asset.assetType as 'crypto' | 'stock' | 'forex')
+    const { sl: longSlPct, tp: longTpPct } = getTpSl(sig.setupTag, 'LONG', sig.asset.assetType as 'crypto' | 'stock' | 'forex', cfg)
     const posPayload = {
       user_id: userId,
       symbol: sig.asset.symbol, name: sig.asset.name,
@@ -1128,13 +1132,13 @@ export async function runTradingTick(
 
   for (const sig of shortsToOpen) {
     if (!sig.indicators && sig.asset.assetType === 'crypto') continue
-    if (sig.score > MIN_SHORT_SCORE) continue
+    if (sig.score > cfg.minShortScore) continue
 
     if (disabledTags.has(sig.setupTag)) continue
 
     const slotsRemaining = maxSlots - openSlots
     const equity = computePortfolioEquity(cash, positions, priceMap)
-    let budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag)
+    let budget = computeEntryBudget(cash, equity, slotsRemaining, sig.setupTag, cfg)
     const price = sig.asset.price
 
     // JIT: if no fresh cache and engine score is strongly negative, sync-fetch Apex

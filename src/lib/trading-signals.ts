@@ -26,6 +26,7 @@ import { computeIndicators } from './indicators'
 import { fetchCandles } from './candle-data'
 import { analyzePriceAction, type PriceActionRead } from './price-action'
 import { MIN_LONG_SCORE, MIN_SHORT_SCORE, getMinLongScore, ENRICH_TOP_N } from './trading-config'
+import type { RiskProfileBundle } from './risk-profiles'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -453,10 +454,11 @@ export function isStrongAltMomentum(s: Signal): boolean {
   )
 }
 
-/** Long entry candidates from enriched signals only (not Stage-1-only rankLongs). */
-export function filterLongEntries(signals: Signal[]): Signal[] {
+/** Long entry candidates from enriched signals only (not Stage-1-only rankLongs).
+ * cfg omitted = today's global bar (used by any caller not yet risk-profile-aware). */
+export function filterLongEntries(signals: Signal[], cfg?: RiskProfileBundle): Signal[] {
   return signals
-    .filter((s) => s.score >= getMinLongScore(s.setupTag))
+    .filter((s) => s.score >= getMinLongScore(s.setupTag, cfg))
     .filter((s) => s.setupTag !== 'UNTAGGED')
     // Volume spike required for momentum/breakout setups — NOT for value-zone entries.
     // VWAP_LONG and MEAN_REVERT enter at fair value; volume spike irrelevant.
@@ -470,10 +472,11 @@ export function filterLongEntries(signals: Signal[]): Signal[] {
     .sort((a, b) => b.score - a.score)
 }
 
-/** Short entry candidates from enriched signals only. */
-export function filterShortEntries(signals: Signal[]): Signal[] {
+/** Short entry candidates from enriched signals only.
+ * cfg omitted = today's global bar (used by any caller not yet risk-profile-aware). */
+export function filterShortEntries(signals: Signal[], cfg?: RiskProfileBundle): Signal[] {
   return signals
-    .filter((s) => s.score <= MIN_SHORT_SCORE)
+    .filter((s) => s.score <= (cfg?.minShortScore ?? MIN_SHORT_SCORE))
     .filter((s) => s.setupTag !== 'UNTAGGED')                  // no named setup = no trade
     .filter((s) => !s.indicators || s.indicators.volSpike > 0.3)
     .filter((s) => !(s.indicators && s.indicators.rsi < 28))
