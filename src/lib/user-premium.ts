@@ -41,3 +41,42 @@ export async function grantPremiumModule(admin: SupabaseClient, userId: string, 
 export async function revokePremiumModule(admin: SupabaseClient, userId: string, moduleId: string): Promise<void> {
   await admin.from('user_premium_grants').delete().eq('user_id', userId).eq('module_id', moduleId)
 }
+
+const DAY_MS = 86_400_000
+
+export interface PremiumAccess {
+  /** Premium ids shown with NO badge — permanently unlocked (owner or explicit grant). */
+  unlockedPremiumIds: string[]
+  isOwner: boolean
+  trialActive: boolean
+  trialEndsAt: string | null
+  trialDaysLeft: number
+}
+
+/**
+ * The single source of truth for "what premium can this user touch right now."
+ * Pure + deterministic so it can be reasoned about and reused everywhere
+ * (the /api/modules response, and any server check). Precedence:
+ *   owner            → everything, unlocked, no trial concept.
+ *   explicit grant   → that module, unlocked (survives trial expiry).
+ *   active trial     → all premium usable, but shown as "trial" not "unlocked".
+ *   otherwise        → locked.
+ */
+export function resolvePremiumAccess(params: {
+  isOwner: boolean
+  explicitGrants: string[]
+  trialEndsAt: string | null
+  allPremiumIds: string[]
+  now?: Date
+}): PremiumAccess {
+  const now = params.now ?? new Date()
+  const endMs = params.trialEndsAt ? new Date(params.trialEndsAt).getTime() : null
+  const trialActive = !params.isOwner && endMs != null && endMs > now.getTime()
+  const trialDaysLeft = !params.isOwner && endMs != null ? Math.max(0, Math.ceil((endMs - now.getTime()) / DAY_MS)) : 0
+
+  const unlockedPremiumIds = params.isOwner
+    ? [...params.allPremiumIds]
+    : params.explicitGrants.filter((id) => params.allPremiumIds.includes(id))
+
+  return { unlockedPremiumIds, isOwner: params.isOwner, trialActive, trialEndsAt: params.trialEndsAt, trialDaysLeft }
+}

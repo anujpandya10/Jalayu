@@ -3,7 +3,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { Menu, X, LogOut, Lock } from 'lucide-react'
 import { useRouter } from 'next/navigation'
-import toast from 'react-hot-toast'
 import { createClient } from '@/lib/supabase'
 import { useStore } from '@/store/useStore'
 import { visibleNavSections } from '@/components/dashboard/navConfig'
@@ -14,6 +13,7 @@ export default function TopBar() {
   const {
     sidebarView, setSidebarView,
     enabledModules, setEnabledModules, grantedPremiumModules, setGrantedPremiumModules,
+    premiumTrial, setPremiumTrial, setPremiumLockPrompt,
   } = useStore()
   const [menuOpen, setMenuOpen] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
@@ -23,6 +23,7 @@ export default function TopBar() {
   const navSections = visibleNavSections(
     enabledModules ? new Set(enabledModules) : null,
     grantedPremiumModules ? new Set(grantedPremiumModules) : null,
+    premiumTrial?.active ?? false,
   )
 
   useEffect(() => {
@@ -31,21 +32,22 @@ export default function TopBar() {
   }, [])
 
   // This is the app's actual nav (no persistent desktop sidebar is mounted) — load the
-  // user's module personalization + premium grants once, same "show everything until
+  // user's module personalization + premium grants + trial once, same "show everything until
   // loaded" fallback as everywhere else this is read.
   useEffect(() => {
     if (enabledModules !== null) return
     let cancelled = false
     fetch('/api/modules')
       .then((r) => r.json())
-      .then((d: { enabled?: string[]; grantedPremium?: string[] }) => {
+      .then((d: { enabled?: string[]; grantedPremium?: string[]; trial?: { active: boolean; daysLeft: number } }) => {
         if (cancelled) return
         setEnabledModules(d.enabled ?? [])
         setGrantedPremiumModules(d.grantedPremium ?? [])
+        setPremiumTrial(d.trial ?? { active: false, daysLeft: 0 })
       })
-      .catch(() => { if (!cancelled) { setEnabledModules([]); setGrantedPremiumModules([]) } })
+      .catch(() => { if (!cancelled) { setEnabledModules([]); setGrantedPremiumModules([]); setPremiumTrial({ active: false, daysLeft: 0 }) } })
     return () => { cancelled = true }
-  }, [enabledModules, setEnabledModules, setGrantedPremiumModules])
+  }, [enabledModules, setEnabledModules, setGrantedPremiumModules, setPremiumTrial])
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -171,7 +173,8 @@ export default function TopBar() {
                         type="button"
                         onClick={() => {
                           if (isLocked) {
-                            toast(`${label} is a premium module — ask for access in the Feedback tab.`, { icon: '🔒' })
+                            setPremiumLockPrompt({ key, label })
+                            setMenuOpen(false)
                             return
                           }
                           setSidebarView(key)
@@ -229,6 +232,22 @@ export default function TopBar() {
                             }}
                           >
                             <Lock size={9} /> Premium
+                          </span>
+                        )}
+                        {badge === 'trial' && (
+                          <span
+                            title={premiumTrial ? `Free trial — ${premiumTrial.daysLeft} day${premiumTrial.daysLeft === 1 ? '' : 's'} left` : 'Free trial'}
+                            style={{
+                              background: 'rgba(217,119,6,0.12)',
+                              color: '#B45309',
+                              fontSize: 9,
+                              padding: '1px 6px',
+                              borderRadius: 99,
+                              fontWeight: 600,
+                              flexShrink: 0,
+                            }}
+                          >
+                            Trial{premiumTrial && premiumTrial.daysLeft > 0 ? ` · ${premiumTrial.daysLeft}d` : ''}
                           </span>
                         )}
                       </button>

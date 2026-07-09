@@ -91,6 +91,13 @@ export async function POST(request: Request) {
   if (isFirstCompletion) {
     try { await applyIntakeForNewUser(supabase, user.id, body.module_answers ?? {}) }
     catch (err) { console.warn('[onboarding/finish] module curation failed:', err instanceof Error ? err.message : err) }
+
+    // Start the 7-day premium trial from this moment. Separate update (not part of the patch
+    // above) so a missing column — migration 047 not yet applied — degrades to "no trial"
+    // instead of failing the whole onboarding upsert.
+    const trialEnds = new Date(Date.now() + 7 * 24 * 3600_000).toISOString()
+    const { error: trialErr } = await supabase.from('profiles').update({ premium_trial_ends_at: trialEnds }).eq('id', user.id)
+    if (trialErr) console.warn('[onboarding/finish] trial start failed (migration 047 applied?):', trialErr.message)
   }
 
   // Generate the welcome letter from the freshly-saved profile. Failures

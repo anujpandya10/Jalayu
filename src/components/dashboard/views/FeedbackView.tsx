@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { MessageCircle, Loader2, Send, ShieldCheck, ChevronDown, ChevronRight } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { isOwnerEmail } from '@/lib/owner'
+import { useStore } from '@/store/useStore'
 
 interface FeedbackRow {
   id: string
@@ -51,6 +52,7 @@ export default function FeedbackView() {
 
 // ── The regular user's own submit form + reply thread ──────────────────────
 function UserThread() {
+  const { feedbackPrefill, setFeedbackPrefill } = useStore()
   const [rows, setRows] = useState<FeedbackRow[]>([])
   const [loading, setLoading] = useState(true)
   const [category, setCategory] = useState<FeedbackRow['category']>('general')
@@ -64,6 +66,16 @@ function UserThread() {
     } finally { setLoading(false) }
   }, [])
   useEffect(() => { void load() }, [load])
+
+  // Hand-off from the premium-lock dialog: pre-select the category + message, then clear the
+  // hand-off so it doesn't re-apply on the next visit or clobber the user's own edits.
+  useEffect(() => {
+    if (!feedbackPrefill) return
+    const cats = ['general', 'bug', 'feature', 'support'] as const
+    if (cats.includes(feedbackPrefill.category as typeof cats[number])) setCategory(feedbackPrefill.category as FeedbackRow['category'])
+    if (feedbackPrefill.message) setMessage(feedbackPrefill.message)
+    setFeedbackPrefill(null)
+  }, [feedbackPrefill, setFeedbackPrefill])
 
   const submit = async () => {
     if (!message.trim()) { toast.error('Say a bit more first'); return }

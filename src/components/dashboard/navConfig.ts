@@ -25,7 +25,7 @@ export interface NavItem {
   key: SidebarView
   icon: ComponentType<{ size?: number; color?: string }>
   label: string
-  badge?: 'dot-red' | 'dot-green' | 'new-pill' | 'premium-lock'
+  badge?: 'dot-red' | 'dot-green' | 'new-pill' | 'premium-lock' | 'trial'
   /** Only visible to the project owner (e.g. admin surfaces). */
   ownerOnly?: boolean
 }
@@ -75,11 +75,21 @@ const ALWAYS_VISIBLE = new Set<SidebarView>(alwaysOnModuleIds())
  * personalization, so it's orthogonal to "show everything if nothing's
  * configured": a premium module without a grant is always badged, whether or
  * not the user has personalized their nav.
+ *
+ * A premium item is: unchanged if permanently unlocked (owner or explicit
+ * grant, i.e. in `grantedPremium`); 'trial' if usable only via an active trial;
+ * 'premium-lock' otherwise. Only 'premium-lock' items are non-navigable.
  */
-export function visibleNavSections(enabled: Set<string> | null, grantedPremium?: Set<string> | null): typeof NAV_SECTIONS {
-  const applyPremiumBadge = (items: NavItem[]) => items.map((it) =>
-    isPremiumModule(it.key) && !grantedPremium?.has(it.key) ? { ...it, badge: 'premium-lock' as const } : it,
-  )
+export function visibleNavSections(
+  enabled: Set<string> | null,
+  grantedPremium?: Set<string> | null,
+  trialActive?: boolean,
+): typeof NAV_SECTIONS {
+  const applyPremiumBadge = (items: NavItem[]) => items.map((it) => {
+    if (!isPremiumModule(it.key) || grantedPremium?.has(it.key)) return it
+    const badge: NavItem['badge'] = trialActive ? 'trial' : 'premium-lock'
+    return { ...it, badge }
+  })
 
   if (!enabled || enabled.size === 0) {
     return NAV_SECTIONS.map(({ section, items }) => ({ section, items: applyPremiumBadge(items) }))

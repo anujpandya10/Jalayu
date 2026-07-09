@@ -59,8 +59,14 @@ interface JalayuStore {
   isLoading: boolean
   /** Enabled module ids from the user's personalization. null = not loaded, [] = never personalized (shell shows all). */
   enabledModules: string[] | null
-  /** Premium module ids the owner has granted this user. null = not loaded yet. */
+  /** Premium module ids permanently unlocked for this user (owner or explicit grant). null = not loaded yet. */
   grantedPremiumModules: string[] | null
+  /** 7-day premium trial state. null = not loaded yet. */
+  premiumTrial: { active: boolean; daysLeft: number } | null
+  /** When set, the premium-lock dialog is open for this module (a locked nav item was clicked). */
+  premiumLockPrompt: { key: SidebarView; label: string } | null
+  /** Hand-off from the lock dialog to the Feedback view: pre-select a category + message. */
+  feedbackPrefill: { category: string; message: string } | null
 
   /**
    * What is the user currently looking at? Updated by views (e.g. NotesView)
@@ -117,6 +123,9 @@ interface JalayuStore {
   setChatContext: (ctx: Partial<ChatContextState>) => void
   setEnabledModules: (ids: string[] | null) => void
   setGrantedPremiumModules: (ids: string[] | null) => void
+  setPremiumTrial: (t: { active: boolean; daysLeft: number } | null) => void
+  setPremiumLockPrompt: (p: { key: SidebarView; label: string } | null) => void
+  setFeedbackPrefill: (p: { category: string; message: string } | null) => void
 }
 
 export const useStore = create<JalayuStore>((set) => ({
@@ -138,6 +147,9 @@ export const useStore = create<JalayuStore>((set) => ({
   showChatPanel: false,
   enabledModules: null,
   grantedPremiumModules: null,
+  premiumTrial: null,
+  premiumLockPrompt: null,
+  feedbackPrefill: null,
   chatContext: { view: 'dashboard' },
   chatMessages: [],
   journeyView: 'day1',
@@ -231,6 +243,9 @@ export const useStore = create<JalayuStore>((set) => ({
   setShowChatPanel: (showChatPanel) => set({ showChatPanel }),
   setEnabledModules: (enabledModules) => set({ enabledModules }),
   setGrantedPremiumModules: (grantedPremiumModules) => set({ grantedPremiumModules }),
+  setPremiumTrial: (premiumTrial) => set({ premiumTrial }),
+  setPremiumLockPrompt: (premiumLockPrompt) => set({ premiumLockPrompt }),
+  setFeedbackPrefill: (feedbackPrefill) => set({ feedbackPrefill }),
   setChatContext: (ctx) => set((s) => ({ chatContext: { ...s.chatContext, ...ctx } })),
   addChatMessage: (msg) =>
     set((s) => ({ chatMessages: [...s.chatMessages, msg] })),

@@ -7,6 +7,7 @@ import { useStore } from '@/store/useStore'
 import { todayString, getDayNumber, getJourneyView } from '@/lib/utils'
 import TopBar from '@/components/dashboard/TopBar'
 import ChatPanel from '@/components/chat/ChatPanel'
+import PremiumLockDialog from '@/components/dashboard/PremiumLockDialog'
 import PwaRegister from '@/components/PwaRegister'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
 // HealthProfile used for array cast below
@@ -176,6 +177,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </div>
 
       <ChatPanel />
+      <PremiumLockDialog />
     </div>
   )
 }

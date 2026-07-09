@@ -417,7 +417,7 @@ export default function OnboardingPage() {
                     ) : null
                   })()}
                   <p style={{ fontSize: 11, color: 'var(--text-3)', margin: '4px 0 16px', lineHeight: 1.5 }}>
-                    Trading, Academy, Vault, and Health aren&apos;t included by default (even if you pick something above that touches them) — they&apos;re premium and need to be requested in Settings once you&apos;re in. AI-powered features run on your own connected key (also in Settings) — nothing is ever billed to a shared account.
+                    Trading, Academy, Vault, and Health are premium — you get a free 7-day trial to explore them all, then they move to a paid plan (coming soon). AI-powered features run on your own connected key (Settings → Connect your agent) — nothing is ever billed to a shared account.
                   </p>
                   <StepFooter canAdvance={canAdvance()} onNext={nextStep} />
                 </div>
@@ -520,7 +520,7 @@ export default function OnboardingPage() {
                     </div>
                   </div>
                   <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '14px 2px 0', lineHeight: 1.5, textAlign: 'center' }}>
-                    One thing worth knowing: the Widgets tab has quick shortcuts to the rest of Jalayu, and anything I need Feedback for lives in its own tab too.
+                    Two things worth knowing: press <strong>⌘K</strong> (Ctrl+K) anytime to ask me from anywhere, and the Widgets tab has quick shortcuts to the rest of Jalayu. Feedback lives in its own tab whenever you need it.
                   </p>
                   <button
                     onClick={enterDashboard}
