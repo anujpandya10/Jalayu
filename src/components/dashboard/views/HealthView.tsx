@@ -533,7 +533,7 @@ function OverviewTab({
                   </button>
                   <button
                     onClick={() => handleDeleteInsurance(prof.id)}
-                    style={{ fontSize: 12, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
+                    style={{ fontSize: 12, color: 'var(--error-text)', background: 'none', border: '1px solid var(--error-border)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer' }}
                   >
                     Delete
                   </button>
@@ -849,7 +849,7 @@ function MedicationsTab({
                 </button>
                 <button
                   onClick={() => handleDelete(med.id)}
-                  style={{ fontSize: 11, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                  style={{ fontSize: 11, color: 'var(--error-text)', background: 'none', border: '1px solid var(--error-border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
                 >
                   Delete
                 </button>
@@ -1030,7 +1030,7 @@ function AppointmentsTab({
               </button>
               <button
                 onClick={() => handleDelete(appt.id)}
-                style={{ fontSize: 11, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                style={{ fontSize: 11, color: 'var(--error-text)', background: 'none', border: '1px solid var(--error-border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
               >
                 Delete
               </button>
@@ -1266,7 +1266,7 @@ function RecordsTab({
                       </button>
                       <button
                         onClick={() => handleDelete(rec.id)}
-                        style={{ fontSize: 11, color: '#DC2626', background: 'none', border: '1px solid #FCA5A5', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
+                        style={{ fontSize: 11, color: 'var(--error-text)', background: 'none', border: '1px solid var(--error-border)', borderRadius: 6, padding: '4px 8px', cursor: 'pointer' }}
                       >
                         Delete
                       </button>

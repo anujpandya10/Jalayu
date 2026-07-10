@@ -586,7 +586,7 @@ export function renderHomeWidget(
                       padding: '5px 8px', background: 'var(--surface-2)', borderRadius: 8, gap: 8 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                         <span style={{ fontSize: 9, fontWeight: 700, color: pos.direction === 'SHORT' ? '#EF4444' : AMBER,
-                          background: pos.direction === 'SHORT' ? '#FEF2F2' : `${AMBER}15`,
+                          background: pos.direction === 'SHORT' ? 'rgba(239,68,68,0.15)' : `${AMBER}15`,
                           padding: '1px 5px', borderRadius: 4 }}>
                           {pos.direction === 'SHORT' ? 'S' : 'L'}
                         </span>
