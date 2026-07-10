@@ -205,9 +205,7 @@ export default function StrategyLabView() {
           <RefreshCw size={14} />
         </button>
       </div>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 16px' }}>
-        Win rates update automatically as trades close. Disable a setup to stop the engine from taking those signals.
-      </p>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>Live win rates — disable any setup to pause it</p>
 
       {/* Bot Constellation — each strategy is a planet orbiting your portfolio */}
       <div style={{ marginBottom: 16 }}>
@@ -405,13 +403,6 @@ export default function StrategyLabView() {
           )
         })}
       </div>
-
-      {/* Footer note */}
-      {filtered.length > 0 && (
-        <p style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 16, lineHeight: 1.6 }}>
-          Win rates and P&L update as trades close. Disable any setup that consistently loses — the engine will skip it on the next scan. Changes take effect immediately.
-        </p>
-      )}
 
       {/* Spin keyframe */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

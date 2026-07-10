@@ -152,9 +152,7 @@ export default function HealthCoverageChat({ showToast }: { showToast: (m: strin
             <Globe size={15} color="var(--accent)" />
             Coverage advisor
           </p>
-          <p style={{ fontSize: 11, color: 'var(--text-2)', margin: 0, lineHeight: 1.45 }}>
-            Uses your saved insurance & meds, plus live web research for doctors, hospitals, and formulary questions.
-          </p>
+          <p style={{ fontSize: 11, color: 'var(--text-3)', margin: 0 }}>Your plan + live web research</p>
         </div>
         {messages.length > 0 && (
           <button
@@ -187,9 +185,6 @@ export default function HealthCoverageChat({ showToast }: { showToast: (m: strin
           <p style={{ fontSize: 13, color: 'var(--text-3)', textAlign: 'center', marginTop: 24 }}>Loading history…</p>
         ) : messages.length === 0 ? (
           <div style={{ marginTop: 8 }}>
-            <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 14px', lineHeight: 1.5 }}>
-              Ask anything about your plan — copays, deductibles, finding in-network care, or whether a medication is covered.
-            </p>
             <p style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 8px' }}>
               Try asking
             </p>
