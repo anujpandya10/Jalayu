@@ -108,9 +108,7 @@ export default function MemoryView({
       }}
     >
       <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Memory</h2>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 16px' }}>
-        Reflect on your day, capture thoughts, and browse your life archive.
-      </p>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 16px' }}>Your life archive</p>
 
       {/* Today's reflection */}
       <section style={{ marginBottom: 20 }}>

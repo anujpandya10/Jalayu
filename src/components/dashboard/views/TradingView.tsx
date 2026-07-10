@@ -640,7 +640,7 @@ export default function TradingView() {
           background: 'rgba(254,243,199,0.6)', border: '1px solid #fde68a',
           fontSize: 13, color: 'var(--text-2)', lineHeight: 1.5,
         }}>
-          Auto-trading is <strong>off</strong> — the server cron will skip your account until you turn it on or tap <strong>Start engine</strong>.
+          Auto-trading is <strong>off</strong> — tap <strong>Start engine</strong> to resume.
         </div>
       )}
 
@@ -732,8 +732,7 @@ export default function TradingView() {
             background: 'var(--morning)', border: '1px solid var(--border)',
             fontSize: 12, color: 'var(--text-2)', lineHeight: 1.55,
           }}>
-            <strong style={{ color: 'var(--text)' }}>Crypto runs 24/7</strong> — but this bot does not trade every move.
-            It waits for named setups (momentum, oversold bounce, VWAP dip) inside volatility windows and skips trades when BTC regime or drawdown rules say no.
+            <strong style={{ color: 'var(--text)' }}>Crypto runs 24/7</strong> — the bot only trades named setups inside volatility windows, not every move.
           </div>
         </>
       )}
