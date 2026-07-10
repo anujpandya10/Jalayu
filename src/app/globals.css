@@ -1,29 +1,33 @@
 @import "tailwindcss";
 
 :root {
-  /* ── Warm Paper Palette ── */
-  --bg: #F5F3EE;           /* warm cream — the "paper" */
-  --surface: #FFFFFF;
-  --surface-2: #FAFAF8;    /* slightly warm white for cards / inputs */
-  --morning: #F0EDE7;      /* tinted warm block bg */
+  /* ── Deep Water · Light Palette ──
+     Cool, surfaced tones that read as the same brand as the marketing site
+     (deep water + bioluminescent teal) while staying light for all-day
+     reading and writing. Every value here is a token: the whole app retones
+     from this one block. A dark counterpart ships in a following pass. */
+  --bg: #EDF3F2;           /* cool water off-white — the "surface of the water" */
+  --surface: #FFFFFF;      /* clean card white */
+  --surface-2: #F5FAF8;    /* cool white for cards / inputs */
+  --morning: #E3EEEB;      /* soft teal-tinted block bg */
 
-  --text: #1C1917;         /* warm near-black */
-  --text-2: #78716C;       /* warm stone for secondary */
-  --text-3: #A8A29E;       /* tertiary, timestamps etc. */
+  --text: #10201F;         /* deep-water ink — cool near-black */
+  --text-2: #5B6F73;       /* cool slate for secondary */
+  --text-3: #94A4A6;       /* cool tertiary, timestamps etc. */
 
-  --border: #E7E5DF;       /* warm tan border */
-  --border-2: #D6D3CC;     /* stronger border when needed */
+  --border: #DCE7E4;       /* cool hairline border */
+  --border-2: #C6D5D1;     /* stronger cool border when needed */
 
-  --accent: #0A7B6A;       /* deep teal — brand colour, CTAs, focus */
+  --accent: #0A8F7A;       /* bioluminescent teal — brand colour, CTAs, focus */
   --accent-fg: #FFFFFF;
 
   /* ── Legacy aliases (keep so existing components don't break) ── */
-  --background: #F5F3EE;
+  --background: #EDF3F2;
   --card: #FFFFFF;
-  --text-primary: #1C1917;
-  --text-secondary: #78716C;
-  --text-tertiary: #A8A29E;
-  --border-secondary: #D6D3CC;
+  --text-primary: #10201F;
+  --text-secondary: #5B6F73;
+  --text-tertiary: #94A4A6;
+  --border-secondary: #C6D5D1;
 
   /* ── Semantic colours ── */
   --success-bg: rgba(22,163,74,0.08);
