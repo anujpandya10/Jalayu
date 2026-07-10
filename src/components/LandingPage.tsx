@@ -279,7 +279,7 @@ export default function LandingPage() {
         {/* Eyebrow */}
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(0,201,167,0.08)', border: '1px solid rgba(0,201,167,0.22)', borderRadius: 99, padding: '5px 14px', marginBottom: 24, animation: 'surfaceRise 0.8s ease both 0.1s' }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00C9A7', animation: 'pulseGlow 2.5s infinite' }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: '#00C9A7', letterSpacing: '0.07em', textTransform: 'uppercase' }}>Born from water</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#00C9A7', letterSpacing: '0.07em', textTransform: 'uppercase' }}>Birth From Water</span>
         </div>
 
         {/* Headline */}
@@ -431,7 +431,7 @@ export default function LandingPage() {
       <section style={{ position: 'relative', zIndex: 1, padding: '100px 24px', textAlign: 'center', borderTop: '1px solid rgba(0,201,167,0.07)' }}>
         <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: 600, height: 400, borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(0,201,167,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
         <div style={{ marginBottom: 28, animation: 'depthFloat 6s ease-in-out infinite' }}>
-          <JalayuLogo size={56} light />
+          <JalayuLogo size={56} light tagline />
         </div>
         <h2 style={{ fontSize: 'clamp(30px, 5vw, 56px)', fontWeight: 800, color: '#fff', letterSpacing: '-0.03em', lineHeight: 1.12, margin: '0 0 16px' }}>
           Your mornings are<br />
@@ -450,7 +450,7 @@ export default function LandingPage() {
       <footer className="land-footer" style={{ position: 'relative', zIndex: 1, padding: '32px 24px 36px', borderTop: '1px solid rgba(0,201,167,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
         <JalayuLogo size={22} light />
         <p className="land-footer-tagline">
-          Jalayu — जलायु — life in motion.
+          Birth From Water
         </p>
         <div style={{ display: 'flex', gap: 24 }}>
           <Link href="/login" className="land-footer-link">Sign in</Link>

@@ -67,7 +67,7 @@ export default function RequestAccessPage() {
 
       <div style={{ width: '100%', maxWidth: 460, position: 'relative', zIndex: 1, animation: 'auth-card-in 0.5s ease both' }}>
         <div style={{ textAlign: 'center', marginBottom: 28 }}>
-          <div style={{ display: 'inline-block', marginBottom: 16 }}><JalayuLogo size={48} light /></div>
+          <div style={{ display: 'inline-block', marginBottom: 16 }}><JalayuLogo size={48} light tagline /></div>
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', margin: 0, letterSpacing: '0.04em' }}>invite-only · request access</p>
         </div>
 

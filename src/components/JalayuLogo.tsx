@@ -19,13 +19,16 @@ interface Props {
   size?: number
   /** Use on dark backgrounds — makes "Jala" white instead of near-black */
   light?: boolean
+  /** "Birth From Water" beneath the wordmark — only for large, standalone brand moments
+   *  (login/signup/hero), never the small inline nav/sidebar mark. */
+  tagline?: boolean
 }
 
 const TEAL       = '#00C9A7'
 const TEAL_DARK  = '#009B83'
 const TEAL_LIGHT = '#67E8F9'
 
-export default function JalayuLogo({ markOnly = false, size = 28, light = false }: Props) {
+export default function JalayuLogo({ markOnly = false, size = 28, light = false, tagline = false }: Props) {
   const s = size / 28
 
   return (
@@ -41,6 +44,14 @@ export default function JalayuLogo({ markOnly = false, size = 28, light = false 
         }
       `}</style>
 
+      <div
+        style={{
+          display: 'inline-flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: tagline ? Math.round(7 * s) : 0,
+        }}
+      >
       <div
         style={{
           display: 'inline-flex',
@@ -181,6 +192,23 @@ export default function JalayuLogo({ markOnly = false, size = 28, light = false 
             </span>
           </span>
         )}
+      </div>
+
+      {tagline && (
+        <span
+          style={{
+            fontSize: Math.max(9, Math.round(9.5 * s)),
+            fontWeight: 600,
+            letterSpacing: '0.18em',
+            textTransform: 'uppercase',
+            whiteSpace: 'nowrap',
+            color: light ? 'rgba(255,255,255,0.45)' : 'rgba(28,25,23,0.42)',
+            fontFamily: 'var(--font-inter), Inter, system-ui, sans-serif',
+          }}
+        >
+          Birth From Water
+        </span>
+      )}
       </div>
     </>
   )
