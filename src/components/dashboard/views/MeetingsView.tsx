@@ -76,9 +76,7 @@ export default function MeetingsView() {
         <ClipboardList size={20} color="var(--accent)" />
         Meetings
       </h2>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 14px' }}>
-        Paste a transcript (or export from Zoom / Meet). Jalayu extracts a summary and action items — nothing is recorded until you run extract.
-      </p>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 14px' }}>Paste a transcript — nothing saved until you extract</p>
 
       <textarea
         value={transcript}

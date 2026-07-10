@@ -90,9 +90,7 @@ export default function RemindersView({
           <Bell size={20} color="var(--accent)" />
           Reminders
         </h2>
-        <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '6px 0 0' }}>
-          Daily nudges at the time you pick. Push notifications pair with the PWA when you enable them.
-        </p>
+        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '6px 0 0' }}>Nudges at the time you pick</p>
       </div>
 
       <div className="card" style={{ marginBottom: 14, padding: 12 }}>
