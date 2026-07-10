@@ -21,7 +21,7 @@ export type HomeWidgetId =
   | 'vault'
 
 export interface DashboardLayout {
-  version: 2 | 3
+  version: 2 | 3 | 4
   columns: Record<DashboardColumn, HomeWidgetId[]>
   mobile: HomeWidgetId[]
   hidden: HomeWidgetId[]
@@ -73,31 +73,43 @@ const DEFAULT_SIZES: Partial<Record<HomeWidgetId, WidgetSize>> = {
 }
 
 /**
- * V3 layout — focused "Daily + trading" default.
- * Only essentials show on home. Everything else accessible via sidebar.
- * Existing users keep their v2 layout until they hit "Reset to focused layout"
- * in the Widgets manager.
+ * V4 layout — focused "daily essentials" default: notes, journaling, tasks &
+ * reminders, mood. Trading/Vault/Health are premium (see modules-registry.ts)
+ * so a new user doesn't have access to them yet — defaulting home to widgets
+ * they can't use would be a dead end. They're still one tap away in the
+ * Widgets manager (or auto-restored) once granted.
+ * Existing users keep whatever layout they've already saved — changing this
+ * default only affects a brand-new profile with no saved dashboard_layout.
  */
 const DEFAULT_LAYOUT: DashboardLayout = {
-  version: 3,
+  version: 4,
   columns: {
     left: ['identity', 'morning_note', 'ask_jalayu'],
-    center: ['schedule', 'mood', 'trading'],
-    right: ['notes', 'vault'],
+    center: ['notes', 'schedule', 'reflection'],
+    right: ['mood', 'memory'],
   },
   mobile: [
     'identity',
     'morning_note',
     'ask_jalayu',
-    'schedule',
-    'mood',
-    'trading',
     'notes',
-    'vault',
+    'schedule',
+    'reflection',
+    'mood',
+    'memory',
   ],
   // Everything below is available via the Widgets manager — just not shown by default.
-  hidden: ['quote', 'reflection', 'health', 'north_star', 'progress', 'explore', 'strategy_lab', 'memory'],
+  hidden: ['quote', 'health', 'trading', 'vault', 'north_star', 'progress', 'explore', 'strategy_lab'],
   sizes: { ...DEFAULT_SIZES },
+}
+
+/** Home widgets that mirror a premium module (see modules-registry.ts) — a user without
+ * access shouldn't see them as addable, and one that HAD access (trial lapsed, grant
+ * revoked) shouldn't keep seeing a widget for a screen they can no longer open. */
+export const PREMIUM_WIDGET_MODULE: Partial<Record<HomeWidgetId, string>> = {
+  trading: 'trading',
+  vault: 'vault',
+  health: 'health',
 }
 
 const ALL_WIDGETS = new Set(Object.keys(WIDGET_LABELS) as HomeWidgetId[])

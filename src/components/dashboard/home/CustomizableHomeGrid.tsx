@@ -31,6 +31,7 @@ import {
   setWidgetSize,
   widgetSpanClass,
   WIDGET_LABELS,
+  PREMIUM_WIDGET_MODULE,
   type WidgetSize,
 } from '@/lib/dashboard-layout'
 import HomeWidgetShell from './HomeWidgetShell'
@@ -150,6 +151,21 @@ export default function CustomizableHomeGrid({
   renderWidget: (id: HomeWidgetId, column: ContainerId, size: WidgetSize) => React.ReactNode | null
 }) {
   const setProfile = useStore((s) => s.setProfile)
+  const grantedPremiumModules = useStore((s) => s.grantedPremiumModules)
+  const premiumTrial = useStore((s) => s.premiumTrial)
+  // Unlocked = permanently granted (owner or explicit grant) OR an active trial — same
+  // precedence as the nav's premium-lock badge (see resolvePremiumAccess/user-premium.ts).
+  // Same "fail open until loaded" convention as enabledModules elsewhere: grantedPremiumModules
+  // is null only until the /api/modules fetch (in TopBar) resolves — showing everything until
+  // then avoids a flash of a widget disappearing and reappearing on every page load.
+  const hasPremiumAccess = useCallback((widgetId: HomeWidgetId) => {
+    const moduleId = PREMIUM_WIDGET_MODULE[widgetId]
+    if (!moduleId) return true // not a premium-gated widget
+    if (grantedPremiumModules === null) return true // still loading
+    if (grantedPremiumModules.includes(moduleId)) return true
+    return !!premiumTrial?.active
+  }, [grantedPremiumModules, premiumTrial])
+
   const [layout, setLayout] = useState<DashboardLayout>(() =>
     parseDashboardLayout(profile?.dashboard_layout ?? null),
   )
@@ -186,10 +202,10 @@ export default function CustomizableHomeGrid({
     [layout],
   )
 
-  const leftItems = useMemo(() => visibleWidgets(layout, 'left'), [layout])
-  const centerItems = useMemo(() => visibleWidgets(layout, 'center'), [layout])
-  const rightItems = useMemo(() => visibleWidgets(layout, 'right'), [layout])
-  const mobileItems = useMemo(() => visibleMobileWidgets(layout), [layout])
+  const leftItems = useMemo(() => visibleWidgets(layout, 'left').filter(hasPremiumAccess), [layout, hasPremiumAccess])
+  const centerItems = useMemo(() => visibleWidgets(layout, 'center').filter(hasPremiumAccess), [layout, hasPremiumAccess])
+  const rightItems = useMemo(() => visibleWidgets(layout, 'right').filter(hasPremiumAccess), [layout, hasPremiumAccess])
+  const mobileItems = useMemo(() => visibleMobileWidgets(layout).filter(hasPremiumAccess), [layout, hasPremiumAccess])
 
   const allActiveIds = useMemo(
     () => [...leftItems, ...centerItems, ...rightItems, ...mobileItems],
@@ -298,12 +314,14 @@ export default function CustomizableHomeGrid({
   }
 
   const handleReset = () => {
-    if (!confirm('Reset to the focused layout?\n\nThis hides:\n• Quote, Reflection, Health, North star, Progress, Explore, Strategy Lab, Memory\n\nKeeps on home:\n• Identity, Morning note, Ask Jalayu, Schedule, Mood, Trading, Notes, Vault\n\nYou can unhide any widget from this panel. Continue?')) return
+    if (!confirm('Reset to the focused layout?\n\nThis hides:\n• Quote, Health, Trading, Vault, North star, Progress, Explore, Strategy Lab\n\nKeeps on home:\n• Identity, Morning note, Ask Jalayu, Notes, Schedule, Reflection, Mood, Memory\n\nYou can unhide any widget from this panel. Continue?')) return
     setLayout(getDefaultDashboardLayout())
     toast.success('Switched to focused layout — tap Done to save')
   }
 
-  const hiddenWidgets = layout.hidden
+  // Don't offer a premium widget to add back if the user doesn't have access — it would
+  // just land them on a locked nav item when they click through.
+  const hiddenWidgets = layout.hidden.filter(hasPremiumAccess)
 
   return (
     <>
