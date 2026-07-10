@@ -8,6 +8,7 @@ import { useStore } from '@/store/useStore'
 import { visibleNavSections } from '@/components/dashboard/navConfig'
 import { isOwnerEmail } from '@/lib/owner'
 import JalayuLogo from '@/components/JalayuLogo'
+import ThemeToggle from '@/components/dashboard/ThemeToggle'
 
 export default function TopBar() {
   const {
@@ -256,8 +257,14 @@ export default function TopBar() {
                 </div>
               ))}
 
+              {/* Appearance */}
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px' }}>
+                <span style={{ fontSize: 13, color: 'var(--text-2)', fontWeight: 500 }}>Appearance</span>
+                <ThemeToggle />
+              </div>
+
               {/* Sign out */}
-              <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6 }}>
+              <div style={{ paddingTop: 2 }}>
                 <button
                   type="button"
                   onClick={handleLogout}

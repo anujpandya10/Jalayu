@@ -63,6 +63,9 @@ interface JalayuStore {
   grantedPremiumModules: string[] | null
   /** 7-day premium trial state. null = not loaded yet. */
   premiumTrial: { active: boolean; daysLeft: number } | null
+  /** 'light' | 'dark' — mirrors the data-theme attribute so UI (the toggle icon) can react
+   * without reading the DOM. Source of truth for persistence is src/lib/theme.ts. */
+  theme: 'light' | 'dark'
   /** When set, the premium-lock dialog is open for this module (a locked nav item was clicked). */
   premiumLockPrompt: { key: SidebarView; label: string } | null
   /** Hand-off from the lock dialog to the Feedback view: pre-select a category + message. */
@@ -127,6 +130,7 @@ interface JalayuStore {
   setEnabledModules: (ids: string[] | null) => void
   setGrantedPremiumModules: (ids: string[] | null) => void
   setPremiumTrial: (t: { active: boolean; daysLeft: number } | null) => void
+  setTheme: (theme: 'light' | 'dark') => void
   setPremiumLockPrompt: (p: { key: SidebarView; label: string } | null) => void
   setFeedbackPrefill: (p: { category: string; message: string } | null) => void
   setTradingGatePrompt: (p: { onAccept: () => void } | null) => void
@@ -152,6 +156,7 @@ export const useStore = create<JalayuStore>((set) => ({
   enabledModules: null,
   grantedPremiumModules: null,
   premiumTrial: null,
+  theme: 'light',
   premiumLockPrompt: null,
   feedbackPrefill: null,
   tradingGatePrompt: null,
@@ -249,6 +254,7 @@ export const useStore = create<JalayuStore>((set) => ({
   setEnabledModules: (enabledModules) => set({ enabledModules }),
   setGrantedPremiumModules: (grantedPremiumModules) => set({ grantedPremiumModules }),
   setPremiumTrial: (premiumTrial) => set({ premiumTrial }),
+  setTheme: (theme) => set({ theme }),
   setPremiumLockPrompt: (premiumLockPrompt) => set({ premiumLockPrompt }),
   setFeedbackPrefill: (feedbackPrefill) => set({ feedbackPrefill }),
   setTradingGatePrompt: (tradingGatePrompt) => set({ tradingGatePrompt }),

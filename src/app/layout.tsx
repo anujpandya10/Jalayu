@@ -46,6 +46,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${inter.variable} ${lora.variable} h-full`}>
+      <head>
+        {/* Apply the saved theme before first paint — avoids a flash of the wrong
+         * theme on load. No OS prefers-color-scheme auto-detection yet: dark mode
+         * is opt-in only until the color sweep covers the trading/chart surfaces. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem('jalayu-theme');if(t==='dark')document.documentElement.setAttribute('data-theme','dark')}catch(e){}`,
+          }}
+        />
+      </head>
       <body className="min-h-full">{children}</body>
     </html>
   )
