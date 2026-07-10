@@ -436,10 +436,26 @@ export default function VaultView() {
           <Shield size={20} color="var(--accent)" />
           <h2 style={{ fontSize: 19, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Vault</h2>
         </div>
-        <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 24px', lineHeight: 1.6 }}>
-          A PIN-protected, encrypted place for passwords and secrets. Your PIN is the only key —
-          we never see it. <strong>If you forget it, the data is unrecoverable.</strong>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.5 }}>
+          A PIN-protected, encrypted place for passwords and secrets.
         </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+          {[
+            { icon: <Shield size={12} />, label: 'Your PIN is the only key' },
+            { icon: <ShieldAlert size={12} />, label: 'We never see it' },
+            { icon: <Lock size={12} />, label: 'Forgot PIN = unrecoverable', warn: true },
+          ].map((b) => (
+            <span key={b.label} style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              padding: '5px 10px', borderRadius: 99, fontSize: 11, fontWeight: 500,
+              background: b.warn ? 'rgba(239,68,68,0.08)' : 'var(--morning)',
+              color: b.warn ? '#ef4444' : 'var(--text-2)',
+              border: `1px solid ${b.warn ? 'rgba(239,68,68,0.2)' : 'var(--border)'}`,
+            }}>
+              {b.icon} {b.label}
+            </span>
+          ))}
+        </div>
 
         <div style={{
           padding: 18, border: '1px solid var(--border)', borderRadius: 14,
@@ -514,9 +530,8 @@ export default function VaultView() {
             Create vault
           </button>
 
-          <p style={{ fontSize: 10.5, color: 'var(--text-3)', margin: '12px 0 0', lineHeight: 1.6 }}>
+          <p style={{ fontSize: 10.5, color: 'var(--text-3)', margin: '12px 0 0' }}>
             <Shield size={10} style={{ verticalAlign: 'middle' }} /> Your PIN never leaves this browser.
-            We store only encrypted data — your secrets remain safe even if our database is compromised.
           </p>
         </div>
       </div>

@@ -13,6 +13,7 @@ import {
   Clock,
 } from 'lucide-react'
 import type { Insight } from '@/lib/types'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 interface InsightsViewProps {
   insights: Insight[]
@@ -88,43 +89,14 @@ export default function InsightsView({ insights }: InsightsViewProps) {
     <div style={{ padding: '16px 14px', maxWidth: 640, margin: '0 auto' }}>
       {/* Header */}
       <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Intelligence</h2>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 20px' }}>
-        Your behavioral patterns and signals from the last 14 days
-      </p>
+      <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 20px' }}>Last 14 days</p>
 
       {!hasAnyInsight ? (
-        /* Empty state */
-        <div
-          style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 14,
-            padding: 32,
-            textAlign: 'center',
-          }}
-        >
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              borderRadius: '50%',
-              background: 'var(--morning)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px',
-            }}
-          >
-            <Brain size={24} color="var(--accent)" />
-          </div>
-          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', margin: '0 0 8px' }}>
-            Your intelligence report isn&apos;t ready yet.
-          </p>
-          <p style={{ fontSize: 12, color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>
-            Jalayu needs at least 7 days of data to generate your behavioral patterns. Keep logging moods,
-            completing tasks, and reflecting.
-          </p>
-        </div>
+        <EmptyState
+          icon={<Brain size={20} />}
+          title="Not ready yet"
+          hint="Needs 7 days of moods, tasks, and reflections."
+        />
       ) : (
         <>
           {/* Focus Score Card */}

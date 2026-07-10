@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Loader2, User, LayoutGrid, RotateCcw } from 'lucide-react'
+import { Loader2, User, LayoutGrid, RotateCcw, Phone, MapPin, Sparkles } from 'lucide-react'
 import toast from 'react-hot-toast'
 import type { Profile } from '@/lib/types'
 import { useStore } from '@/store/useStore'
@@ -9,6 +9,7 @@ import ConnectAgent from '@/components/dashboard/views/ConnectAgent'
 import LifeIntake from '@/components/dashboard/LifeIntake'
 import PremiumGrantsAdmin from '@/components/dashboard/views/PremiumGrantsAdmin'
 import RiskProfileSettings from '@/components/dashboard/views/RiskProfileSettings'
+import { CardHeader } from '@/components/ui/Card'
 import { isOwnerEmail } from '@/lib/owner'
 
 const labelStyle: React.CSSProperties = {
@@ -148,27 +149,22 @@ export default function SettingsView() {
         margin: '0 auto',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
         <User size={20} color="var(--accent)" />
         <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: 0 }}>Your profile</h2>
       </div>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 18px', lineHeight: 1.5 }}>
-        Jalayu uses this when you ask about appointments, contacts, or anything personal — so answers match your real details.
-      </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <section className="card">
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 6px' }}>
-            Your Jalayu
-          </p>
+          <CardHeader icon={<Sparkles size={14} />} label="Your Jalayu" />
           {showIntake ? (
             <div style={{ marginTop: 6 }}>
               <LifeIntake onDone={() => setShowIntake(false)} />
             </div>
           ) : (
             <>
-              <p style={{ fontSize: 12.5, color: 'var(--text-2)', margin: '0 0 12px', lineHeight: 1.5 }}>
-                Jalayu is the ground; you build the house. Answer a few questions about your life and it sets itself up around what actually matters to you — switch the rest off so your app isn&apos;t cluttered with things you don&apos;t use.
+              <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 12px' }}>
+                Turn on what matters, turn off the rest.
               </p>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 <button type="button" onClick={() => setShowIntake(true)}
@@ -187,9 +183,7 @@ export default function SettingsView() {
         <RiskProfileSettings />
         {isOwnerEmail(authEmail) && <PremiumGrantsAdmin />}
         <section className="card">
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
-            Identity
-          </p>
+          <CardHeader icon={<User size={14} />} label="Identity" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
               <label style={labelStyle}>Full name</label>
@@ -203,9 +197,7 @@ export default function SettingsView() {
         </section>
 
         <section className="card">
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
-            Contact
-          </p>
+          <CardHeader icon={<Phone size={14} />} label="Contact" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
               <label style={labelStyle}>Phone</label>
@@ -222,9 +214,7 @@ export default function SettingsView() {
         </section>
 
         <section className="card">
-          <p style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 12px' }}>
-            Address
-          </p>
+          <CardHeader icon={<MapPin size={14} />} label="Address" />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
               <label style={labelStyle}>Street</label>
