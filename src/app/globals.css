@@ -21,6 +21,15 @@
   --accent: #0A8F7A;       /* bioluminescent teal — brand colour, CTAs, focus */
   --accent-fg: #FFFFFF;
 
+  /* ── Ambient glow — the "alive" background, matching the marketing site's
+     deep-water glow without darkening the reading surface. Used by the body
+     background-image and AmbientBackground.tsx's breathing pulse/plankton. */
+  --glow-1: rgba(0,201,167,0.14);
+  --glow-2: rgba(103,232,249,0.10);
+  --glow-3: rgba(0,201,167,0.08);
+  --glow-pulse: rgba(0,201,167,0.16);
+  --glow-plankton: #00C9A7;
+
   /* ── Legacy aliases (keep so existing components don't break) ── */
   --background: #EDF3F2;
   --card: #FFFFFF;
@@ -65,6 +74,14 @@
   --accent: #00C9A7;       /* brighter on dark — the light accent was tuned for white bg contrast */
   --accent-fg: #04121B;    /* dark text on the bright accent reads better than white-on-teal */
 
+  /* On dark, the ground is already near-black like the marketing site, so the glow can be
+     stronger without hurting legibility — it's closer to the source material here. */
+  --glow-1: rgba(0,201,167,0.22);
+  --glow-2: rgba(103,232,249,0.16);
+  --glow-3: rgba(0,201,167,0.14);
+  --glow-pulse: rgba(0,201,167,0.26);
+  --glow-plankton: #00C9A7;
+
   --background: #04121B;
   --card: #0A1E2A;
   --text-primary: #EAF6F3;
@@ -83,6 +100,14 @@
   --error-border: rgba(248,113,113,0.22);
 }
 
+/* ── Ambient background animation (AmbientBackground.tsx) ── */
+@keyframes ambient-breathe { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes ambient-drift { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-14px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ambient-pulse, .ambient-plankton { animation: none !important; }
+}
+
 @theme inline {
   --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-serif: var(--font-lora), Georgia, serif;
@@ -99,6 +124,14 @@ html {
 
 body {
   background-color: var(--bg);
+  /* Static ambient glow — the "surface of the water" reads as alive even before the
+     breathing/plankton layer (AmbientBackground.tsx) loads. Fixed so it doesn't scroll
+     away with page content on long views. */
+  background-image:
+    radial-gradient(ellipse 620px 420px at 8% -6%, var(--glow-1) 0%, transparent 60%),
+    radial-gradient(ellipse 500px 380px at 96% 8%, var(--glow-2) 0%, transparent 55%),
+    radial-gradient(ellipse 700px 500px at 50% 115%, var(--glow-3) 0%, transparent 60%);
+  background-attachment: fixed;
   color: var(--text);
   min-height: 100%;
   -webkit-font-smoothing: antialiased;

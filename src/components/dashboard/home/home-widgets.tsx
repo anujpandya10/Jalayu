@@ -345,7 +345,9 @@ export function renderHomeWidget(
     case 'quote':
       return (
         <div style={{
-          background: `linear-gradient(135deg, ${AMBER}12 0%, transparent 60%)`,
+          // Solid surface, not a translucent tint — a gradient-to-transparent card reads as
+          // washed-out/hard-to-see once it sits on top of the page's own ambient glow.
+          background: 'var(--surface)',
           border: `1px solid ${AMBER}28`, borderRadius: 18,
           padding: compact ? '10px 12px' : '16px 20px',
           position: 'relative', overflow: 'hidden',

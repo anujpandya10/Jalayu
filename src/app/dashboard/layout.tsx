@@ -9,6 +9,7 @@ import TopBar from '@/components/dashboard/TopBar'
 import ChatPanel from '@/components/chat/ChatPanel'
 import PremiumLockDialog from '@/components/dashboard/PremiumLockDialog'
 import TradingGateDialog from '@/components/dashboard/TradingGateDialog'
+import AmbientBackground from '@/components/dashboard/AmbientBackground'
 import PwaRegister from '@/components/PwaRegister'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
 // HealthProfile used for array cast below
@@ -153,8 +154,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         height: '100dvh',
         background: 'var(--bg)',
         overflow: 'hidden',
+        position: 'relative',
       }}
     >
+      <AmbientBackground />
+
       {/* Main column — full width, no persistent sidebar */}
       <div
         style={{
@@ -163,6 +167,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           flexDirection: 'column',
           overflow: 'hidden',
           minWidth: 0,
+          position: 'relative',
+          zIndex: 1,
         }}
       >
         {/* TopBar — visible on all screen sizes */}

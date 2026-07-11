@@ -84,14 +84,15 @@ const DEFAULT_SIZES: Partial<Record<HomeWidgetId, WidgetSize>> = {
 const DEFAULT_LAYOUT: DashboardLayout = {
   version: 4,
   columns: {
-    left: ['identity', 'morning_note', 'ask_jalayu'],
+    // No 'ask_jalayu' here — ShadowHome's own "What should I work on?" box is already
+    // the page hero above this grid; a second ask-box card would just be a duplicate.
+    left: ['identity', 'morning_note'],
     center: ['notes', 'schedule', 'reflection'],
     right: ['mood', 'memory'],
   },
   mobile: [
     'identity',
     'morning_note',
-    'ask_jalayu',
     'notes',
     'schedule',
     'reflection',
