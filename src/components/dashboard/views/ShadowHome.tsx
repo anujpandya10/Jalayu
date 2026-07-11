@@ -92,6 +92,8 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
   const firstName = profile?.nickname || profile?.full_name?.split(' ')[0] || ''
   const today = new Date()
   const dateLabel = `${DAY_NAMES[today.getDay()]}, ${MONTH_NAMES[today.getMonth()]} ${today.getDate()}`
+  const hr = today.getHours()
+  const greetWord = hr < 12 ? 'Good morning' : hr < 18 ? 'Good afternoon' : 'Good evening'
 
   const refresh = useCallback(async () => {
     try {
@@ -397,14 +399,14 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
         }
         .sh-chips-dismiss:hover { color: var(--text-2); }
         .sh-chips {
-          display: flex; flex-direction: column; gap: 8px;
+          display: flex; flex-wrap: wrap; gap: 10px;
         }
         .sh-chip {
-          display: flex; align-items: center; gap: 8px;
-          padding: 10px 12px; border-radius: 10px;
-          background: var(--surface); border: 1px dashed var(--border-2);
-          color: var(--text-2); font-size: 13px; cursor: pointer;
-          text-align: left; font-family: inherit;
+          display: inline-flex; align-items: center; gap: 8px;
+          padding: 9px 14px; border-radius: 99px;
+          background: var(--surface); border: 1px solid var(--border);
+          color: var(--text-2); font-size: 12.5px; cursor: pointer;
+          text-align: left; font-family: inherit; white-space: nowrap;
           transition: background 0.12s, border-color 0.12s, color 0.12s;
         }
         .sh-chip:hover {
@@ -415,10 +417,12 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
         .sh-chip:hover > svg { color: var(--accent); }
         .sh-greeting {
           font-family: var(--font-lora), Georgia, serif;
-          font-size: 26px; line-height: 1.3; color: var(--text);
-          margin: 0 0 24px; font-weight: 500; letter-spacing: -0.01em;
+          font-size: 40px; line-height: 1.08; color: var(--text);
+          margin: 0 0 24px; font-weight: 600; letter-spacing: -0.015em;
+          max-width: 15ch;
         }
-        @media (max-width: 520px) { .sh-greeting { font-size: 22px; } }
+        .sh-greeting-soft { color: var(--text-2); }
+        @media (max-width: 520px) { .sh-greeting { font-size: 28px; } }
 
         .sh-input-wrap {
           background: var(--surface); border: 1px solid var(--border);
@@ -623,7 +627,7 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
 
       <p className="sh-date">{dateLabel}</p>
       <h1 className="sh-greeting">
-        {firstName ? `Hey ${firstName}. ` : ''}What should I work on?
+        {greetWord}{firstName ? `, ${firstName}` : ''}. <span className="sh-greeting-soft">What should I work on?</span>
       </h1>
 
       <div className="sh-input-wrap">
@@ -803,12 +807,8 @@ export default function ShadowHome({ profile }: { profile: Profile | null }) {
         </>
       )}
 
-      {intents.length === 0 && (
-        <div className="sh-empty" style={{ marginTop: 24 }}>
-          Send me anything you want figured out. I'll work in the background and
-          your answer will show up here.
-        </div>
-      )}
+      {/* The old "Send me anything…" empty-ledger box is intentionally gone — the widget
+          grid now fills the space below, so a big empty placeholder just looked broken. */}
 
       {openIntent && (
         <div className="sh-modal-backdrop" onClick={() => { setOpenIntent(null); setCopied(false) }}>

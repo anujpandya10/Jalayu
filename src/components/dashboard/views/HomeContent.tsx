@@ -441,21 +441,21 @@ export default function HomeContent({
           .home-right { display: none !important; }
         }
 
-        /* 2-col: tablet */
+        /* 2-col: tablet — equal columns so it reads as an even grid */
         @media (min-width: 768px) {
           .home-3col {
-            grid-template-columns: 280px 1fr;
+            grid-template-columns: 1fr 1fr;
             align-items: start;
           }
           .home-right { display: none; }
         }
 
-        /* 3-col: desktop */
+        /* 3-col: desktop — three EQUAL columns (not 260/1fr/260) so the grid is
+           balanced left-to-right instead of a wide center with narrow sides. */
         @media (min-width: 1100px) {
-          .home-outer { padding: 24px 32px 40px; }
           .home-3col {
-            grid-template-columns: 260px 1fr 260px;
-            gap: 16px;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 14px;
             align-items: start;
           }
           .home-right { display: grid !important; }

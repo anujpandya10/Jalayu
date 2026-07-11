@@ -19,7 +19,10 @@ export default function AmbientBackground() {
     <div
       aria-hidden="true"
       style={{
-        position: 'absolute',
+        // Fixed (not absolute) so it's a pure viewport backdrop — completely out of the
+        // scroll flow, so it can never affect the page's scroll height. The glow/plankton
+        // stay put as the content scrolls over them, which reads as real depth.
+        position: 'fixed',
         inset: 0,
         overflow: 'hidden',
         pointerEvents: 'none',
