@@ -311,6 +311,65 @@ input, textarea {
   }
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   DEEP HOME — the home screen IS the deep water (matches the marketing site).
+   Dark, atmospheric, alive; working screens (Notes/Calendar/etc.) stay light.
+   Implemented as a SCOPED token override: every child (ShadowHome ask-box,
+   the widget grid) is 100% token-driven, so redefining the palette on this one
+   wrapper re-skins all of them to dark glass with zero component rewrites.
+   ══════════════════════════════════════════════════════════════════════════ */
+.deep-home {
+  position: relative;
+  min-height: 100%;
+  color: #EAF6F3;
+  /* the deep-water ground — a descent from the lit surface into the depths */
+  background: radial-gradient(125% 85% at 50% -12%, #0B2A32 0%, #061A22 44%, #030F16 100%);
+
+  /* scoped dark-glass palette — overrides the global light tokens for children */
+  --bg: transparent;
+  --surface: rgba(255,255,255,0.05);
+  --surface-2: rgba(255,255,255,0.032);
+  --morning: rgba(0,201,167,0.07);
+  --text: #EAF6F3;
+  --text-2: #93B0B4;
+  --text-3: #5F8088;
+  --border: rgba(255,255,255,0.09);
+  --border-2: rgba(0,201,167,0.20);
+  --accent: #00C9A7;
+  --accent-fg: #04121B;
+  --glow-pulse: rgba(0,201,167,0.30);
+  --glow-plankton: #00C9A7;
+}
+.deep-home-content { position: relative; z-index: 1; }
+
+/* Unify the two stacked zones into one 1100px column so the ask-box and the
+   widget grid read as one screen, not two apps with a gap between them. */
+.deep-home .shadow-home { max-width: 1100px; padding-bottom: 6px; }
+.deep-home .sh-input-wrap,
+.deep-home .sh-chips-wrap,
+.deep-home .sh-letter { max-width: 720px; }
+.deep-home .home-outer { max-width: 1100px; padding-top: 4px; }
+
+/* Glass cards: a hair of luminosity + a soft teal corner glow + lift on hover,
+   so widgets feel like lit glass in water rather than flat rectangles. */
+.deep-home .hwidget,
+.deep-home .card {
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.deep-home .hwidget:hover {
+  box-shadow: 0 10px 34px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.06);
+  border-color: rgba(0,201,167,0.22);
+}
+/* The ask-box glows like light on the surface of the water. */
+.deep-home .sh-input-wrap {
+  box-shadow: 0 8px 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.deep-home .sh-input-wrap:focus-within {
+  box-shadow: 0 0 0 1px rgba(0,201,167,0.4), 0 8px 44px rgba(0,201,167,0.12);
+}
+.deep-home .sh-send { box-shadow: 0 0 22px rgba(0,201,167,0.35); }
+
 /* Prevent layout shifts in sidebar */
 .sidebar-nav-item {
   transition: background 0.1s, color 0.1s;

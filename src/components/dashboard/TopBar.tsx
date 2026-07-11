@@ -27,6 +27,10 @@ export default function TopBar() {
     premiumTrial?.active ?? false,
   )
 
+  // Home is the deep-water screen — the top bar joins it (dark, teal-tinted) so there's
+  // no light bar stranded above the dark ground. Every other view keeps the light bar.
+  const onHome = sidebarView === 'dashboard'
+
   useEffect(() => {
     const supabase = createClient()
     void supabase.auth.getUser().then(({ data }) => setIsOwner(isOwnerEmail(data.user?.email)))
@@ -70,8 +74,9 @@ export default function TopBar() {
   return (
     <div
       style={{
-        background: 'var(--surface)',
-        borderBottom: '1px solid var(--border)',
+        background: onHome ? '#061A22' : 'var(--surface)',
+        borderBottom: onHome ? '1px solid rgba(0,201,167,0.14)' : '1px solid var(--border)',
+        transition: 'background 0.25s, border-color 0.25s',
         padding: '0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left))',
         paddingTop: 'env(safe-area-inset-top, 0px)',
         height: 56,
@@ -106,7 +111,7 @@ export default function TopBar() {
         }}
         aria-label="Go to home"
       >
-        <JalayuLogo size={36} />
+        <JalayuLogo size={36} light={onHome} />
       </button>
 
       {/* Right: hamburger menu */}
@@ -129,7 +134,7 @@ export default function TopBar() {
             aria-expanded={menuOpen}
             aria-label="Open navigation"
           >
-            {menuOpen ? <X size={18} color="var(--text-2)" /> : <Menu size={18} color="var(--text-2)" />}
+            {menuOpen ? <X size={18} color={onHome ? '#93B0B4' : 'var(--text-2)'} /> : <Menu size={18} color={onHome ? '#93B0B4' : 'var(--text-2)'} />}
           </button>
 
           {menuOpen && (

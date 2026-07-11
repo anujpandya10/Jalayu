@@ -34,6 +34,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     setHealthAppointments,
     setMedicalRecords,
   } = useStore()
+  const sidebarView = useStore((s) => s.sidebarView)
+  const onHome = sidebarView === 'dashboard'
   const [initialized, setInitialized] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -176,10 +178,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <TopBar />
         </div>
 
-        {/* Scrollable content */}
-        <main className="dashboard-main" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0 }}>
-          <PwaRegister />
-          {children}
+        {/* Scrollable content — on Home, becomes the deep-water ground (scoped dark
+            tokens + atmosphere) so the notification bar + content read as one dark screen. */}
+        <main
+          className={onHome ? 'dashboard-main deep-home' : 'dashboard-main'}
+          style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0, position: 'relative' }}
+        >
+          {onHome && <AmbientBackground />}
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <PwaRegister />
+            {children}
+          </div>
         </main>
       </div>
 

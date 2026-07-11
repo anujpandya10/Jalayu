@@ -334,8 +334,12 @@ export default function DashboardPage() {
   const viewContent = (() => {
     switch (sidebarView) {
       case 'dashboard':
+        // The deep-water dark treatment (scoped tokens + atmosphere) is applied at the
+        // <main> level in layout.tsx (className 'deep-home' when on this view), so the
+        // notification bar above the content joins the dark ground instead of stranding a
+        // light strip. Here we just render the home content in the z-lifted layer.
         return (
-          <>
+          <div className="deep-home-content">
             <ShadowHome profile={profile} />
             <HomeContent
               profile={profile}
@@ -348,7 +352,7 @@ export default function DashboardPage() {
               onAddTask={handleAddTask}
               onToggleTask={handleToggleTask}
             />
-          </>
+          </div>
         )
       case 'calendar':
         return (
