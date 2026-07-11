@@ -6,6 +6,7 @@ import toast, { Toaster } from 'react-hot-toast'
 import { useStore } from '@/store/useStore'
 import { getDayNumber, todayString, getDisplayName } from '@/lib/utils'
 import ShadowHome from '@/components/dashboard/views/ShadowHome'
+import HomeContent from '@/components/dashboard/views/HomeContent'
 import MyDayView from '@/components/dashboard/views/MyDayView'
 import RemindersView from '@/components/dashboard/views/RemindersView'
 import MindView from '@/components/dashboard/views/MindView'
@@ -333,7 +334,22 @@ export default function DashboardPage() {
   const viewContent = (() => {
     switch (sidebarView) {
       case 'dashboard':
-        return <ShadowHome profile={profile} />
+        return (
+          <>
+            <ShadowHome profile={profile} />
+            <HomeContent
+              profile={profile}
+              tasks={tasks}
+              reminders={reminders}
+              tasksRecent={tasksRecent}
+              todayMood={todayMood}
+              moodsRecent={moodsRecent}
+              onMoodLog={handleMoodLog}
+              onAddTask={handleAddTask}
+              onToggleTask={handleToggleTask}
+            />
+          </>
+        )
       case 'calendar':
         return (
           <UnifiedCalendarView
