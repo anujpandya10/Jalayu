@@ -41,6 +41,12 @@ function toLocalDate(dateStr: string): Date {
   return new Date(y, m - 1, day)
 }
 
+function addDays(dateStr: string, n: number): string {
+  const d = toLocalDate(dateStr)
+  d.setDate(d.getDate() + n)
+  return toLocalDateStr(d)
+}
+
 export default function UnifiedCalendarView({
   tasks,
   reminders,
@@ -87,6 +93,29 @@ export default function UnifiedCalendarView({
     () => buildScheduleItems(tasks, reminders, googleEvents, selectedDate, todayStr, healthAppointments),
     [tasks, reminders, googleEvents, selectedDate, todayStr, healthAppointments],
   )
+
+  // How many events each dated cell has — powers the count badges on the grid and the
+  // glanceable summary tiles. Only dates that actually have events are scored, so this
+  // is a handful of cheap calls, not one per calendar cell.
+  const countByDate = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const ds of eventDateSet) {
+      m.set(ds, buildScheduleItems(tasks, reminders, googleEvents, ds, todayStr, healthAppointments).length)
+    }
+    return m
+  }, [eventDateSet, tasks, reminders, googleEvents, todayStr, healthAppointments])
+
+  const summary = useMemo(() => {
+    const tomorrowStr = addDays(todayStr, 1)
+    let week = 0
+    for (let i = 0; i < 7; i++) week += countByDate.get(addDays(todayStr, i)) ?? 0
+    return {
+      today: countByDate.get(todayStr) ?? 0,
+      tomorrow: countByDate.get(tomorrowStr) ?? 0,
+      week,
+      tomorrowStr,
+    }
+  }, [countByDate, todayStr])
 
   // Calendar grid
   const calendarDays = useMemo(() => {
@@ -141,17 +170,51 @@ export default function UnifiedCalendarView({
   const selectedDateLabel = toLocalDate(selectedDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
 
   return (
-    <div style={{ padding: '16px 14px', maxWidth: 640, margin: '0 auto' }}>
+    <div style={{ padding: '18px 16px 40px', maxWidth: 760, margin: '0 auto' }}>
       {/* Header */}
-      <h2 style={{ fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: '0 0 4px' }}>Calendar</h2>
-      <p style={{ fontSize: 12, color: 'var(--text-2)', margin: '0 0 18px' }}>
-        Tasks, reminders, and Google Calendar events in one place
-      </p>
-      {calConnected === false && (
-        <p style={{ fontSize: 12, color: 'var(--text-3)', margin: '0 0 14px' }}>
-          <a href="/api/calendar/google/start" style={{ color: 'var(--accent)' }}>Connect Google Calendar</a> to pull in external events
-        </p>
-      )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 14 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0, letterSpacing: '-0.01em' }}>Calendar</h2>
+        {calConnected === false && (
+          <a
+            href="/api/calendar/google/start"
+            style={{
+              fontSize: 12, fontWeight: 600, color: 'var(--accent)', textDecoration: 'none',
+              background: 'var(--morning)', border: '1px solid var(--border)', borderRadius: 99,
+              padding: '6px 12px', whiteSpace: 'nowrap',
+            }}
+          >
+            + Connect Google
+          </a>
+        )}
+      </div>
+
+      {/* Glanceable summary — tap Today / Tomorrow to jump straight to that day */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 16 }}>
+        {[
+          { key: 'today', label: 'Today', n: summary.today, go: () => { setSelectedDate(todayStr); setViewMonth(today.getMonth()); setViewYear(today.getFullYear()) } },
+          { key: 'tomorrow', label: 'Tomorrow', n: summary.tomorrow, go: () => { setSelectedDate(summary.tomorrowStr); const t = toLocalDate(summary.tomorrowStr); setViewMonth(t.getMonth()); setViewYear(t.getFullYear()) } },
+          { key: 'week', label: 'Next 7 days', n: summary.week, go: null as null | (() => void) },
+        ].map((t) => {
+          const active = (t.key === 'today' && selectedDate === todayStr) || (t.key === 'tomorrow' && selectedDate === summary.tomorrowStr)
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => t.go?.()}
+              disabled={!t.go}
+              className="deep-card"
+              style={{
+                textAlign: 'left', padding: '12px 14px', borderRadius: 14,
+                background: 'var(--surface)', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                cursor: t.go ? 'pointer' : 'default', fontFamily: 'inherit',
+              }}
+            >
+              <div style={{ fontSize: 24, fontWeight: 800, color: t.n > 0 ? 'var(--text)' : 'var(--text-3)', lineHeight: 1 }}>{t.n}</div>
+              <div style={{ fontSize: 11, color: 'var(--text-3)', fontWeight: 600, marginTop: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t.label}</div>
+            </button>
+          )
+        })}
+      </div>
 
       {/* Month navigation */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -192,7 +255,7 @@ export default function UnifiedCalendarView({
             if (!cell) return <div key={`empty-${i}`} />
             const isToday = cell.dateStr === todayStr
             const isSelected = cell.dateStr === selectedDate
-            const hasDot = eventDateSet.has(cell.dateStr)
+            const count = countByDate.get(cell.dateStr) ?? 0
             return (
               <button
                 key={cell.dateStr}
@@ -203,28 +266,31 @@ export default function UnifiedCalendarView({
                   flexDirection: 'column',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  padding: '5px 2px',
-                  borderRadius: 8,
-                  border: 'none',
-                  background: isSelected ? 'var(--accent)' : isToday ? 'var(--morning)' : 'transparent',
-                  color: isSelected ? '#fff' : isToday ? 'var(--accent)' : 'var(--text)',
-                  fontSize: 12,
-                  fontWeight: isToday || isSelected ? 700 : 400,
+                  gap: 3,
+                  padding: '6px 2px',
+                  borderRadius: 10,
+                  border: isToday && !isSelected ? '1px solid var(--accent)' : '1px solid transparent',
+                  background: isSelected ? 'var(--accent)' : 'transparent',
+                  color: isSelected ? 'var(--accent-fg)' : isToday ? 'var(--accent)' : 'var(--text)',
+                  fontSize: 13,
+                  fontWeight: isToday || isSelected ? 700 : 500,
                   cursor: 'pointer',
-                  minHeight: 36,
+                  minHeight: 44,
                 }}
               >
                 {cell.day}
-                {hasDot && (
-                  <div
+                {count > 0 && (
+                  <span
                     style={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: '50%',
-                      background: isSelected ? 'rgba(255,255,255,0.7)' : 'var(--accent)',
-                      marginTop: 2,
+                      fontSize: 9, fontWeight: 700, lineHeight: 1,
+                      minWidth: 14, height: 14, padding: '0 3px', borderRadius: 99,
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      background: isSelected ? 'rgba(255,255,255,0.25)' : 'var(--morning)',
+                      color: isSelected ? 'var(--accent-fg)' : 'var(--accent)',
                     }}
-                  />
+                  >
+                    {count}
+                  </span>
                 )}
               </button>
             )

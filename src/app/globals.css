@@ -312,13 +312,13 @@ input, textarea {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   DEEP HOME — the home screen IS the deep water (matches the marketing site).
-   Dark, atmospheric, alive; working screens (Notes/Calendar/etc.) stay light.
-   Implemented as a SCOPED token override: every child (ShadowHome ask-box,
-   the widget grid) is 100% token-driven, so redefining the palette on this one
-   wrapper re-skins all of them to dark glass with zero component rewrites.
+   DEEP SCREEN — the deep-water dark ground (matches the marketing site).
+   Applied per-view (see src/lib/deep-views.ts) as a SCOPED token override:
+   every child is token-driven, so redefining the palette on this one wrapper
+   re-skins the whole view to dark glass with zero component rewrites.
+   `.deep-home` layers home-only hero styling on top of this.
    ══════════════════════════════════════════════════════════════════════════ */
-.deep-home {
+.deep-screen {
   position: relative;
   color: #EAF6F3;
   /* the deep-water ground — a descent from the lit surface into the depths.
@@ -342,9 +342,23 @@ input, textarea {
 }
 .deep-home-content { position: relative; z-index: 1; }
 
+/* Glass cards on any deep screen: a hair of luminosity + soft lift on hover,
+   so surfaces feel like lit glass in water rather than flat rectangles. */
+.deep-screen .hwidget,
+.deep-screen .card,
+.deep-screen .deep-card {
+  backdrop-filter: blur(6px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.deep-screen .hwidget:hover,
+.deep-screen .deep-card:hover {
+  box-shadow: 0 10px 34px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.06);
+  border-color: rgba(0,201,167,0.22);
+}
+
+/* ── Home-only hero styling (layered on .deep-screen) ── */
 /* Unify the two stacked zones into ONE aligned column — same width, same left
-   edge, full-width ask-box — so the hero and the widget grid read as one screen,
-   left-to-right, not two apps with a gap. (Matches the approved mockup.) */
+   edge, full-width ask-box — so the hero and the widget grid read as one screen. */
 .deep-home .shadow-home {
   max-width: 1180px;
   padding-left: 34px; padding-right: 34px; padding-bottom: 4px;
@@ -358,18 +372,6 @@ input, textarea {
 @media (max-width: 640px) {
   .deep-home .shadow-home,
   .deep-home .home-outer { padding-left: 16px; padding-right: 16px; }
-}
-
-/* Glass cards: a hair of luminosity + a soft teal corner glow + lift on hover,
-   so widgets feel like lit glass in water rather than flat rectangles. */
-.deep-home .hwidget,
-.deep-home .card {
-  backdrop-filter: blur(6px);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
-}
-.deep-home .hwidget:hover {
-  box-shadow: 0 10px 34px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.06);
-  border-color: rgba(0,201,167,0.22);
 }
 /* The ask-box glows like light on the surface of the water. */
 .deep-home .sh-input-wrap {

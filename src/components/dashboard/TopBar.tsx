@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase'
 import { useStore } from '@/store/useStore'
 import { visibleNavSections } from '@/components/dashboard/navConfig'
 import { isOwnerEmail } from '@/lib/owner'
+import { isDeepView } from '@/lib/deep-views'
 import JalayuLogo from '@/components/JalayuLogo'
 import ThemeToggle from '@/components/dashboard/ThemeToggle'
 
@@ -27,9 +28,9 @@ export default function TopBar() {
     premiumTrial?.active ?? false,
   )
 
-  // Home is the deep-water screen — the top bar joins it (dark, teal-tinted) so there's
-  // no light bar stranded above the dark ground. Every other view keeps the light bar.
-  const onHome = sidebarView === 'dashboard'
+  // Deep-water views (Home, Calendar, …) get a dark, teal-tinted top bar so there's no
+  // light bar stranded above the dark ground. Other views keep the light bar.
+  const onHome = isDeepView(sidebarView)
 
   useEffect(() => {
     const supabase = createClient()

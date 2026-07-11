@@ -11,6 +11,7 @@ import PremiumLockDialog from '@/components/dashboard/PremiumLockDialog'
 import TradingGateDialog from '@/components/dashboard/TradingGateDialog'
 import AmbientBackground from '@/components/dashboard/AmbientBackground'
 import PwaRegister from '@/components/PwaRegister'
+import { isDeepView } from '@/lib/deep-views'
 import type { Profile, Task, Mood, Note, Reflection, Insight, Reminder, HealthProfile, Medication, HealthAppointment, MedicalRecord } from '@/lib/types'
 // HealthProfile used for array cast below
 
@@ -36,6 +37,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   } = useStore()
   const sidebarView = useStore((s) => s.sidebarView)
   const onHome = sidebarView === 'dashboard'
+  const deep = isDeepView(sidebarView)
   const [initialized, setInitialized] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -178,13 +180,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <TopBar />
         </div>
 
-        {/* Scrollable content — on Home, becomes the deep-water ground (scoped dark
-            tokens + atmosphere) so the notification bar + content read as one dark screen. */}
+        {/* Scrollable content — on any deep-water view, becomes the dark ground (scoped
+            dark tokens + atmosphere) so the notification bar + content read as one dark
+            screen. Home additionally gets `.deep-home` hero styling. */}
         <main
-          className={onHome ? 'dashboard-main deep-home' : 'dashboard-main'}
+          className={`dashboard-main${deep ? ' deep-screen' : ''}${onHome ? ' deep-home' : ''}`}
           style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', minWidth: 0, position: 'relative' }}
         >
-          {onHome && <AmbientBackground />}
+          {deep && <AmbientBackground />}
           <div style={{ position: 'relative', zIndex: 1 }}>
             <PwaRegister />
             {children}
