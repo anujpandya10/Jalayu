@@ -180,15 +180,38 @@ async function learnSetupStats(supabase: SupabaseClient, userId: string): Promis
  */
 const EXPANDED_SCORE_CAP = 50
 
+// ── Trade-quality gate: only trade names a real desk would actually touch ──────
+// The screener sweep pulls in penny stocks and micro-caps whose spreads are so
+// wide — and whose quotes so unreliable — that the "price" the bot sees could
+// never be filled in real life. That junk is what drags the win rate down and
+// what caused the flaky-quote "heads up" churn (a name Yahoo can't quote cleanly
+// never resolves). These three floors keep the bot to liquid, real stocks — the
+// first and most important lesson a desk teaches: don't trade what you can't get
+// out of. A name that fails these isn't a missed opportunity; it's a bullet dodged.
+const MIN_TRADEABLE_PRICE = 5          // no sub-$5 stocks — wide spreads, manipulation-prone, unreliable fills
+const MIN_DOLLAR_VOLUME = 20_000_000   // ≥ $20M traded today — deep enough that a small order fills at the quoted price
+const MIN_MARKET_CAP = 300_000_000     // ≥ $300M — above the micro-cap line where the tape turns thin and gappy
+
+/** Would a professional even look at this name? Price + liquidity + size floor.
+ * When a field isn't known (a curated-watchlist name carries no screener volume),
+ * we don't punish it for the missing data — only reject on the floors we can see. */
+function passesQualityGate(a: AssetData): boolean {
+  if (a.price < MIN_TRADEABLE_PRICE) return false
+  if (a.dollarVolume != null && a.dollarVolume < MIN_DOLLAR_VOLUME) return false
+  if (a.marketCap != null && a.marketCap < MIN_MARKET_CAP) return false
+  return true
+}
+
 async function getStockScanUniverse(): Promise<AssetData[]> {
   const [fixed, expanded] = await Promise.all([getAllAssets(), fetchExpandedStockUniverse()])
   const seen = new Set<string>()
   const out: AssetData[] = []
   for (const a of fixed.filter((x) => x.assetType === 'stock')) {
-    if (!seen.has(a.symbol)) { seen.add(a.symbol); out.push(a) }
+    if (!seen.has(a.symbol) && passesQualityGate(a)) { seen.add(a.symbol); out.push(a) }
   }
   const rest = expanded
     .filter((a) => !seen.has(a.symbol))
+    .filter(passesQualityGate)
     .sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h))
     .slice(0, EXPANDED_SCORE_CAP)
   for (const a of rest) { seen.add(a.symbol); out.push(a) }

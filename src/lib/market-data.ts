@@ -12,6 +12,9 @@ export interface AssetData {
   change7d: number    // % change last 7d
   assetType: 'crypto' | 'stock' | 'forex'
   isPumpCandidate?: boolean  // true if big gainer / historically volatile pump stock
+  volume?: number       // regular-market share volume for the day — when known (screener names)
+  dollarVolume?: number // price × volume: the real liquidity measure — when known
+  marketCap?: number    // market capitalization — when known (screener names)
 }
 
 // Legacy Candle type kept so existing imports don't break
@@ -262,21 +265,30 @@ async function fetchScreener(scrId: string, count: number): Promise<AssetData[]>
         shortName?: string
         regularMarketPrice?: number
         regularMarketChangePercent?: number
+        regularMarketVolume?: number
+        marketCap?: number
       }> }> }
     }
     const quotes = json?.finance?.result?.[0]?.quotes ?? []
     return quotes
       .filter((q) => q.regularMarketPrice != null && q.regularMarketChangePercent != null)
       .filter((q) => isTradeableStockSymbol(q.symbol ?? '', q.regularMarketPrice ?? 0))
-      .map((q) => ({
-        symbol: q.symbol ?? '',
-        name: q.shortName ?? q.symbol ?? '',
-        price: q.regularMarketPrice ?? 0,
-        change24h: q.regularMarketChangePercent ?? 0,
-        change7d: 0,
-        assetType: 'stock' as const,
-        isPumpCandidate: (q.regularMarketChangePercent ?? 0) > 15,
-      }))
+      .map((q) => {
+        const price = q.regularMarketPrice ?? 0
+        const volume = q.regularMarketVolume ?? 0
+        return {
+          symbol: q.symbol ?? '',
+          name: q.shortName ?? q.symbol ?? '',
+          price,
+          change24h: q.regularMarketChangePercent ?? 0,
+          change7d: 0,
+          assetType: 'stock' as const,
+          isPumpCandidate: (q.regularMarketChangePercent ?? 0) > 15,
+          volume,
+          dollarVolume: volume > 0 ? price * volume : undefined,
+          marketCap: q.marketCap,
+        }
+      })
   } catch { return [] }
 }
 
